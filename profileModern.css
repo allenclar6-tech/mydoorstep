@@ -1,0 +1,25 @@
+.profile-account-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr); gap: 18px; max-width: 980px; margin: 0 auto; }
+.profile-edit-header { align-items: center; }
+.profile-edit-header h2 { font-size: 23px; }
+.profile-edit-header p { margin-bottom: 7px; }
+.profile-verified { align-items: center; color: #4d8d5a; display: inline-flex; font-size: 9px; gap: 4px; }
+.profile-completion { background: #eef4eb; border: 1px solid #d5e2d1; padding: 13px; }
+.profile-completion > div:first-child { align-items: center; display: flex; justify-content: space-between; }
+.profile-completion strong { color: var(--green); font-size: 10px; }
+.profile-completion span { color: var(--orange); font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 800; }
+.profile-progress { background: #d8e3d5; height: 5px; margin-top: 9px; overflow: hidden; }
+.profile-progress i { background: var(--orange); display: block; height: 100%; transition: width .25s ease; }
+.profile-form-actions { align-items: center; display: flex; gap: 16px; }
+.profile-form-actions .checkout-button { width: auto; }
+.profile-form-actions .quiet-button { margin: 0; }
+.profile-account-menu { align-self: start; background: var(--green); color: #fff; padding: 25px; }
+.profile-account-menu h2 { color: #fff; font-size: 25px; margin: 9px 0 20px; }
+.profile-account-menu > button { align-items: center; background: transparent; border-top: 1px solid #476257; color: #fff; display: flex; gap: 10px; padding: 15px 0; text-align: left; width: 100%; }
+.profile-account-menu > button > svg:first-child { color: #f3c36b; flex: none; }
+.profile-account-menu > button > span { display: flex; flex: 1; flex-direction: column; gap: 4px; }
+.profile-account-menu strong { font-size: 11px; }
+.profile-account-menu small { color: #bdd0c1; font-size: 9px; line-height: 1.4; }
+.profile-account-menu > button > svg:last-child { color: #a8c5ad; }
+.profile-account-menu > button:hover > svg:last-child { color: #f3c36b; transform: translateX(3px); }
+@media (max-width: 700px) { .profile-account-layout { grid-template-columns: 1fr; } .profile-account-menu { order: -1; } }
+@media (max-width: 600px) { .profile-form-actions { align-items: stretch; flex-direction: column; gap: 9px; } .profile-form-actions .checkout-button { width: 100%; } }

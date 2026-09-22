@@ -1,0 +1,41 @@
+{
+  "name": "doorstep",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "api": "node server/index.js",
+    "build": "vite build && node scripts/prepare-pages.js",
+    "preview": "vite preview",
+    "cloudflare:deploy": "wrangler deploy",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:validate": "prisma validate",
+    "db:format": "prisma format",
+    "db:seed": "node prisma/seed.js",
+    "admin:create": "node server/createAdmin.js",
+    "test": "node --test tests/api.test.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "@vitejs/plugin-react": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "express-rate-limit": "latest",
+    "helmet": "latest",
+    "lucide-react": "latest",
+    "multer": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "supertest": "latest",
+    "vite": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.0"
+  }
+}
