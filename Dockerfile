@@ -4,10 +4,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN npx prisma generate && npm prune --omit=dev
 
 COPY server ./server
 COPY private-uploads ./private-uploads
