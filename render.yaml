@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: mydoorstep-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        value: 4000
+      - key: WEB_ORIGIN
+        value: https://mydoorstep.com.co
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://mydoorstep.com.co
+      - key: PAYMENT_CALLBACK_URL
+        value: https://mydoorstep.com.co/payment/callback
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mydoorstep-db
+          property: connectionString
+      - key: AUTH_SECRET
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: PRIVATE_UPLOAD_DIR
+        value: /tmp/private-uploads
+
+databases:
+  - name: mydoorstep-db
+    databaseName: doorstep
+    user: doorstep

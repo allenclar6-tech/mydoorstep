@@ -1,0 +1,14 @@
+import { useState } from 'react'
+import { ArrowRight, Check, KeyRound, Mail } from 'lucide-react'
+
+const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
+
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState('')
+  const [challenge, setChallenge] = useState(null)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const submit = async (event) => { event.preventDefault(); setBusy(true); setMessage(''); const response = await fetch(`${apiBase}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) }); const body = await response.json(); setBusy(false); if (!response.ok) return setMessage(body.error || 'Could not start password reset.'); setChallenge(body); setMessage('A reset code has been sent. In development, check the API terminal for the code.') }
+  return <main className="account-recovery-page"><section className="recovery-card"><div className="recovery-icon"><KeyRound size={24} /></div><span className="section-kicker">ACCOUNT RECOVERY</span><h1>Reset your password.</h1><p>Enter the email on your DOORSTEP account and we’ll send a short-lived verification code.</p>{!challenge ? <form onSubmit={submit}><label>Email address<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>{message && <div className="profile-message">{message}</div>}<button className="checkout-button" disabled={busy} type="submit">{busy ? 'Sending...' : 'Send reset code'} <Mail size={17} /></button></form> : <form onSubmit={async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); const response = await fetch(`${apiBase}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, challengeId: challenge.challengeId, code: values.code, password: values.password }) }); const body = await response.json(); if (!response.ok) return setMessage(body.error || 'Could not reset password.'); setMessage('Password reset successfully.'); window.setTimeout(() => navigate('/login'), 700) }}><label>6-digit reset code<input required name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength="6" /></label><label>New password<input required name="password" type="password" minLength="8" /></label>{message && <div className="profile-message">{message}</div>}<button className="checkout-button" type="submit">Reset password <Check size={17} /></button></form>}<button className="recovery-back" onClick={() => navigate('/login')}><ArrowRight size={15} /> Back to login</button></section></main>
+}

@@ -1,0 +1,15 @@
+.auth-layout { align-items: stretch; }
+.auth-layout .partner-cta { display: flex; flex-direction: column; justify-content: center; min-height: 390px; overflow: hidden; position: relative; }
+.auth-layout .partner-cta::after { border: 1px solid #ffffff2b; border-radius: 50%; content: ''; height: 230px; position: absolute; right: -70px; top: -50px; width: 230px; }
+.auth-layout-customer .partner-cta { background: linear-gradient(145deg, #23473b, #376653); }
+.auth-layout-restaurant .partner-cta { background: linear-gradient(145deg, #74423a, #c5684d); }
+.auth-layout-rider .partner-cta { background: linear-gradient(145deg, #274d62, #3d7892); }
+.auth-layout .partner-cta > svg { color: #f4c66f; margin-bottom: 20px; }
+.auth-layout .partner-cta .section-kicker { color: #f4c66f; }
+.auth-layout .partner-cta h2 { color: #fff; font-size: clamp(28px, 3vw, 43px); margin: 12px 0 10px; max-width: 360px; }
+.auth-layout .partner-cta p { color: #e4eee6; font-size: 12px; line-height: 1.7; max-width: 360px; }
+.auth-trust-points { border-top: 1px solid #ffffff33; display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; padding-top: 15px; }
+.auth-trust-points span { align-items: center; color: #f1f7ef; display: inline-flex; font-size: 9px; gap: 4px; }
+.auth-trust-points svg { color: #f4c66f; }
+.auth-layout .auth-form { box-shadow: 0 18px 44px #1c342a14; }
+@media (max-width: 600px) { .auth-layout .partner-cta { min-height: 300px; } .auth-layout .partner-cta h2 { font-size: 32px; } .auth-trust-points { gap: 8px; } }
