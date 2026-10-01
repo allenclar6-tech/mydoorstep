@@ -26,7 +26,7 @@ const onboardingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standa
 
 app.use(helmet())
 app.use(cors({ origin: (origin, callback) => {
-  if (!origin || origin === process.env.WEB_ORIGIN || (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost:517[3-9]$/.test(origin))) return callback(null, true)
+  if (!origin || [process.env.WEB_ORIGIN, ...(process.env.ADDITIONAL_WEB_ORIGINS || '').split(',')].map((value) => value.trim()).includes(origin) || (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost:517[3-9]$/.test(origin))) return callback(null, true)
   return callback(Object.assign(new Error('CORS origin not allowed'), { code: 'CORS_ORIGIN_DENIED' }))
 } }))
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }))
