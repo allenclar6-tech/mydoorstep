@@ -13,4 +13,4 @@ COPY server ./server
 COPY private-uploads ./private-uploads
 
 EXPOSE 4000
-CMD ["node", "server/index.js"]
+CMD ["sh", "-c", "npx prisma db push && node server/index.js"]
