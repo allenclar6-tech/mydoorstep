@@ -1,4 +1,5 @@
 import dotenv from 'dotenv'
+
 dotenv.config({ override: true })
 import { randomUUID } from 'node:crypto'
 import cors from 'cors'
@@ -16,7 +17,7 @@ import { storePrivateDocument, uploadError } from './uploadService.js'
 import { issueVerificationCode, verifyCode } from './verificationService.js'
 import { buildAiReply } from './aiBrain.js'
 
-const app = express()
+const app = express() app.set('trust proxy', 1)
 const port = Number(process.env.API_PORT || 4000)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } })
 const authFlowLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false })
