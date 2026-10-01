@@ -14,7 +14,7 @@ import { initializePayment, isOrderPayable, matchesPaystackPayment, PaymentError
 import { advanceDelivery, claimDelivery, recordLocation } from './deliveryService.js'
 import { requireAdmin, reviewApplication } from './adminService.js'
 import { storePrivateDocument, uploadError } from './uploadService.js'
-import { issueVerificationCode, verifyCode } from './verificationService.js'
+import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
 import { buildAiReply } from './aiBrain.js'
 
 const app = express(); app.set('trust proxy', 1)
@@ -135,12 +135,12 @@ async function storeApplicationDocuments(files) {
 app.post('/api/auth/verification/request', authFlowLimiter, async (request, response) => {
   const result = verificationRequestSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_VERIFICATION_REQUEST' })
-  try { return response.status(201).json(await issueVerificationCode(result.data)) } catch { return response.status(503).json({ error: 'VERIFICATION_SERVICE_UNAVAILABLE' }) }
+  try { return response.status(201).json(await issueVerificationCode(result.data)) } catch (error) { const failure = verificationFailure(error); return response.status(failure.status).json({ error: failure.code }) }
 })
 app.post('/api/auth/verification/verify', authFlowLimiter, async (request, response) => {
   const result = verificationSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_VERIFICATION_CODE' })
-  try { return response.json({ verified: await verifyCode(result.data) }) } catch { return response.status(503).json({ error: 'VERIFICATION_SERVICE_UNAVAILABLE' }) }
+  try { return response.json({ verified: await verifyCode(result.data) }) } catch (error) { const failure = verificationFailure(error); return response.status(failure.status).json({ error: failure.code }) }
 })
 
 app.post('/api/auth/forgot-password', authFlowLimiter, async (request, response) => {
