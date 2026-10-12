@@ -12,11 +12,13 @@ services:
       - key: API_PORT
         value: 4000
       - key: WEB_ORIGIN
-        value: https://mydoorstep.com.co
+        value: https://mydoorstep-web.onrender.com
+      - key: WEB_ORIGINS
+        value: https://mydoorstep-site-20260922.eyedofejiro10.workers.dev
       - key: NEXT_PUBLIC_APP_URL
-        value: https://mydoorstep.com.co
+        value: https://mydoorstep-web.onrender.com
       - key: PAYMENT_CALLBACK_URL
-        value: https://mydoorstep.com.co/payment/callback
+        value: https://mydoorstep-web.onrender.com/payment/callback
       - key: DATABASE_URL
         fromDatabase:
           name: mydoorstep-db
@@ -27,8 +29,26 @@ services:
         sync: false
       - key: PAYSTACK_PUBLIC_KEY
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: VERIFICATION_FROM_EMAIL
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
       - key: PRIVATE_UPLOAD_DIR
         value: /tmp/private-uploads
+
+  - type: web
+    name: mydoorstep-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile.web
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://mydoorstep-api.onrender.com
 
 databases:
   - name: mydoorstep-db

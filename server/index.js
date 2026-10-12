@@ -12,8 +12,8 @@ import { createSession, hashPassword, requireUser, revokeSession, revokeUserSess
 import { initializePayment, isOrderPayable, matchesPaystackPayment, PaymentError, verifyWebhookSignature } from './paymentService.js'
 import { advanceDelivery, claimDelivery, recordLocation } from './deliveryService.js'
 import { requireAdmin, reviewApplication } from './adminService.js'
-import { storePrivateDocument, uploadError } from './uploadService.js'
-import { issueVerificationCode, verifyCode } from './verificationService.js'
+import { readPrivateDocument, storePrivateDocument, uploadError } from './uploadService.js'
+import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
 import { buildAiReply } from './aiBrain.js'
 
 const app = express()
@@ -22,10 +22,15 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 const authFlowLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false })
 const publicTrackingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false })
 const onboardingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false })
+const configuredWebOrigins = () => ['WEB_ORIGIN', 'WEB_ORIGINS']
+  .flatMap((key) => (process.env[key] || '').split(','))
+  .map((origin) => origin.trim())
+  .filter(Boolean)
 
+app.set('trust proxy', 1)
 app.use(helmet())
 app.use(cors({ origin: (origin, callback) => {
-  if (!origin || origin === process.env.WEB_ORIGIN || (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost:517[3-9]$/.test(origin))) return callback(null, true)
+  if (!origin || configuredWebOrigins().includes(origin) || (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost:517[3-9]$/.test(origin))) return callback(null, true)
   return callback(Object.assign(new Error('CORS origin not allowed'), { code: 'CORS_ORIGIN_DENIED' }))
 } }))
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }))
@@ -66,12 +71,40 @@ app.get('/api/service-areas', async (_request, response) => {
   } catch { return response.status(503).json({ error: 'SERVICE_AREA_SERVICE_UNAVAILABLE' }) }
 })
 
+function publicRestaurant(restaurant) {
+  const items = restaurant.categories.flatMap((category) => category.items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    price: Math.round(item.priceMinor / 100),
+    image: item.imageUrl || null,
+    category: category.name,
+  })))
+  return {
+    id: restaurant.id,
+    name: restaurant.name,
+    slug: restaurant.slug,
+    description: restaurant.description,
+    address: restaurant.address,
+    city: restaurant.city?.name || null,
+    rating: Number(restaurant.ratingAverage),
+    ratingCount: restaurant.ratingCount,
+    openingTime: restaurant.openingTime,
+    closingTime: restaurant.closingTime,
+    temporarilyClosed: restaurant.temporarilyClosed,
+    openNow: isRestaurantOpen(restaurant),
+    categories: restaurant.categories.map((category) => category.name),
+    items,
+  }
+}
+
 app.get('/api/restaurants', async (request, response) => {
   const result = z.object({ search: z.string().max(100).optional(), limit: z.coerce.number().int().min(1).max(50).default(24) }).safeParse(request.query)
   if (!result.success) return response.status(400).json({ error: 'INVALID_RESTAURANT_QUERY' })
   try {
     const restaurants = await prisma.restaurant.findMany({ where: { status: 'APPROVED', ...(result.data.search ? { OR: [{ name: { contains: result.data.search, mode: 'insensitive' } }, { description: { contains: result.data.search, mode: 'insensitive' } }] } : {}) }, include: { city: true, categories: { include: { items: { where: { available: true }, take: 6 } } } }, orderBy: { ratingAverage: 'desc' }, take: result.data.limit })
-    return response.json({ restaurants: restaurants.map((restaurant) => ({ id: restaurant.id, name: restaurant.name, slug: restaurant.slug, description: restaurant.description, address: restaurant.address, city: restaurant.city?.name, rating: Number(restaurant.ratingAverage), ratingCount: restaurant.ratingCount, openingTime: restaurant.openingTime, closingTime: restaurant.closingTime, temporarilyClosed: restaurant.temporarilyClosed, openNow: isRestaurantOpen(restaurant), categories: restaurant.categories })) })
+    response.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
+    return response.json({ restaurants: restaurants.map(publicRestaurant) })
   } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }
 })
 
@@ -119,6 +152,11 @@ app.post('/api/uploads/private-document', requireUser, upload.single('document')
 })
 
 const credentialsSchema = z.object({ email: z.string().email().transform((value) => value.toLowerCase()), password: z.string().min(8), firstName: z.string().min(1).max(80).optional(), lastName: z.string().min(1).max(80).optional(), phone: z.string().min(7).max(30).optional() })
+const customerRegistrationSchema = credentialsSchema.extend({
+  verificationId: z.string().min(1),
+  termsAccepted: z.literal(true),
+  password: z.string().min(10).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/),
+})
 const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional() })
 const privateDocumentSchema = z.object({ type: z.string().min(2).max(80), storageKey: z.string().startsWith('private/applications/').max(500) })
 const partnerApplicationSchema = z.object({ restaurantName: z.string().min(2).max(120), businessType: z.string().min(2).max(60), registrationNumber: z.string().min(2).max(100), businessPhone: z.string().min(7).max(30), businessEmail: z.string().email(), address: z.string().min(5).max(240), cityName: z.string().default('Sapele'), ownerName: z.string().min(2).max(120), ownerIdentityType: z.string().min(2).max(60), ownerIdentityNumber: z.string().min(3).max(120), password: z.string().min(8), documents: z.array(privateDocumentSchema).min(2).max(5) })
@@ -134,12 +172,12 @@ async function storeApplicationDocuments(files) {
 app.post('/api/auth/verification/request', authFlowLimiter, async (request, response) => {
   const result = verificationRequestSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_VERIFICATION_REQUEST' })
-  try { return response.status(201).json(await issueVerificationCode(result.data)) } catch { return response.status(503).json({ error: 'VERIFICATION_SERVICE_UNAVAILABLE' }) }
+  try { return response.status(201).json(await issueVerificationCode(result.data)) } catch (error) { return response.status(verificationFailure(error).status).json({ error: verificationFailure(error).code }) }
 })
 app.post('/api/auth/verification/verify', authFlowLimiter, async (request, response) => {
   const result = verificationSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_VERIFICATION_CODE' })
-  try { return response.json({ verified: await verifyCode(result.data) }) } catch { return response.status(503).json({ error: 'VERIFICATION_SERVICE_UNAVAILABLE' }) }
+  try { return response.json({ verified: await verifyCode(result.data) }) } catch (error) { return response.status(verificationFailure(error).status).json({ error: verificationFailure(error).code }) }
 })
 
 app.post('/api/auth/forgot-password', authFlowLimiter, async (request, response) => {
@@ -241,7 +279,7 @@ app.post('/api/rider-applications/multipart', onboardingLimiter, upload.array('d
 })
 
 app.post('/api/auth/register', async (request, response) => {
-  const result = credentialsSchema.extend({ verificationId: z.string().min(1) }).safeParse(request.body)
+  const result = customerRegistrationSchema.safeParse(request.body)
   if (!result.success || !result.data.firstName || !result.data.lastName) return response.status(400).json({ error: 'INVALID_REGISTRATION', details: result.success ? 'First and last name are required.' : result.error.flatten() })
   try {
     const verification = await prisma.verificationCode.findFirst({ where: { id: result.data.verificationId, verifiedAt: { not: null }, expiresAt: { gt: new Date() } } })
@@ -310,7 +348,19 @@ app.post('/api/profile/photo', requireUser, async (request, response) => {
   const result = z.object({ storageKey: z.string().startsWith('private/').max(500) }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_PROFILE_PHOTO' })
   if (!result.data.storageKey.startsWith(`private/users/${request.user.id}/`)) return response.status(403).json({ error: 'PROFILE_PHOTO_OWNERSHIP_REQUIRED' })
-  try { const user = await prisma.user.update({ where: { id: request.user.id }, data: { profileImageKey: result.data.storageKey } }); return response.json({ user: publicUser(user) }) } catch { return response.status(503).json({ error: 'PROFILE_SERVICE_UNAVAILABLE' }) }
+  try {
+    const photo = await readPrivateDocument(result.data.storageKey)
+    const user = await prisma.user.update({ where: { id: request.user.id }, data: { profileImageKey: result.data.storageKey, profileImageData: photo.buffer, profileImageMimeType: photo.mimeType } })
+    return response.json({ user: publicUser(user) })
+  } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'PROFILE_SERVICE_UNAVAILABLE' }) }
+})
+app.get('/api/profile/photo', requireUser, async (request, response) => {
+  if (!request.user.profileImageData || !request.user.profileImageMimeType) return response.status(404).json({ error: 'PROFILE_PHOTO_NOT_FOUND' })
+  try {
+    response.set('Content-Type', request.user.profileImageMimeType)
+    response.set('Cache-Control', 'private, max-age=300')
+    return response.send(request.user.profileImageData)
+  } catch { return response.status(503).json({ error: 'PROFILE_PHOTO_UNAVAILABLE' }) }
 })
 
 app.get('/api/favorites', requireUser, async (request, response) => { try { return response.json({ favorites: await prisma.favorite.findMany({ where: { userId: request.user.id }, include: { restaurant: true, menuItem: true } }) }) } catch { return response.status(503).json({ error: 'FAVORITES_SERVICE_UNAVAILABLE' }) } })

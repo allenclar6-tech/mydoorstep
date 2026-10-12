@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import request from 'supertest'
 import { isOrderPayable, matchesPaystackPayment, verifyWebhookSignature } from '../server/paymentService.js'
+import { verificationFailure } from '../server/verificationService.js'
 
 process.env.NODE_ENV = 'test'
 const { app } = await import('../server/index.js')
@@ -23,6 +24,19 @@ test('disallowed browser origins receive a JSON CORS error', async () => {
   const response = await request(app).get('/api/health').set('Origin', 'https://not-doorstep.example')
   assert.equal(response.status, 403)
   assert.equal(response.body.error, 'CORS_ORIGIN_NOT_ALLOWED')
+})
+
+test('configured public web origins can call the API', async () => {
+  const originalOrigins = process.env.WEB_ORIGINS
+  process.env.WEB_ORIGINS = 'https://mydoorstep-site-20260922.eyedofejiro10.workers.dev'
+  try {
+    const response = await request(app).get('/api/health').set('Origin', process.env.WEB_ORIGINS)
+    assert.equal(response.status, 200)
+    assert.equal(response.headers['access-control-allow-origin'], process.env.WEB_ORIGINS)
+  } finally {
+    if (originalOrigins === undefined) delete process.env.WEB_ORIGINS
+    else process.env.WEB_ORIGINS = originalOrigins
+  }
 })
 
 test('malformed JSON receives a stable JSON error response', async () => {
@@ -100,6 +114,12 @@ test('payment confirmation only applies to payable order states', () => {
 test('webhook signature verification fails closed for malformed raw bodies', () => {
   assert.equal(verifyWebhookSignature(undefined, 'signature'), false)
   assert.equal(verifyWebhookSignature('not-a-buffer', 'signature'), false)
+})
+
+test('verification failures expose only stable, safe provider states', () => {
+  assert.deepEqual(verificationFailure({ code: 'EMAIL_VERIFICATION_NOT_CONFIGURED', status: 503 }), { code: 'EMAIL_VERIFICATION_NOT_CONFIGURED', status: 503 })
+  assert.deepEqual(verificationFailure({ code: 'EMAIL_VERIFICATION_RATE_LIMITED', status: 429 }), { code: 'EMAIL_VERIFICATION_RATE_LIMITED', status: 429 })
+  assert.deepEqual(verificationFailure(new Error('provider response body')), { code: 'VERIFICATION_SERVICE_UNAVAILABLE', status: 503 })
 })
 
 test('operational restaurant and rider APIs require their roles', async () => {
