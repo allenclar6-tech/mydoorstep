@@ -201,17 +201,17 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .topbar .cart-button b { background: #e96f4f; }
 @media (max-width: 700px) { .topbar, .topbar:not(.is-scrolled) { background: linear-gradient(110deg, #007b65, #00a082 58%, #008c72); } }
 
-/* Match the original golden homepage header and hero. */
-.topbar, .topbar:not(.is-scrolled) { background: #ffc244; box-shadow: 0 5px 18px rgba(18, 61, 45, .13); }
-.topbar .brand { color: #123d2d; }
-.topbar .brand-mark { background: #123d2d; }
-.topbar .brand-mark::before { border-color: #fffdf7; }
-.topbar .brand-mark::after { background: #ffc244; }
-.topbar .main-nav a { color: rgba(18, 61, 45, .76); }
-.topbar .main-nav a.active, .topbar .main-nav a:hover { color: #123d2d; }
-.topbar .main-nav a.active::after { background: #123d2d; }
-.topbar .icon-button, .topbar .profile-button { border-color: rgba(18, 61, 45, .28); color: #123d2d; }
-.topbar .cart-button { background: #123d2d; color: #fff; }
-.topbar .cart-button:hover { background: #0c3022; }
-.topbar .cart-button b { background: #e96f4f; }
-@media (max-width: 700px) { .topbar, .topbar:not(.is-scrolled) { background: #ffc244; } .topbar .main-nav a { color: rgba(18, 61, 45, .78); } .topbar .main-nav a.active, .topbar .main-nav a:hover { color: #123d2d; } .topbar .main-nav a.active::after { background: #123d2d; } }
+/* Bright delivery-marketplace header. */
+.topbar, .topbar:not(.is-scrolled) { background: #007c63; box-shadow: 0 5px 18px rgba(0, 83, 65, .2); }
+.topbar .brand { color: #fff; }
+.topbar .brand-mark { background: #ffc400; }
+.topbar .brand-mark::before { border-color: #123d2d; }
+.topbar .brand-mark::after { background: #ffc400; }
+.topbar .main-nav a { color: rgba(255, 255, 255, .82); }
+.topbar .main-nav a.active, .topbar .main-nav a:hover { color: #fff; }
+.topbar .main-nav a.active::after { background: #ffc400; }
+.topbar .icon-button, .topbar .profile-button { border-color: rgba(255, 255, 255, .36); color: #fff; }
+.topbar .cart-button { background: #ffc400; color: #123d2d; }
+.topbar .cart-button:hover { background: #ffd23f; }
+.topbar .cart-button b { background: #006b56; }
+@media (max-width: 700px) { .topbar, .topbar:not(.is-scrolled) { background: #007c63; } .topbar .main-nav a { color: rgba(255, 255, 255, .82); } .topbar .main-nav a.active, .topbar .main-nav a:hover { color: #fff; } .topbar .main-nav a.active::after { background: #ffc400; } }
