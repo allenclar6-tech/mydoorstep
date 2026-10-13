@@ -200,3 +200,18 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .topbar .cart-button:hover { background: #f1f5ef; }
 .topbar .cart-button b { background: #e96f4f; }
 @media (max-width: 700px) { .topbar, .topbar:not(.is-scrolled) { background: linear-gradient(110deg, #007b65, #00a082 58%, #008c72); } }
+
+/* Match the original golden homepage header and hero. */
+.topbar, .topbar:not(.is-scrolled) { background: #ffc244; box-shadow: 0 5px 18px rgba(18, 61, 45, .13); }
+.topbar .brand { color: #123d2d; }
+.topbar .brand-mark { background: #123d2d; }
+.topbar .brand-mark::before { border-color: #fffdf7; }
+.topbar .brand-mark::after { background: #ffc244; }
+.topbar .main-nav a { color: rgba(18, 61, 45, .76); }
+.topbar .main-nav a.active, .topbar .main-nav a:hover { color: #123d2d; }
+.topbar .main-nav a.active::after { background: #123d2d; }
+.topbar .icon-button, .topbar .profile-button { border-color: rgba(18, 61, 45, .28); color: #123d2d; }
+.topbar .cart-button { background: #123d2d; color: #fff; }
+.topbar .cart-button:hover { background: #0c3022; }
+.topbar .cart-button b { background: #e96f4f; }
+@media (max-width: 700px) { .topbar, .topbar:not(.is-scrolled) { background: #ffc244; } .topbar .main-nav a { color: rgba(18, 61, 45, .78); } .topbar .main-nav a.active, .topbar .main-nav a:hover { color: #123d2d; } .topbar .main-nav a.active::after { background: #123d2d; } }
