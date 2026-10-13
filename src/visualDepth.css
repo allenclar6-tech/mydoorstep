@@ -250,3 +250,11 @@ h1 { font-weight: 800; letter-spacing: -4px; }
   border-color: rgba(255, 194, 68, .58);
   color: #ffc244;
 }
+@media (max-width: 700px) {
+  .topbar .top-actions .cart-button {
+    width: 40px;
+    min-width: 40px;
+    max-width: 40px;
+    flex: 0 0 40px;
+  }
+}
