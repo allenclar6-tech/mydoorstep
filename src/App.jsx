@@ -7,6 +7,7 @@ import { RestaurantPortal } from './portalPages'
 import { RiderPortal } from './riderPages'
 import { AdminLogin, AdminPortal } from './adminPages'
 import { ForgotPasswordPage } from './accountPages'
+import { ProfileAvatar } from './ProfileAvatar'
 
 const currentPath = () => window.location.pathname.replace(/\/$/, '') || '/'
 
@@ -172,24 +173,6 @@ function App() {
   }, [path])
 
   useEffect(() => {
-    if (path !== '/account/profile') return
-    const input = document.querySelector('.profile-photo-picker input[type="file"]')
-    if (!input || input.dataset.uploadBound) return
-    input.dataset.uploadBound = 'true'
-    input.addEventListener('change', async (event) => {
-      const file = event.target.files?.[0]
-      const token = localStorage.getItem('doorstep-token')
-      if (!file || !token) return
-      const data = new FormData(); data.append('document', file)
-      const upload = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/uploads/private-document`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: data })
-      const stored = await upload.json()
-      if (!upload.ok) return window.alert(stored.error || 'Could not upload profile picture.')
-      await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/profile/photo`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ storageKey: stored.storageKey }) })
-      window.alert('Profile picture saved.')
-    })
-  }, [path])
-
-  useEffect(() => {
     if (path !== '/login') return
     const form = document.querySelector('.auth-form')
     if (!form || form.querySelector('.forgot-password-link')) return
@@ -229,7 +212,7 @@ function App() {
   }
 
   const isSignedIn = Boolean(localStorage.getItem('doorstep-token'))
-  const accountControl = <div className="account-menu" ref={accountMenuRef}><button className="profile-button" onClick={() => setAccountMenuOpen((open) => !open)} aria-label={isSignedIn ? 'Open My Account' : 'Open sign-in options'} aria-expanded={accountMenuOpen}><UserCircle size={19} /><span>My Account</span></button>{accountMenuOpen && <div className="account-menu-popover" role="menu">{isSignedIn ? <><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/account')}>My Account</button><button type="button" role="menuitem" onClick={signOut}>Sign out</button></> : <><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/login')}>Log in</button><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/register')}>Sign up</button></>}</div>}</div>
+  const accountControl = <div className="account-menu" ref={accountMenuRef}><button className="profile-button" onClick={() => setAccountMenuOpen((open) => !open)} aria-label={isSignedIn ? 'Open My Account' : 'Open sign-in options'} aria-expanded={accountMenuOpen}>{isSignedIn ? <ProfileAvatar size={19} /> : <UserCircle size={19} />}<span>My Account</span></button>{accountMenuOpen && <div className="account-menu-popover" role="menu">{isSignedIn ? <><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/account')}>My Account</button><button type="button" role="menuitem" onClick={signOut}>Sign out</button></> : <><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/login')}>Log in</button><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/register')}>Sign up</button></>}</div>}</div>
 
   const filteredRestaurants = useMemo(() => restaurants.filter((restaurant) => {
     const matchesCategory = activeCategory === 'All food' || restaurant.category === activeCategory
