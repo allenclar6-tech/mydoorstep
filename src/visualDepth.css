@@ -230,12 +230,16 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 /* Keep the compact header cart control focused on the bag, not a button frame. */
 .topbar .cart-button,
 .topbar .cart-button:hover {
+  width: 40px;
   min-height: 40px;
-  padding: 7px;
-  background: transparent;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+  background: #123d2d;
   box-shadow: none;
   transform: none;
 }
-.topbar .cart-button { color: #123d2d; }
-.topbar.is-scrolled .cart-button { color: #fff; }
+.topbar .cart-button { color: #ffc244; }
+.topbar .cart-button > span { display: none; }
+.topbar.is-scrolled .cart-button { background: #ffc244; color: #123d2d; }
 .topbar .cart-button b { box-shadow: 0 0 0 2px currentColor; }
