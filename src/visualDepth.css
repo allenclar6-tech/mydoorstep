@@ -231,10 +231,13 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .topbar .cart-button,
 .topbar .cart-button:hover {
   width: 40px;
+  height: 40px;
   min-height: 40px;
+  flex: 0 0 40px;
+  gap: 0;
   padding: 0;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 999px;
   background: #123d2d;
   box-shadow: none;
   transform: none;
