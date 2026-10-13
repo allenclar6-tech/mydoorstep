@@ -226,3 +226,16 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .topbar.is-scrolled .icon-button,
 .topbar.is-scrolled .profile-button { border-color: rgba(255, 255, 255, .35); color: #fff; }
 .topbar.is-scrolled .cart-button { background: #fff; color: #123d2d; }
+
+/* Keep the compact header cart control focused on the bag, not a button frame. */
+.topbar .cart-button,
+.topbar .cart-button:hover {
+  min-height: 40px;
+  padding: 7px;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+.topbar .cart-button { color: #123d2d; }
+.topbar.is-scrolled .cart-button { color: #fff; }
+.topbar .cart-button b { box-shadow: 0 0 0 2px currentColor; }
