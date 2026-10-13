@@ -225,6 +225,7 @@ const verificationErrorMessage = (code) => ({
   SMS_VERIFICATION_UNAVAILABLE: 'Our SMS service is temporarily unavailable. Please choose email verification or try again shortly.',
   VERIFICATION_SERVICE_UNAVAILABLE: 'Our email service is temporarily unavailable. Please try again shortly.',
   INVALID_VERIFICATION_REQUEST: 'Enter a valid email address or E.164 mobile number and try again.',
+  VERIFICATION_REQUEST_RATE_LIMITED: 'Too many verification requests have been made. Please wait a few minutes before trying again.',
   RATE_LIMITED: 'Too many verification requests have been made. Please wait a few minutes before trying again.',
 }[code] || 'We could not send a verification email. Please try again.')
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' })

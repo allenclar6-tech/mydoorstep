@@ -19,7 +19,17 @@ import { buildAiReply } from './aiBrain.js'
 const app = express()
 const port = Number(process.env.API_PORT || 4000)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } })
-const authFlowLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false })
+const authFlowLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (request, response) => {
+    const error = request.path === '/api/auth/verification/request' ? 'VERIFICATION_REQUEST_RATE_LIMITED' : 'AUTH_RATE_LIMITED'
+    console.warn('[auth] rate_limited', JSON.stringify({ endpoint: request.path, error }))
+    return response.status(429).json({ error })
+  },
+})
 const publicTrackingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false })
 const onboardingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false })
 const trustedDeployedWebOrigins = new Set([
@@ -183,7 +193,10 @@ async function storeApplicationDocuments(files) {
 
 app.post('/api/auth/verification/request', authFlowLimiter, async (request, response) => {
   const result = verificationRequestSchema.safeParse(request.body)
-  if (!result.success) return response.status(400).json({ error: 'INVALID_VERIFICATION_REQUEST' })
+  if (!result.success) {
+    console.warn('[verification] request_rejected', JSON.stringify({ error: 'INVALID_VERIFICATION_REQUEST' }))
+    return response.status(400).json({ error: 'INVALID_VERIFICATION_REQUEST' })
+  }
   try {
     return response.status(201).json(await issueVerificationCode(result.data))
   } catch (error) {
