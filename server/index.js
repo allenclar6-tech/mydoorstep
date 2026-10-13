@@ -381,18 +381,20 @@ app.post('/api/profile/photo', requireUser, async (request, response) => {
   if (!result.success) return response.status(400).json({ error: 'INVALID_PROFILE_PHOTO' })
   if (!result.data.storageKey.startsWith(`private/users/${request.user.id}/`)) return response.status(403).json({ error: 'PROFILE_PHOTO_OWNERSHIP_REQUIRED' })
   try {
-    const photo = await readPrivateDocument(result.data.storageKey)
-    const user = await prisma.user.update({ where: { id: request.user.id }, data: { profileImageKey: result.data.storageKey, profileImageData: photo.buffer, profileImageMimeType: photo.mimeType } })
+    await readPrivateDocument(result.data.storageKey)
+    const user = await prisma.user.update({ where: { id: request.user.id }, data: { profileImageKey: result.data.storageKey } })
     return response.json({ user: publicUser(user) })
   } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'PROFILE_SERVICE_UNAVAILABLE' }) }
 })
 app.get('/api/profile/photo', requireUser, async (request, response) => {
-  if (!request.user.profileImageData || !request.user.profileImageMimeType) return response.status(404).json({ error: 'PROFILE_PHOTO_NOT_FOUND' })
+  if (!request.user.profileImageKey) return response.status(404).json({ error: 'PROFILE_PHOTO_NOT_FOUND' })
   try {
-    response.set('Content-Type', request.user.profileImageMimeType)
+    if (!request.user.profileImageKey.startsWith(`private/users/${request.user.id}/`)) return response.status(403).json({ error: 'PROFILE_PHOTO_OWNERSHIP_REQUIRED' })
+    const photo = await readPrivateDocument(request.user.profileImageKey)
+    response.set('Content-Type', photo.mimeType)
     response.set('Cache-Control', 'private, max-age=300')
-    return response.send(request.user.profileImageData)
-  } catch { return response.status(503).json({ error: 'PROFILE_PHOTO_UNAVAILABLE' }) }
+    return response.send(photo.buffer)
+  } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'PROFILE_PHOTO_UNAVAILABLE' }) }
 })
 
 app.get('/api/favorites', requireUser, async (request, response) => { try { return response.json({ favorites: await prisma.favorite.findMany({ where: { userId: request.user.id }, include: { restaurant: true, menuItem: true } }) }) } catch { return response.status(503).json({ error: 'FAVORITES_SERVICE_UNAVAILABLE' }) } })

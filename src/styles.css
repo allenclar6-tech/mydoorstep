@@ -552,6 +552,7 @@ footer .brand { color: white; }
 }
 
 .profile-photo-picker .profile-icon { align-items: center; background: #d8e7d9 center / cover no-repeat; border-radius: 50%; color: var(--green); display: flex; height: 64px; justify-content: center; overflow: hidden; width: 64px; }
+.profile-photo-picker .profile-icon img { height: 100%; object-fit: cover; width: 100%; }
 
 /* Public home hero */
 .hero-section { background: linear-gradient(105deg, #17352d 0%, #21463a 56%, #edf3e8 56%); max-width: none; min-height: 530px; padding: 58px max(5.6vw, calc((100vw - 1340px) / 2 + 5.6vw)) 54px; }
