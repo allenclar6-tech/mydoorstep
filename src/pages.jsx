@@ -99,8 +99,15 @@ function OnboardingCustomerRegistration() {
     const destination = values.channel === 'phone' ? values.phone : values.email
     setDestination(destination)
     try {
-      const response = await fetch(`${apiBase}/api/auth/verification/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destination, channel: values.channel }) })
-      const body = await response.json().catch(() => ({}))
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 20_000)
+    let response
+    try {
+      response = await fetch(`${apiBase}/api/auth/verification/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destination, channel: values.channel }), signal: controller.signal })
+    } finally {
+      clearTimeout(timeout)
+    }
+    const body = await response.json().catch(() => ({}))
       if (!response.ok) {
         const messages = {
           EMAIL_VERIFICATION_NOT_CONFIGURED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
@@ -118,7 +125,7 @@ function OnboardingCustomerRegistration() {
       setChallenge(body)
       setStep(1)
     } catch (requestError) {
-      setError(requestError instanceof TypeError ? 'We could not reach the verification service. Check your connection and try again.' : requestError.message)
+      setError(requestError?.name === 'AbortError' ? 'Verification is taking longer than expected. Please try again.' : requestError instanceof TypeError ? 'We could not reach the verification service. Check your connection and try again.' : requestError.message)
     } finally { setBusy(false) }
   }
   const verifyAndRegister = async (event) => {

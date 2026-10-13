@@ -3,6 +3,7 @@ import { prisma } from './prisma.js'
 
 const ttlMs = 10 * 60 * 1000
 const maxAttempts = 5
+const providerRequestTimeoutMs = 15_000
 const resendEmailUrl = 'https://api.resend.com/emails'
 const hashCode = (code) => createHash('sha256').update(code).digest('hex')
 
@@ -22,6 +23,7 @@ async function deliverEmailCode(destination, code) {
   try {
     providerResponse = await fetch(resendEmailUrl, {
       method: 'POST',
+      signal: AbortSignal.timeout(providerRequestTimeoutMs),
       headers: {
         Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
         'Content-Type': 'application/json',
@@ -55,6 +57,7 @@ async function deliverSmsCode(destination, code) {
   try {
     providerResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountId}/Messages.json`, {
       method: 'POST',
+      signal: AbortSignal.timeout(providerRequestTimeoutMs),
       headers: {
         Authorization: `Basic ${authorization}`,
         'Content-Type': 'application/x-www-form-urlencoded',
