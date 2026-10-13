@@ -26,6 +26,7 @@
 
 - `POST /api/partner-applications`
 - `POST /api/partner-applications/multipart` — validated restaurant application with private documents
+- `POST /api/grocery-applications/multipart` — validated grocery owner application; creates a pending `GROCERY` store and private review documents
 - `POST /api/rider-applications`
 - `POST /api/rider-applications/multipart` — validated rider application with private documents
 - `GET /api/admin/applications/:type`

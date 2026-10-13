@@ -99,6 +99,12 @@ test('multipart partner applications require private verification documents', as
   assert.equal(response.body.error, 'INVALID_PARTNER_APPLICATION')
 })
 
+test('grocery owner applications validate their store details before persistence', async () => {
+  const response = await request(app).post('/api/grocery-applications/multipart').field('groceryName', 'Test Grocer')
+  assert.equal(response.status, 400)
+  assert.equal(response.body.error, 'INVALID_GROCERY_APPLICATION')
+})
+
 test('public support AI returns a grounded marketplace response', async () => {
   const response = await request(app).post('/api/support/ai').send({ message: 'Where can I get suya?' })
   assert.equal(response.status, 200)

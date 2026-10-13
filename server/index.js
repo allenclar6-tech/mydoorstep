@@ -180,6 +180,7 @@ const customerRegistrationSchema = credentialsSchema.extend({
 const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional() })
 const privateDocumentSchema = z.object({ type: z.string().min(2).max(80), storageKey: z.string().startsWith('private/applications/').max(500) })
 const partnerApplicationSchema = z.object({ restaurantName: z.string().min(2).max(120), businessType: z.string().min(2).max(60), registrationNumber: z.string().min(2).max(100), businessPhone: z.string().min(7).max(30), businessEmail: z.string().email(), address: z.string().min(5).max(240), cityName: z.string().default('Sapele'), ownerName: z.string().min(2).max(120), ownerIdentityType: z.string().min(2).max(60), ownerIdentityNumber: z.string().min(3).max(120), password: z.string().min(8), documents: z.array(privateDocumentSchema).min(2).max(5) })
+const groceryApplicationSchema = partnerApplicationSchema.extend({ groceryName: z.string().min(2).max(120), businessType: z.enum(['supermarket', 'mini_market', 'produce_market', 'pharmacy', 'specialty_store']) })
 const riderApplicationSchema = z.object({ firstName: z.string().min(1).max(80), lastName: z.string().min(1).max(80), email: z.string().email(), phone: z.string().min(7).max(30), address: z.string().min(5).max(240), identityType: z.string().min(2).max(60), identityNumber: z.string().min(3).max(120), vehicleType: z.string().min(2).max(50), vehicleRegistration: z.string().min(2).max(100), emergencyName: z.string().min(2).max(120), emergencyPhone: z.string().min(7).max(30), password: z.string().min(8), documents: z.array(privateDocumentSchema).min(2).max(5) })
 const verificationRequestSchema = z.object({ destination: z.string().min(6), channel: z.enum(['email', 'phone']) }).superRefine(({ destination, channel }, context) => {
   if (channel === 'phone' && !/^\+[1-9]\d{7,14}$/.test(destination)) context.addIssue({ code: 'custom', path: ['destination'], message: 'Phone verification requires an E.164 phone number.' })
@@ -271,6 +272,29 @@ app.post('/api/partner-applications/multipart', onboardingLimiter, upload.array(
   } catch (error) {
     if (error.code === 'P2002') return response.status(409).json({ error: 'PARTNER_ACCOUNT_ALREADY_EXISTS' })
     return response.status(error.status || 503).json({ error: error.code || 'PARTNER_APPLICATION_UNAVAILABLE' })
+  }
+})
+
+app.post('/api/grocery-applications/multipart', onboardingLimiter, upload.array('documents', 5), async (request, response) => {
+  try {
+    const fields = groceryApplicationSchema.omit({ documents: true }).safeParse(request.body)
+    if (!fields.success) return response.status(400).json({ error: 'INVALID_GROCERY_APPLICATION', details: fields.error.flatten() })
+    const documents = await storeApplicationDocuments(request.files)
+    const data = { ...fields.data, documents }
+    const city = await prisma.city.findFirst({ where: { name: data.cityName } })
+    if (!city) return response.status(400).json({ error: 'CITY_NOT_SUPPORTED' })
+    const slug = `${data.groceryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${randomUUID().slice(0, 6)}`
+    const created = await prisma.$transaction(async (transaction) => {
+      const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, role: 'RESTAURANT' } })
+      const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${data.businessType.replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: grocery.id } })
+      return { groceryId: grocery.id, status: 'PENDING_APPROVAL' }
+    })
+    console.info('[grocery-application] submitted', JSON.stringify({ groceryId: created.groceryId }))
+    return response.status(201).json(created)
+  } catch (error) {
+    if (error.code === 'P2002') return response.status(409).json({ error: 'GROCERY_OWNER_ACCOUNT_ALREADY_EXISTS' })
+    return response.status(error.status || 503).json({ error: error.code || 'GROCERY_APPLICATION_UNAVAILABLE' })
   }
 })
 
