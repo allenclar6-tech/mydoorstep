@@ -28,6 +28,7 @@
     "express-rate-limit": "latest",
     "helmet": "latest",
     "lucide-react": "latest",
+    "mapbox-gl": "^3.33.0",
     "multer": "latest",
     "react": "latest",
     "react-dom": "latest",
