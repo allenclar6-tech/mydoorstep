@@ -8,6 +8,7 @@ import './profileModern.css'
 import './profileDetails.css'
 import './authModern.css'
 import './logoCreative.css'
+import './visualDepth.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

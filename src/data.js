@@ -1,10 +1,16 @@
 export const categories = [
-  { name: 'All food', icon: '✦' },
-  { name: 'Jollof & rice', icon: '🍚' },
-  { name: 'Swallow', icon: '🥣' },
-  { name: 'Grills', icon: '🍗' },
-  { name: 'Breakfast', icon: '🍳' },
-  { name: 'Drinks', icon: '🥤' },
+  { name: 'All food', icon: '✦', image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=900&q=90' },
+  { name: 'Jollof & rice', icon: '🍚', image: 'https://images.unsplash.com/photo-1665556899022-9761f95769e5?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Swallow', icon: '🥣', image: 'https://images.unsplash.com/photo-1763048443535-1243379234e2?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Grills', icon: '🍗', image: 'https://images.unsplash.com/photo-1777502286534-5479ccaacfd7?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Breakfast', icon: '🍳', image: 'https://images.unsplash.com/photo-1504382262782-5b4ece78642b?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Drinks', icon: '🥤', image: 'https://images.unsplash.com/photo-1761864293808-dfb96001c534?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Dessert', icon: '🍰', image: 'https://images.unsplash.com/photo-1660470618507-8881abe22acc?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Cake', icon: '🎂', image: 'https://images.unsplash.com/photo-1564844536308-75c540dbf14e?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Ice cream', icon: '🍨', image: 'https://images.unsplash.com/photo-1779119388561-d1201b7147f2?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Snacks', icon: '🥨', image: 'https://images.unsplash.com/photo-1749281592570-2f743d7d2824?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Pizza', icon: '🍕', image: 'https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?auto=format&fit=crop&w=1200&q=90' },
+  { name: 'Groceries', icon: '🛒', image: 'https://images.unsplash.com/photo-1765480953875-a7338f896e91?auto=format&fit=crop&w=1200&q=90' },
 ]
 
 export const sapeleLocations = [
@@ -75,6 +81,48 @@ export const restaurants = [
     items: [
       { id: 'fire-1', name: 'Beef suya box', description: 'Smoky skewers, onions, tomatoes and yaji spice.', price: 5000, image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=700&q=85', tag: 'Hot right now' },
       { id: 'fire-2', name: 'Charcoal chicken wings', description: 'Eight sticky, smoky wings with pepper sauce.', price: 4800, image: 'https://images.unsplash.com/photo-1527477396000-e27163b481c2?auto=format&fit=crop&w=700&q=85', tag: '' },
+    ],
+  },
+  { id: 'restaurant-sunrise', name: 'Sunrise Breakfast Bar', cuisine: 'Eggs · Plantain · Morning favourites', rating: '4.7', time: '20–30 min', fee: '₦650 delivery', category: 'Breakfast', image: 'https://images.unsplash.com/photo-1504382262782-5b4ece78642b?auto=format&fit=crop&w=1000&q=90', accent: 'gold', items: [{ id: 'sunrise-1', name: 'Eggs and plantain', description: 'Fresh eggs, sweet plantain, and a warm morning side.', price: 2800, image: 'https://images.unsplash.com/photo-1504382262782-5b4ece78642b?auto=format&fit=crop&w=700&q=90', tag: 'Morning pick' }, { id: 'sunrise-2', name: 'Breakfast toast set', description: 'Eggs, toast, and a fresh juice.', price: 3200, image: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=700&q=90', tag: '' }] },
+  { id: 'restaurant-sip', name: 'Sapele Sip Bar', cuisine: 'Fresh drinks · Smoothies · Refreshers', rating: '4.6', time: '15–25 min', fee: '₦600 delivery', category: 'Drinks', image: 'https://images.unsplash.com/photo-1761864293808-dfb96001c534?auto=format&fit=crop&w=1000&q=90', accent: 'leaf', items: [{ id: 'sip-1', name: 'Tropical fruit cooler', description: 'A bright chilled fruit drink for warm days.', price: 1800, image: 'https://images.unsplash.com/photo-1761864293808-dfb96001c534?auto=format&fit=crop&w=700&q=90', tag: 'Cold favourite' }, { id: 'sip-2', name: 'Fresh smoothie', description: 'Blended fruit smoothie made to order.', price: 2400, image: 'https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&fit=crop&w=700&q=90', tag: '' }] },
+  { id: 'restaurant-sweet-spoon', name: 'Sweet Spoon Desserts', cuisine: 'Desserts · Sweet treats · Pancakes', rating: '4.8', time: '20–30 min', fee: '₦700 delivery', category: 'Dessert', image: 'https://images.unsplash.com/photo-1660470618507-8881abe22acc?auto=format&fit=crop&w=1000&q=90', accent: 'coral', items: [{ id: 'sweet-1', name: 'Soufflé pancake dessert', description: 'A soft, sweet dessert finished with fruit.', price: 3200, image: 'https://images.unsplash.com/photo-1660470618507-8881abe22acc?auto=format&fit=crop&w=700&q=90', tag: 'Sweet pick' }, { id: 'sweet-2', name: 'Chocolate dessert cup', description: 'Rich chocolate layers with a creamy finish.', price: 2800, image: 'https://images.unsplash.com/photo-1565958011703-44f9829ba187?auto=format&fit=crop&w=700&q=90', tag: '' }] },
+  { id: 'restaurant-celebration-cakes', name: 'Celebration Cakes', cuisine: 'Cakes · Birthdays · Fresh bakes', rating: '4.8', time: '30–45 min', fee: '₦800 delivery', category: 'Cake', image: 'https://images.unsplash.com/photo-1564844536308-75c540dbf14e?auto=format&fit=crop&w=1000&q=90', accent: 'coral', items: [{ id: 'cake-1', name: 'Chocolate cake slice', description: 'A rich fresh-baked chocolate cake slice.', price: 2500, image: 'https://images.unsplash.com/photo-1564844536308-75c540dbf14e?auto=format&fit=crop&w=700&q=90', tag: 'Best seller' }, { id: 'cake-2', name: 'Celebration cake', description: 'A shareable cake for special moments.', price: 18500, image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=700&q=90', tag: 'Pre-order' }] },
+  { id: 'restaurant-cool-scoop', name: 'Cool Scoop', cuisine: 'Ice cream · Cones · Cold treats', rating: '4.7', time: '15–25 min', fee: '₦600 delivery', category: 'Ice cream', image: 'https://images.unsplash.com/photo-1779119388561-d1201b7147f2?auto=format&fit=crop&w=1000&q=90', accent: 'leaf', items: [{ id: 'scoop-1', name: 'Double scoop cone', description: 'Two creamy scoops in a crisp waffle cone.', price: 2200, image: 'https://images.unsplash.com/photo-1779119388561-d1201b7147f2?auto=format&fit=crop&w=700&q=90', tag: 'Cold favourite' }, { id: 'scoop-2', name: 'Ice cream cup', description: 'A chilled cup with your choice of flavour.', price: 1800, image: 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=700&q=90', tag: '' }] },
+  { id: 'restaurant-bite-box', name: 'Bite Box', cuisine: 'Snacks · Quick bites · Sharing boxes', rating: '4.6', time: '15–25 min', fee: '₦600 delivery', category: 'Snacks', image: 'https://images.unsplash.com/photo-1749281592570-2f743d7d2824?auto=format&fit=crop&w=1000&q=90', accent: 'gold', items: [{ id: 'bite-1', name: 'Crunchy snack bowl', description: 'A generous serving of crispy savoury snacks.', price: 1800, image: 'https://images.unsplash.com/photo-1749281592570-2f743d7d2824?auto=format&fit=crop&w=700&q=90', tag: 'Quick bite' }, { id: 'bite-2', name: 'Small chops box', description: 'A mix of bite-sized party favourites.', price: 3500, image: 'https://images.unsplash.com/photo-1599490659213-e2b9527bd087?auto=format&fit=crop&w=700&q=90', tag: '' }] },
+  { id: 'restaurant-pizza-corner', name: 'Pizza Corner Sapele', cuisine: 'Pizza · Slices · Sharing favourites', rating: '4.8', time: '25–40 min', fee: '₦800 delivery', category: 'Pizza', image: 'https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?auto=format&fit=crop&w=1000&q=90', accent: 'coral', items: [{ id: 'pizza-1', name: 'Pepperoni pizza', description: 'Oven-baked pizza with a crisp golden base.', price: 6500, image: 'https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?auto=format&fit=crop&w=700&q=90', tag: 'Popular' }, { id: 'pizza-2', name: 'Margherita pizza', description: 'Tomato, cheese, and fresh herb pizza.', price: 5400, image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=700&q=90', tag: '' }] },
+]
+
+export const groceryStores = [
+  {
+    id: 'grocery-fresh-market',
+    name: 'Fresh Market Sapele',
+    cuisine: 'Fresh produce · Pantry essentials',
+    rating: '4.8',
+    time: '20–35 min',
+    fee: '₦700 delivery',
+    category: 'Groceries',
+    image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1000&q=85',
+    accent: 'leaf',
+    items: [
+      { id: 'fresh-tomatoes', name: 'Fresh tomatoes', description: 'A basket of ripe, locally sourced tomatoes for everyday cooking.', price: 1800, image: 'https://images.unsplash.com/photo-1546470427-e212b4e50a90?auto=format&fit=crop&w=700&q=85', tag: 'Fresh today' },
+      { id: 'fresh-plantain', name: 'Ripe plantain', description: 'Sweet ripe plantain, selected and packed for you.', price: 1500, image: 'https://images.unsplash.com/photo-1605027990121-cbae9c58df04?auto=format&fit=crop&w=700&q=85', tag: 'Local pick' },
+      { id: 'fresh-eggs', name: 'Farm eggs', description: 'A tray of fresh eggs for breakfast, baking, and more.', price: 3200, image: 'https://images.unsplash.com/photo-1506976785307-8732e854ad03?auto=format&fit=crop&w=700&q=85', tag: 'Everyday essential' },
+    ],
+  },
+  {
+    id: 'grocery-home-basket',
+    name: 'Home Basket',
+    cuisine: 'Household · Drinks · Everyday value',
+    rating: '4.7',
+    time: '25–40 min',
+    fee: '₦800 delivery',
+    category: 'Groceries',
+    image: 'https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=1000&q=85',
+    accent: 'gold',
+    items: [
+      { id: 'basket-rice', name: 'Rice, 5 kg', description: 'Reliable long-grain rice for family meals and meal prep.', price: 9800, image: 'https://images.unsplash.com/photo-1586208958839-06c17cacdf08?auto=format&fit=crop&w=700&q=85', tag: 'Pantry staple' },
+      { id: 'basket-water', name: 'Table water, 12 pack', description: 'Convenient bottled table water for home and guests.', price: 2400, image: 'https://images.unsplash.com/photo-1564419320461-6870880221ad?auto=format&fit=crop&w=700&q=85', tag: 'Value pack' },
+      { id: 'basket-detergent', name: 'Laundry detergent', description: 'Everyday laundry care for clean, fresh clothes.', price: 2800, image: 'https://images.unsplash.com/photo-1585421514738-01798e348b17?auto=format&fit=crop&w=700&q=85', tag: 'Home care' },
     ],
   },
 ]

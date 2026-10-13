@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Bell, Bot, Camera, Check, ChevronDown, Clock3, Compass, Heart, LogOut, MapPin, Menu, MessageCircle, Minus, Plus, Search, ShoppingBag, Sparkles, Star, UserCircle, X } from 'lucide-react'
-import { categories, formatNaira, restaurants, sapeleLocations } from './data'
+import { categories, formatNaira, groceryStores, restaurants, sapeleLocations } from './data'
 import { loadCart, saveCart } from './services/orderService'
 import { RoutePage } from './pages'
 import { RestaurantPortal } from './portalPages'
@@ -50,7 +50,9 @@ function App() {
   const [search, setSearch] = useState('')
   const [selectedRestaurant, setSelectedRestaurant] = useState(restaurants[0])
   const [restaurantSlide, setRestaurantSlide] = useState(0)
+  const [heroSlide, setHeroSlide] = useState(0)
   const restaurantRailRef = useRef(null)
+  const accountMenuRef = useRef(null)
   const [cart, setCart] = useState(() => loadCart())
   const [cartOpen, setCartOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -61,12 +63,36 @@ function App() {
   const [deliveryLocation, setDeliveryLocation] = useState(() => localStorage.getItem('doorstep-location') || 'Amukpe, Sapele')
   const [locationOpen, setLocationOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [hasScrolled, setHasScrolled] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
 
   useEffect(() => {
     const onPopState = () => setPath(currentPath())
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   })
+
+  useEffect(() => {
+    const updateHeaderScrollState = () => setHasScrolled(window.scrollY > 8)
+    updateHeaderScrollState()
+    window.addEventListener('scroll', updateHeaderScrollState, { passive: true })
+    return () => window.removeEventListener('scroll', updateHeaderScrollState)
+  }, [])
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined
+    const rotation = window.setInterval(() => setHeroSlide((current) => (current + 1) % 4), 4000)
+    return () => window.clearInterval(rotation)
+  }, [])
+
+  useEffect(() => {
+    if (!accountMenuOpen) return undefined
+    const closeAccountMenu = (event) => {
+      if (!accountMenuRef.current?.contains(event.target)) setAccountMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeAccountMenu)
+    return () => document.removeEventListener('pointerdown', closeAccountMenu)
+  }, [accountMenuOpen])
 
   useEffect(() => {
     const onMarketplaceAction = (event) => {
@@ -109,7 +135,7 @@ function App() {
       menus.slice(1).forEach((menu) => menu.remove())
       const existing = actions.querySelector('.header-signout')
       const token = localStorage.getItem('doorstep-token')
-      if (token && !existing) {
+      if (token && !existing && !actions.querySelector('.profile-button')) {
         const wrapper = document.createElement('span')
         wrapper.className = 'header-signout-menu'
         const button = document.createElement('button')
@@ -125,12 +151,12 @@ function App() {
         confirm.onclick = async () => { await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => undefined); localStorage.removeItem('doorstep-token'); window.location.assign('/') }
         wrapper.append(button, confirm)
         actions.insertBefore(wrapper, actions.querySelector('.cart-button'))
-      } else if (!token && existing) existing.remove()
+      } else if (existing) existing.closest('.header-signout-menu')?.remove()
     })
     const token = localStorage.getItem('doorstep-token')
     if (token) fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => {
       if (!body.user) return
-      document.querySelectorAll('.profile-button').forEach((button) => {
+      document.querySelectorAll('.header-profile-preview').forEach((button) => {
         const initials = `${body.user.firstName?.[0] || ''}${body.user.lastName?.[0] || ''}`.toUpperCase()
         button.innerHTML = `<span class="profile-initials">${initials}</span><span class="profile-name">${body.user.firstName || 'Account'}</span>`
         button.setAttribute('aria-label', `Open ${body.user.firstName || 'account'} profile`)
@@ -189,6 +215,22 @@ function App() {
     }
   }
 
+  const navigateFromAccountMenu = (destination) => {
+    setAccountMenuOpen(false)
+    window.history.pushState({}, '', destination)
+    setPath(destination)
+  }
+
+  const signOut = () => {
+    localStorage.removeItem('doorstep-token')
+    setAccountMenuOpen(false)
+    window.history.pushState({}, '', '/')
+    setPath('/')
+  }
+
+  const isSignedIn = Boolean(localStorage.getItem('doorstep-token'))
+  const accountControl = <div className="account-menu" ref={accountMenuRef}><button className="profile-button" onClick={() => setAccountMenuOpen((open) => !open)} aria-label={isSignedIn ? 'Open My Account' : 'Open sign-in options'} aria-expanded={accountMenuOpen}><UserCircle size={19} /><span>My Account</span></button>{accountMenuOpen && <div className="account-menu-popover" role="menu">{isSignedIn ? <><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/account')}>My Account</button><button type="button" role="menuitem" onClick={signOut}>Sign out</button></> : <><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/login')}>Log in</button><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/register')}>Sign up</button></>}</div>}</div>
+
   const filteredRestaurants = useMemo(() => restaurants.filter((restaurant) => {
     const matchesCategory = activeCategory === 'All food' || restaurant.category === activeCategory
     const query = search.toLowerCase()
@@ -196,8 +238,6 @@ function App() {
   }), [activeCategory, search])
 
   const showRestaurantSlide = (index) => { const nextIndex = (index + filteredRestaurants.length) % Math.max(filteredRestaurants.length, 1); setRestaurantSlide(nextIndex); const restaurant = filteredRestaurants[nextIndex]; if (restaurant) setSelectedRestaurant(restaurant) }
-  useEffect(() => { const rail = document.querySelector('.restaurant-grid'); if (!rail || filteredRestaurants.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined; let paused = false; const move = () => { if (paused) return; const card = rail.querySelector('.restaurant-card'); if (!card) return; const next = rail.scrollLeft + card.getBoundingClientRect().width + 19; rail.scrollTo({ left: next >= rail.scrollWidth - rail.clientWidth - 4 ? 0 : next, behavior: 'smooth' }) }; const pause = () => { paused = true }; const resume = () => { paused = false }; rail.addEventListener('mouseenter', pause); rail.addEventListener('mouseleave', resume); rail.addEventListener('focusin', pause); rail.addEventListener('focusout', resume); const timer = window.setInterval(move, 4200); return () => { window.clearInterval(timer); rail.removeEventListener('mouseenter', pause); rail.removeEventListener('mouseleave', resume); rail.removeEventListener('focusin', pause); rail.removeEventListener('focusout', resume) } }, [filteredRestaurants.length])
-
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0)
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
 
@@ -254,31 +294,33 @@ function App() {
   if (path.startsWith('/admin/')) return <AdminPortal path={path} />
   if (path.startsWith('/account') && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
 
-  if (path !== '/') return <div className="app-shell"><header className="topbar"><a className="brand" href="/" onClick={(event) => goTo(event, '/')} aria-label="DOORSTEP home"><span className="brand-mark"><Sparkles size={17} strokeWidth={2.5} /></span><span>doorstep</span></a><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'}><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/food" onClick={(event) => goTo(event, '/food')}>Food</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a></nav><div className="top-actions"><button className="icon-button notification" aria-label="Notifications"><Bell size={19} /></button>{localStorage.getItem('doorstep-token') ? <button className="profile-button" onClick={(event) => goTo(event, '/account')} aria-label="Open account"><UserCircle size={22} /></button> : <button className="login-button" onClick={(event) => goTo(event, '/login')}>Log in</button>}<button className="cart-button" onClick={() => { window.history.pushState({}, '', '/cart'); setPath('/cart') }}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button></div><button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={22} /></button></header><RoutePage path={path} cart={cart} checkoutError={checkoutError} onAddToCart={(item, restaurant) => { addToCart(item, restaurant); setPath('/cart'); window.history.pushState({}, '', '/cart') }} onChangeQuantity={changeQuantity} onCheckout={() => { window.history.pushState({}, '', '/checkout'); setPath('/checkout') }} onComplete={completeOrder} /><ChatWidget open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} /></div>
+  if (path !== '/') return <div className="app-shell"><header className={hasScrolled ? 'topbar is-scrolled' : 'topbar'}><a className="brand" href="/" onClick={(event) => goTo(event, '/')} aria-label="DOORSTEP home"><span className="brand-mark"><Sparkles size={17} strokeWidth={2.5} /></span><span>doorstep</span></a><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'}><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/groceries" onClick={(event) => goTo(event, '/groceries')}>Groceries</a><a href="/menu" onClick={(event) => goTo(event, '/menu')}>Menu</a><a href="/track-order" onClick={(event) => goTo(event, '/track-order')}>Track order</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a></nav><div className="top-actions"><button className="icon-button notification" aria-label="Notifications"><Bell size={19} /></button>{accountControl}<button className="cart-button" onClick={() => { window.history.pushState({}, '', '/cart'); setPath('/cart') }}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button></div><button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={22} /></button></header><RoutePage path={path} cart={cart} checkoutError={checkoutError} onAddToCart={(item, restaurant) => { addToCart(item, restaurant); setPath('/cart'); window.history.pushState({}, '', '/cart') }} onChangeQuantity={changeQuantity} onCheckout={() => { window.history.pushState({}, '', '/checkout'); setPath('/checkout') }} onComplete={completeOrder} /><ChatWidget open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} /></div>
 
   return (
     <div className="app-shell">
-      <header className="topbar">
+      <header className={hasScrolled ? 'topbar is-scrolled' : 'topbar'}>
         <a className="brand" href="#top" aria-label="DOORSTEP home"><span className="brand-mark"><Sparkles size={17} strokeWidth={2.5} /></span><span>doorstep</span></a>
         <nav className={menuOpen ? 'main-nav is-open' : 'main-nav'}>
-          <a className="active" href="/" onClick={(event) => goTo(event, '/')}>Home</a><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/food" onClick={(event) => goTo(event, '/food')}>Food</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/how-it-works" onClick={(event) => goTo(event, '/how-it-works')}>How it works</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a>
+          <a className="active" href="/" onClick={(event) => goTo(event, '/')}>Home</a><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/groceries" onClick={(event) => goTo(event, '/groceries')}>Groceries</a><a href="/menu" onClick={(event) => goTo(event, '/menu')}>Menu</a><a href="/track-order" onClick={(event) => goTo(event, '/track-order')}>Track order</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/how-it-works" onClick={(event) => goTo(event, '/how-it-works')}>How it works</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a>
         </nav>
-        <div className="top-actions"><button className="icon-button notification" aria-label="Notifications" onClick={(event) => goTo(event, '/account/notifications')}><Bell size={19} /></button>{localStorage.getItem('doorstep-token') ? <button className="profile-button" onClick={(event) => goTo(event, '/account')} aria-label="Open account"><UserCircle size={22} /></button> : <><button className="login-button" onClick={(event) => goTo(event, '/login')}>Log in</button><button className="signup-button" onClick={(event) => goTo(event, '/register')}>Sign up</button></>}<button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button></div>
+        <div className="top-actions"><button className="icon-button notification" aria-label="Notifications" onClick={(event) => goTo(event, '/account/notifications')}><Bell size={19} /></button>{accountControl}<button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button></div>
         <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={22} /></button>
       </header>
       <main id="top">
         <section className="hero-section">
           <div className="hero-copy"><div className="eyebrow"><span className="eyebrow-dot" /> Sapele, Delta State</div><h1>Good food,<br /><em>closer</em> to home.</h1><p>Find the flavours you love from the kitchens that make Sapele special. Delivered warm, right to your doorstep.</p><div className="search-wrap"><Search size={20} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search for food or a restaurant" /><button aria-label="Search"><ArrowRight size={20} /></button></div><div className="location-dropdown-wrap"><button className="delivery-note delivery-location-button" onClick={() => setLocationOpen(!locationOpen)}><MapPin size={16} /><span>Delivering to <strong>{deliveryLocation}</strong></span><ChevronDown size={15} /></button>{locationOpen && <div className="location-dropdown"><button onClick={useCurrentLocation}><MapPin size={16} /><span><strong>Use current device location</strong><small>Allow browser location access</small></span></button><span className="dropdown-label">SAPELE AREAS</span>{sapeleLocations.map((location) => <button key={location} onClick={() => chooseLocation(location)}><MapPin size={14} /><span>{location}</span></button>)}<button className="dropdown-manage" onClick={() => { setLocationOpen(false); window.history.pushState({}, '', '/location'); setPath('/location') }}>Manage saved addresses <ArrowRight size={14} /></button></div>}</div></div>
-          <div className="hero-art"><div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" /><div className="hero-image-wrap"><img src="https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=1200&q=90" alt="A vibrant Nigerian meal in a serving bowl" /><div className="floating-rating"><span className="rating-icon"><Star size={15} fill="currentColor" /></span><div><strong>4.9</strong><small>local favourite</small></div></div></div><div className="hero-sticker"><span>made with</span><strong>♡</strong><span>good energy</span></div></div>
+          <div className="hero-art"><div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" /><div className="hero-image-wrap hero-delivery-montage" aria-label="Food, grocery, and rider delivery display"><img className={heroSlide === 0 ? 'hero-slide hero-slide-food is-active' : 'hero-slide hero-slide-food'} src="https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=1200&q=90" alt="A vibrant Nigerian meal in a serving bowl" /><img className={heroSlide === 1 ? 'hero-slide hero-slide-produce is-active' : 'hero-slide hero-slide-produce'} src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=90" alt="Fresh produce ready for delivery" /><img className={heroSlide === 2 ? 'hero-slide hero-slide-grocery is-active' : 'hero-slide hero-slide-grocery'} src="https://images.unsplash.com/photo-1601598851547-4302969d0614?auto=format&fit=crop&w=1200&q=90" alt="Everyday grocery essentials" /><img className={heroSlide === 3 ? 'hero-slide hero-slide-rider is-active' : 'hero-slide hero-slide-rider'} src="https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=1200&q=90" alt="A rider delivering orders" /><div className="hero-delivery-label"><span /> Food, groceries + riders</div><div className="hero-media-controls"><button type="button" aria-label="Previous hero image" onClick={() => setHeroSlide((current) => (current + 3) % 4)}>←</button><span>{heroSlide + 1} / 4</span><button type="button" aria-label="Next hero image" onClick={() => setHeroSlide((current) => (current + 1) % 4)}>→</button></div><div className="floating-rating"><span className="rating-icon"><Star size={15} fill="currentColor" /></span><div><strong>4.9</strong><small>local favourite</small></div></div></div><div className="hero-sticker"><span>made with</span><strong>♡</strong><span>good energy</span></div></div>
         </section>
 
-        <section className="category-section" id="restaurants"><div className="section-heading"><div><span className="section-kicker">WHAT ARE YOU CRAVING?</span><h2>Take your pick.</h2></div><a className="text-link" href="#all">View all <ArrowRight size={16} /></a></div><div className="category-row">{categories.map((category) => <button key={category.name} className={activeCategory === category.name ? 'category-pill selected' : 'category-pill'} onClick={() => setActiveCategory(category.name)}><span>{category.icon}</span>{category.name}</button>)}</div></section>
+        <section className="category-section" id="restaurants"><div className="section-heading"><div><span className="section-kicker">WHAT ARE YOU CRAVING?</span><h2>Take your pick.</h2></div><a className="text-link" href="#all">View all <ArrowRight size={16} /></a></div><div className="category-row">{categories.map((category) => <button key={category.name} className={activeCategory === category.name ? 'category-pill selected' : 'category-pill'} onClick={() => { const destination = category.name === 'Groceries' ? '/groceries' : `/categories/${category.name.toLowerCase().replaceAll(' ', '-')}`; window.history.pushState({}, '', destination); setPath(destination) }}><img src={category.image} alt="" loading="lazy" /><span className="category-picture-label"><strong>{category.name}</strong></span></button>)}</div></section>
 
         <section className="restaurant-section"><div className="section-heading"><div><span className="section-kicker">NEAR YOU IN SAPELE</span><h2>Worth leaving the house for.</h2></div><div className="carousel-controls"><button aria-label="Previous restaurants">←</button><button aria-label="Next restaurants">→</button></div></div><div className="restaurant-grid">{filteredRestaurants.map((restaurant) => <article className="restaurant-card" key={restaurant.id} onClick={() => setSelectedRestaurant(restaurant)}><div className="restaurant-image"><img src={restaurant.image} alt={restaurant.name} /><button className="favourite" aria-label={`Save ${restaurant.name}`} onClick={(event) => event.stopPropagation()}><Heart size={17} /></button><span className={`open-label ${restaurant.accent}`}>Open now</span></div><div className="restaurant-info"><div className="restaurant-name-row"><h3>{restaurant.name}</h3><span className="rating"><Star size={14} fill="currentColor" />{restaurant.rating}</span></div><p>{restaurant.cuisine}</p><div className="restaurant-meta"><span><Clock3 size={14} />{restaurant.time}</span><span>{restaurant.fee}</span></div></div></article>)}</div>{filteredRestaurants.length === 0 && <div className="empty-state">No kitchens found for that search. Try “jollof” or browse all food.</div>}</section>
 
-        <section className="spotlight-section"><div className="spotlight-photo"><img src={selectedRestaurant.image} alt="" /></div><div className="spotlight-copy"><span className="section-kicker">TODAY'S SPOTLIGHT</span><h2>{selectedRestaurant.name}</h2><p>{selectedRestaurant.cuisine}. Something delicious is already on the way.</p><div className="spotlight-stats"><span><Star size={16} fill="currentColor" /> {selectedRestaurant.rating} rating</span><span><Clock3 size={16} /> {selectedRestaurant.time}</span></div><button className="primary-button" onClick={() => document.getElementById('menu')?.scrollIntoView({ behavior: 'smooth' })}>See the menu <ArrowRight size={17} /></button></div></section>
+        <section className="grocery-showcase"><div className="grocery-showcase-copy"><span className="section-kicker">GROCERIES, DELIVERED</span><h2>Fresh picks for every day.</h2><p>From ripe produce to pantry staples, shop local essentials with the same fast DOORSTEP delivery.</p><button className="primary-button" onClick={() => { window.history.pushState({}, '', '/groceries'); setPath('/groceries') }}>Shop groceries <ArrowRight size={17} /></button></div><div className="grocery-showcase-products">{groceryStores.map((store, index) => <button className={`grocery-store-card grocery-store-card-${index + 1}`} key={store.id} onClick={() => { window.history.pushState({}, '', `/groceries/${store.name.toLowerCase().replaceAll(' ', '-')}`); setPath(`/groceries/${store.name.toLowerCase().replaceAll(' ', '-')}`) }}><img src={store.image} alt={store.name} /><span><strong>{store.name}</strong><small>{store.items.length} essentials ready</small></span></button>)}</div></section>
 
-        <section className="menu-section" id="menu"><div className="section-heading"><div><span className="section-kicker">FROM {selectedRestaurant.name.toUpperCase()}</span><h2>Made for the moment.</h2></div></div><div className="menu-grid">{selectedRestaurant.items.map((item) => <article className="menu-card" key={item.id}><img src={item.image} alt={item.name} /><div className="menu-card-body"><div className="menu-tag">{item.tag || 'Kitchen favourite'}</div><h3>{item.name}</h3><p>{item.description}</p><div className="menu-bottom"><strong>{formatNaira(item.price)}</strong><button className="add-button" onClick={() => { addToCart(item); setCartOpen(true) }}><Plus size={18} /> Add</button></div></div></article>)}</div></section>
+        <section className="spotlight-section"><div className="spotlight-photo"><img src={selectedRestaurant.image} alt="" /></div><div className="spotlight-copy"><span className="section-kicker">TODAY'S SPOTLIGHT</span><h2>{selectedRestaurant.name}</h2><p>{selectedRestaurant.cuisine}. Something delicious is already on the way.</p><div className="spotlight-stats"><span><Star size={16} fill="currentColor" /> {selectedRestaurant.rating} rating</span><span><Clock3 size={16} /> {selectedRestaurant.time}</span></div><button className="primary-button" onClick={() => { const destination = `/restaurants/${selectedRestaurant.name.toLowerCase().replaceAll(' ', '-')}`; window.history.pushState({}, '', destination); setPath(destination) }}>See the menu <ArrowRight size={17} /></button></div></section>
+
+        <section className="logistics-section"><button className="logistics-rider-display" onClick={() => { window.history.pushState({}, '', '/riders'); setPath('/riders') }}><div className="logistics-copy"><span className="section-kicker">DOORSTEP LOGISTICS</span><h2>Need it moved?<br /><em>Riders are ready.</em></h2><p>Meet the delivery partners who help food, groceries, and everyday essentials reach Sapele customers.</p><span className="logistics-link">Explore rider services <ArrowRight size={17} /></span></div><div className="logistics-visual"><div className="logistics-orbit" /><img src="https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=1400&q=90" alt="DOORSTEP logistics rider on delivery" /><div className="logistics-status"><span /> Available in Sapele</div><div className="logistics-badge"><strong>Fast</strong><small>local delivery</small></div></div></button></section>
 
         <section className="trust-section" id="how-it-works"><div><Compass size={27} /><h3>Curated for Sapele</h3><p>Good local kitchens, thoughtfully brought together.</p></div><div><Clock3 size={27} /><h3>On time, every time</h3><p>We keep an eye on every order from pot to porch.</p></div><div><Heart size={27} /><h3>Made for real life</h3><p>Easy ordering for busy days and hungry nights.</p></div></section>
       </main>

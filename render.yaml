@@ -33,12 +33,16 @@ services:
         sync: false
       - key: VERIFICATION_FROM_EMAIL
         sync: false
+      - key: EMAIL_PROVIDER
+        value: resend
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
         sync: false
       - key: TWILIO_FROM_NUMBER
         sync: false
+      - key: SMS_PROVIDER
+        value: twilio
       - key: PRIVATE_UPLOAD_DIR
         value: /tmp/private-uploads
 

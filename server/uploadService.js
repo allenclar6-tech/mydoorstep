@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const allowedTypes = new Map([
@@ -25,6 +25,25 @@ export async function storePrivateDocument({ buffer, mimeType, originalName, key
   await mkdir(path.dirname(absolutePath), { recursive: true })
   await writeFile(absolutePath, buffer, { flag: 'wx', mode: 0o600 })
   return { storageKey: relativeKey, checksum: createHash('sha256').update(buffer).digest('hex'), originalName: path.basename(originalName || safeName), mimeType, size: buffer.length }
+}
+
+export async function readPrivateDocument(storageKey) {
+  if (typeof storageKey !== 'string' || !storageKey.startsWith('private/')) throw uploadError('INVALID_STORAGE_KEY', 'A private storage key is required.', 400)
+
+  const relativePath = storageKey.slice('private/'.length)
+  const absolutePath = path.resolve(privateRoot, relativePath)
+  if (!absolutePath.startsWith(`${privateRoot}${path.sep}`)) throw uploadError('INVALID_STORAGE_KEY', 'The storage key is invalid.', 400)
+
+  const extension = path.extname(absolutePath)
+  const mimeType = [...allowedTypes.entries()].find(([, allowedExtension]) => allowedExtension === extension)?.[0]
+  if (!mimeType) throw uploadError('UNSUPPORTED_DOCUMENT_TYPE', 'The stored document type is unsupported.', 400)
+
+  try {
+    return { buffer: await readFile(absolutePath), mimeType }
+  } catch (error) {
+    if (error?.code === 'ENOENT') throw uploadError('PRIVATE_DOCUMENT_NOT_FOUND', 'The requested document was not found.', 404)
+    throw error
+  }
 }
 
 function hasImageSignature(buffer, mimeType) {

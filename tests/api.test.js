@@ -39,6 +39,17 @@ test('configured public web origins can call the API', async () => {
   }
 })
 
+test('deployed Render storefront can preflight verification requests', async () => {
+  const response = await request(app)
+    .options('/api/auth/verification/request')
+    .set('Origin', 'https://mydoorstep-web.onrender.com')
+    .set('Access-Control-Request-Method', 'POST')
+    .set('Access-Control-Request-Headers', 'content-type')
+  assert.equal(response.status, 204)
+  assert.equal(response.headers['access-control-allow-origin'], 'https://mydoorstep-web.onrender.com')
+  assert.match(response.headers['access-control-allow-methods'], /POST/)
+})
+
 test('malformed JSON receives a stable JSON error response', async () => {
   const response = await request(app).post('/api/support/ai').set('Content-Type', 'application/json').send('{"message":')
   assert.equal(response.status, 400)
@@ -119,6 +130,8 @@ test('webhook signature verification fails closed for malformed raw bodies', () 
 test('verification failures expose only stable, safe provider states', () => {
   assert.deepEqual(verificationFailure({ code: 'EMAIL_VERIFICATION_NOT_CONFIGURED', status: 503 }), { code: 'EMAIL_VERIFICATION_NOT_CONFIGURED', status: 503 })
   assert.deepEqual(verificationFailure({ code: 'EMAIL_VERIFICATION_RATE_LIMITED', status: 429 }), { code: 'EMAIL_VERIFICATION_RATE_LIMITED', status: 429 })
+  assert.deepEqual(verificationFailure({ code: 'SMS_VERIFICATION_NOT_CONFIGURED', status: 503 }), { code: 'SMS_VERIFICATION_NOT_CONFIGURED', status: 503 })
+  assert.deepEqual(verificationFailure({ code: 'SMS_VERIFICATION_RATE_LIMITED', status: 429 }), { code: 'SMS_VERIFICATION_RATE_LIMITED', status: 429 })
   assert.deepEqual(verificationFailure(new Error('provider response body')), { code: 'VERIFICATION_SERVICE_UNAVAILABLE', status: 503 })
 })
 

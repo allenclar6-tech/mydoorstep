@@ -101,6 +101,10 @@ PRIVATE_UPLOAD_DIR=./private-uploads
 
 Keep all secrets server-side. Never expose private provider keys in the frontend bundle.
 
+### Customer verification email
+
+Customer registration calls `POST /api/auth/verification/request`. Configure `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and `VERIFICATION_FROM_EMAIL` on the API host. `VERIFICATION_FROM_EMAIL` must be a sender verified in Resend. To enable SMS, configure `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and an E.164 `TWILIO_FROM_NUMBER`. In production, configure `WEB_ORIGIN=https://mydoorstep-web.onrender.com` and include every additional HTTPS frontend origin in `WEB_ORIGINS` as a comma-separated list. The deployed API also trusts the current Render and Cloudflare storefront origins so a missing environment value cannot block those known production clients.
+
 ## Domain deployment
 
 The purchased domain plan is documented for `mydoorstep.com.co`:

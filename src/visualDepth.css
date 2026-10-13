@@ -1,0 +1,36 @@
+:root { --depth-shadow: 0 22px 48px rgba(23, 46, 37, .13), 0 5px 14px rgba(23, 46, 37, .07); --depth-shadow-hover: 0 30px 58px rgba(23, 46, 37, .2), 0 10px 22px rgba(23, 46, 37, .1); --glass: rgba(255, 253, 247, .78); }
+body { background: radial-gradient(circle at 8% 4%, rgba(233, 111, 79, .12), transparent 23rem), radial-gradient(circle at 92% 16%, rgba(116, 176, 135, .18), transparent 28rem), var(--paper); }
+body::before { background-image: linear-gradient(rgba(35, 71, 59, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(35, 71, 59, .025) 1px, transparent 1px); background-size: 32px 32px; content: ''; inset: 0; mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .45), transparent 55%); pointer-events: none; position: fixed; z-index: -1; }
+button, a, input, select, textarea { transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease, background-color .2s ease; }
+.topbar { background: rgba(246, 247, 242, .78); box-shadow: 0 8px 28px rgba(32, 57, 45, .05); }
+.brand-mark { box-shadow: 0 8px 18px rgba(233, 111, 79, .35), inset 0 1px 1px rgba(255, 255, 255, .5); }
+.hero-copy, .route-hero { text-shadow: 0 1px 0 rgba(255, 255, 255, .7); }
+.hero-image-wrap { box-shadow: 28px 32px 0 rgba(216, 231, 217, .82), var(--depth-shadow); transform: perspective(1000px) rotateX(2deg) rotateY(-6deg) rotate(4deg); }
+.hero-image-wrap img, .route-restaurant img, .route-menu-item img, .storefront-cover { filter: saturate(1.06) contrast(1.03); }
+.floating-rating, .hero-sticker { box-shadow: var(--depth-shadow); }
+:is(.route-restaurant, .route-menu-item, .category-card, .menu-card, .role-card, .help-topic, .account-dashboard-grid button, .mood-grid button, .recent-order-row, .account-active-order, .profile-completion, .track-result, .portal-panel, .metric-grid > div, .rider-delivery-card, .admin-panel, .admin-stat, .admin-warning, .submitted-card, .application-form, .auth-form, .onboarding-success) { box-shadow: var(--depth-shadow); }
+:is(.route-restaurant, .route-menu-item, .category-card, .menu-card, .role-card, .help-topic, .account-dashboard-grid button, .mood-grid button, .recent-order-row, .account-active-order, .profile-completion, .track-result, .portal-panel, .metric-grid > div, .rider-delivery-card, .admin-panel, .admin-stat, .admin-warning, .submitted-card, .application-form, .auth-form, .onboarding-success) { border-radius: 14px; }
+.auth-form, .application-form, .onboarding-success, .submitted-card { background: linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(255, 253, 247, .86)); }
+.checkout-button, .primary-button, .portal-primary, .admin-primary, .add-button { box-shadow: 0 10px 20px rgba(35, 71, 59, .22), inset 0 1px 1px rgba(255, 255, 255, .3); }
+.checkout-button:active, .primary-button:active, .portal-primary:active, .admin-primary:active, .add-button:active { transform: translateY(1px) scale(.99); }
+.account-profile-card, .profile-account-menu, .partner-cta, .support-note { box-shadow: var(--depth-shadow), inset 0 1px 0 rgba(255, 255, 255, .16); }
+.account-welcome-band { border-radius: 16px; box-shadow: var(--depth-shadow); }
+.account-food-orbit { filter: drop-shadow(0 16px 20px rgba(35, 71, 59, .14)); transform: perspective(700px) rotateY(-8deg); }
+.onboarding-progress li span { box-shadow: 0 4px 9px rgba(35, 71, 59, .18); }
+.portal-sidebar, .admin-sidebar { box-shadow: 16px 0 36px rgba(18, 40, 31, .16); }
+.portal-header, .admin-header { background: var(--glass); backdrop-filter: blur(18px); }
+.portal-main, .admin-main { background: radial-gradient(circle at 100% 0, rgba(216, 231, 217, .7), transparent 25rem); }
+.portal-panel, .metric-grid > div, .rider-delivery-card, .admin-panel, .admin-stat { background: linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(247, 250, 246, .82)); }
+@media (hover: hover) {
+  :is(.route-restaurant, .route-menu-item, .category-card, .menu-card, .role-card, .help-topic, .account-dashboard-grid button, .mood-grid button, .recent-order-row, .portal-panel, .metric-grid > div, .rider-delivery-card, .admin-panel, .admin-stat) { will-change: transform; }
+  :is(.route-restaurant, .route-menu-item, .category-card, .menu-card, .role-card, .help-topic, .account-dashboard-grid button, .mood-grid button, .recent-order-row, .portal-panel, .metric-grid > div, .rider-delivery-card, .admin-panel, .admin-stat):hover { box-shadow: var(--depth-shadow-hover); transform: perspective(900px) translateY(-5px) rotateX(1deg); }
+  .hero-image-wrap:hover { transform: perspective(1000px) rotateX(0) rotateY(-2deg) rotate(2deg) translateY(-4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  .hero-image-wrap, .account-food-orbit { transform: none; }
+}
+@media (max-width: 600px) {
+  .hero-image-wrap { box-shadow: 14px 18px 0 rgba(216, 231, 217, .82), var(--depth-shadow); }
+  :is(.route-restaurant, .route-menu-item, .category-card, .menu-card, .role-card, .help-topic, .account-dashboard-grid button, .mood-grid button, .recent-order-row, .account-active-order, .profile-completion, .track-result, .portal-panel, .metric-grid > div, .rider-delivery-card, .admin-panel, .admin-stat, .admin-warning, .submitted-card, .application-form, .auth-form, .onboarding-success) { border-radius: 10px; }
+}

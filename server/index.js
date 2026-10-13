@@ -22,15 +22,22 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 const authFlowLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false })
 const publicTrackingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false })
 const onboardingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false })
-const configuredWebOrigins = () => ['WEB_ORIGIN', 'WEB_ORIGINS']
-  .flatMap((key) => (process.env[key] || '').split(','))
-  .map((origin) => origin.trim())
-  .filter(Boolean)
+const trustedDeployedWebOrigins = new Set([
+  'https://mydoorstep-web.onrender.com',
+  'https://mydoorstep-site-20260922.eyedofejiro10.workers.dev',
+])
+const configuredWebOrigins = () => new Set([
+  ...trustedDeployedWebOrigins,
+  ...['WEB_ORIGIN', 'WEB_ORIGINS']
+    .flatMap((key) => (process.env[key] || '').split(','))
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+])
 
 app.set('trust proxy', 1)
 app.use(helmet())
 app.use(cors({ origin: (origin, callback) => {
-  if (!origin || configuredWebOrigins().includes(origin) || (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost:517[3-9]$/.test(origin))) return callback(null, true)
+  if (!origin || configuredWebOrigins().has(origin) || (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost:517[3-9]$/.test(origin))) return callback(null, true)
   return callback(Object.assign(new Error('CORS origin not allowed'), { code: 'CORS_ORIGIN_DENIED' }))
 } }))
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }))
@@ -85,6 +92,8 @@ function publicRestaurant(restaurant) {
     name: restaurant.name,
     slug: restaurant.slug,
     description: restaurant.description,
+    image: restaurant.coverImageUrl,
+    type: restaurant.storeType,
     address: restaurant.address,
     city: restaurant.city?.name || null,
     rating: Number(restaurant.ratingAverage),
@@ -99,10 +108,10 @@ function publicRestaurant(restaurant) {
 }
 
 app.get('/api/restaurants', async (request, response) => {
-  const result = z.object({ search: z.string().max(100).optional(), limit: z.coerce.number().int().min(1).max(50).default(24) }).safeParse(request.query)
+  const result = z.object({ search: z.string().max(100).optional(), type: z.enum(['RESTAURANT', 'GROCERY']).optional(), limit: z.coerce.number().int().min(1).max(50).default(24) }).safeParse(request.query)
   if (!result.success) return response.status(400).json({ error: 'INVALID_RESTAURANT_QUERY' })
   try {
-    const restaurants = await prisma.restaurant.findMany({ where: { status: 'APPROVED', ...(result.data.search ? { OR: [{ name: { contains: result.data.search, mode: 'insensitive' } }, { description: { contains: result.data.search, mode: 'insensitive' } }] } : {}) }, include: { city: true, categories: { include: { items: { where: { available: true }, take: 6 } } } }, orderBy: { ratingAverage: 'desc' }, take: result.data.limit })
+    const restaurants = await prisma.restaurant.findMany({ where: { status: 'APPROVED', ...(result.data.type ? { storeType: result.data.type } : {}), ...(result.data.search ? { OR: [{ name: { contains: result.data.search, mode: 'insensitive' } }, { description: { contains: result.data.search, mode: 'insensitive' } }] } : {}) }, include: { city: true, categories: { include: { items: { where: { available: true }, take: 6 } } } }, orderBy: { ratingAverage: 'desc' }, take: result.data.limit })
     response.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
     return response.json({ restaurants: restaurants.map(publicRestaurant) })
   } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }
@@ -161,7 +170,9 @@ const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z
 const privateDocumentSchema = z.object({ type: z.string().min(2).max(80), storageKey: z.string().startsWith('private/applications/').max(500) })
 const partnerApplicationSchema = z.object({ restaurantName: z.string().min(2).max(120), businessType: z.string().min(2).max(60), registrationNumber: z.string().min(2).max(100), businessPhone: z.string().min(7).max(30), businessEmail: z.string().email(), address: z.string().min(5).max(240), cityName: z.string().default('Sapele'), ownerName: z.string().min(2).max(120), ownerIdentityType: z.string().min(2).max(60), ownerIdentityNumber: z.string().min(3).max(120), password: z.string().min(8), documents: z.array(privateDocumentSchema).min(2).max(5) })
 const riderApplicationSchema = z.object({ firstName: z.string().min(1).max(80), lastName: z.string().min(1).max(80), email: z.string().email(), phone: z.string().min(7).max(30), address: z.string().min(5).max(240), identityType: z.string().min(2).max(60), identityNumber: z.string().min(3).max(120), vehicleType: z.string().min(2).max(50), vehicleRegistration: z.string().min(2).max(100), emergencyName: z.string().min(2).max(120), emergencyPhone: z.string().min(7).max(30), password: z.string().min(8), documents: z.array(privateDocumentSchema).min(2).max(5) })
-const verificationRequestSchema = z.object({ destination: z.string().min(6), channel: z.enum(['email', 'phone']) })
+const verificationRequestSchema = z.object({ destination: z.string().min(6), channel: z.enum(['email', 'phone']) }).superRefine(({ destination, channel }, context) => {
+  if (channel === 'phone' && !/^\+[1-9]\d{7,14}$/.test(destination)) context.addIssue({ code: 'custom', path: ['destination'], message: 'Phone verification requires an E.164 phone number.' })
+})
 const verificationSchema = z.object({ challengeId: z.string().min(1), destination: z.string().min(6), code: z.string().regex(/^\d{6}$/) })
 
 async function storeApplicationDocuments(files) {
@@ -172,7 +183,13 @@ async function storeApplicationDocuments(files) {
 app.post('/api/auth/verification/request', authFlowLimiter, async (request, response) => {
   const result = verificationRequestSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_VERIFICATION_REQUEST' })
-  try { return response.status(201).json(await issueVerificationCode(result.data)) } catch (error) { return response.status(verificationFailure(error).status).json({ error: verificationFailure(error).code }) }
+  try {
+    return response.status(201).json(await issueVerificationCode(result.data))
+  } catch (error) {
+    const failure = verificationFailure(error)
+    console.warn('[verification] request_failed', JSON.stringify({ channel: result.data.channel, code: failure.code }))
+    return response.status(failure.status).json({ error: failure.code })
+  }
 })
 app.post('/api/auth/verification/verify', authFlowLimiter, async (request, response) => {
   const result = verificationSchema.safeParse(request.body)
@@ -297,8 +314,9 @@ app.post('/api/auth/login', async (request, response) => {
   const result = credentialsSchema.pick({ email: true, password: true }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_LOGIN', details: result.error.flatten() })
   try {
-    const user = await prisma.user.findUnique({ where: { email: result.data.email } })
+    const user = await prisma.user.findUnique({ where: { email: result.data.email }, include: { rider: true, restaurantUsers: { include: { restaurant: true } } } })
     if (!user || !(await verifyPassword(result.data.password, user.passwordHash)) || user.status !== 'ACTIVE') return response.status(401).json({ error: 'INVALID_CREDENTIALS' })
+    if ((user.role === 'RIDER' && user.rider?.status !== 'APPROVED') || (user.role === 'RESTAURANT' && !user.restaurantUsers.some(({ restaurant }) => restaurant.status === 'APPROVED'))) return response.status(403).json({ error: 'ACCOUNT_PENDING_APPROVAL' })
     const token = await createSession(user.id)
     return response.json({ token, user: publicUser(user) })
   } catch {

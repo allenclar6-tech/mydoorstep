@@ -25,6 +25,10 @@ enum ApplicationStatus {
   SUSPENDED
   DEACTIVATED
 }
+enum StoreType {
+  RESTAURANT
+  GROCERY
+}
 enum RiderAvailability {
   OFFLINE
   ONLINE
@@ -144,6 +148,8 @@ model Restaurant {
   name            String
   slug            String              @unique
   description     String?
+  coverImageUrl   String?
+  storeType       StoreType           @default(RESTAURANT)
   phone           String?
   email           String?
   address         String
