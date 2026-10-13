@@ -50,6 +50,17 @@ test('deployed Render storefront can preflight verification requests', async () 
   assert.match(response.headers['access-control-allow-methods'], /POST/)
 })
 
+test('custom storefront can preflight verification requests', async () => {
+  const response = await request(app)
+    .options('/api/auth/verification/request')
+    .set('Origin', 'https://mydoorstep.com.co')
+    .set('Access-Control-Request-Method', 'POST')
+    .set('Access-Control-Request-Headers', 'content-type')
+  assert.equal(response.status, 204)
+  assert.equal(response.headers['access-control-allow-origin'], 'https://mydoorstep.com.co')
+  assert.match(response.headers['access-control-allow-methods'], /POST/)
+})
+
 test('malformed JSON receives a stable JSON error response', async () => {
   const response = await request(app).post('/api/support/ai').set('Content-Type', 'application/json').send('{"message":')
   assert.equal(response.status, 400)

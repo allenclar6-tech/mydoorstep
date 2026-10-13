@@ -12,9 +12,9 @@ services:
       - key: API_PORT
         value: 4000
       - key: WEB_ORIGIN
-        value: https://mydoorstep-web.onrender.com
+        value: https://mydoorstep.com.co
       - key: WEB_ORIGINS
-        value: https://mydoorstep-site-20260922.eyedofejiro10.workers.dev
+        value: https://mydoorstep-web.onrender.com,https://mydoorstep-site-20260922.eyedofejiro10.workers.dev
       - key: NEXT_PUBLIC_APP_URL
         value: https://mydoorstep-web.onrender.com
       - key: PAYMENT_CALLBACK_URL

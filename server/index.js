@@ -25,6 +25,7 @@ const onboardingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standa
 const trustedDeployedWebOrigins = new Set([
   'https://mydoorstep-web.onrender.com',
   'https://mydoorstep-site-20260922.eyedofejiro10.workers.dev',
+  'https://mydoorstep.com.co',
 ])
 const configuredWebOrigins = () => new Set([
   ...trustedDeployedWebOrigins,
