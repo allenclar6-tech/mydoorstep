@@ -243,3 +243,7 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .topbar .cart-button > span { display: none; }
 .topbar.is-scrolled .cart-button { background: #ffc244; color: #123d2d; }
 .topbar .cart-button b { box-shadow: 0 0 0 2px currentColor; }
+.topbar.is-scrolled .icon-button.notification {
+  border-color: rgba(255, 194, 68, .58);
+  color: #ffc244;
+}
