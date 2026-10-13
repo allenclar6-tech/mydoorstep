@@ -215,3 +215,10 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .topbar .cart-button:hover { background: #ffd23f; }
 .topbar .cart-button b { background: #006b56; }
 @media (max-width: 700px) { .topbar, .topbar:not(.is-scrolled) { background: #007c63; } .topbar .main-nav a { color: rgba(255, 255, 255, .82); } .topbar .main-nav a.active, .topbar .main-nav a:hover { color: #fff; } .topbar .main-nav a.active::after { background: #ffc400; } }
+
+/* Preserve readable marketplace navigation against the dark scrolled header. */
+.topbar.is-scrolled .brand,
+.topbar.is-scrolled .main-nav a,
+.topbar.is-scrolled .main-nav a.active,
+.topbar.is-scrolled .main-nav a:hover { color: #fff; }
+.topbar.is-scrolled .main-nav a.active::after { background: #ffc400; }
