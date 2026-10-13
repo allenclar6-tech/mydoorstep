@@ -553,6 +553,17 @@ footer .brand { color: white; }
 
 .profile-photo-picker .profile-icon { align-items: center; background: #d8e7d9 center / cover no-repeat; border-radius: 50%; color: var(--green); display: flex; height: 64px; justify-content: center; overflow: hidden; width: 64px; }
 .profile-photo-picker .profile-icon img { height: 100%; object-fit: cover; width: 100%; }
+.photo-cropper-backdrop { align-items: center; background: rgba(20, 31, 27, .66); display: flex; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 100; }
+.photo-cropper { background: var(--cream); box-shadow: 0 24px 80px rgba(0, 0, 0, .28); max-width: 460px; padding: 24px; width: 100%; }
+.photo-cropper-heading { align-items: flex-start; display: flex; gap: 14px; justify-content: space-between; }
+.photo-cropper-heading h2 { font-size: 25px; letter-spacing: -1.4px; margin: 5px 0 20px; }
+.photo-crop-preview { aspect-ratio: 1; background-repeat: no-repeat; border: 1px solid var(--line); cursor: grab; margin: 0 auto; max-height: 62vh; max-width: 100%; touch-action: none; width: min(360px, 100%); }
+.photo-crop-preview:active { cursor: grabbing; }
+.photo-crop-zoom { align-items: center; display: flex; font-size: 11px; font-weight: 800; gap: 14px; margin: 18px 0 12px; }
+.photo-crop-zoom input { accent-color: var(--orange); flex: 1; }
+.photo-cropper > p { color: var(--muted); font-size: 10px; line-height: 1.6; }
+.photo-cropper-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.photo-cropper-actions .quiet-button { margin: 0; }
 
 /* Public home hero */
 .hero-section { background: linear-gradient(105deg, #17352d 0%, #21463a 56%, #edf3e8 56%); max-width: none; min-height: 530px; padding: 58px max(5.6vw, calc((100vw - 1340px) / 2 + 5.6vw)) 54px; }

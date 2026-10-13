@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createRoot } from 'react-dom/client'
 import { ArrowRight, Bell, Camera, Check, Clock3, HelpCircle, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
 import { categories, formatNaira, groceryStores, restaurants, sapeleLocations } from './data'
 import { loadOrders } from './services/orderService'
@@ -231,6 +232,70 @@ const verificationErrorMessage = (code) => ({
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' })
 export function SignOutButton() { const [open, setOpen] = useState(false); const signOut = async () => { await fetch(`${apiBase}/api/auth/logout`, { method: 'POST', headers: authHeaders() }).catch(() => undefined); localStorage.removeItem('doorstep-token'); navigate('/') }; return <span className="sign-out-menu"><button className="sign-out-button" type="button" aria-label="Open sign-out options" title="Open sign-out options" onClick={() => setOpen(!open)}><span className="sign-out-icon"><LogOut size={15} /></span><ArrowRight size={14} /></button>{open && <button className="sign-out-confirm" type="button" onClick={signOut}>Sign out</button>}</span> }
 
+const maxProfileSourceBytes = 100 * 1024 * 1024
+const maxProfilePixels = 36_000_000
+
+function ProfilePhotoCropper({ photo, onCancel, onConfirm }) {
+  const [zoom, setZoom] = useState(1)
+  const [position, setPosition] = useState({ x: 0.5, y: 0.5 })
+  const [saving, setSaving] = useState(false)
+  const drag = useRef(null)
+  const sourceSize = Math.min(photo.image.naturalWidth, photo.image.naturalHeight)
+  const cropSize = sourceSize / zoom
+  const backgroundSize = `${(photo.image.naturalWidth / cropSize) * 100}% ${(photo.image.naturalHeight / cropSize) * 100}%`
+
+  const updatePositionFromPointer = (event) => {
+    if (!drag.current) return
+    const { startX, startY, x, y, width, height } = drag.current
+    const horizontalRange = Math.max(photo.image.naturalWidth - cropSize, 1)
+    const verticalRange = Math.max(photo.image.naturalHeight - cropSize, 1)
+    setPosition({
+      x: Math.max(0, Math.min(1, startX - ((event.clientX - x) / width) * (cropSize / horizontalRange))),
+      y: Math.max(0, Math.min(1, startY - ((event.clientY - y) / height) * (cropSize / verticalRange))),
+    })
+  }
+
+  const saveCrop = () => {
+    setSaving(true)
+    const horizontalRange = Math.max(photo.image.naturalWidth - cropSize, 0)
+    const verticalRange = Math.max(photo.image.naturalHeight - cropSize, 0)
+    const canvas = document.createElement('canvas')
+    canvas.width = 720
+    canvas.height = 720
+    canvas.getContext('2d').drawImage(photo.image, position.x * horizontalRange, position.y * verticalRange, cropSize, cropSize, 0, 0, 720, 720)
+    canvas.toBlob((blob) => {
+      setSaving(false)
+      if (!blob) return
+      onConfirm(new File([blob], 'profile-photo.jpg', { type: 'image/jpeg' }))
+    }, 'image/jpeg', 0.9)
+  }
+
+  return <div className="photo-cropper-backdrop" role="dialog" aria-modal="true" aria-labelledby="photo-cropper-title">
+    <section className="photo-cropper">
+      <div className="photo-cropper-heading"><div><span className="section-kicker">PROFILE PHOTO</span><h2 id="photo-cropper-title">Position your photo</h2></div><button className="quiet-button" type="button" onClick={onCancel} disabled={saving}>Cancel</button></div>
+      <div className="photo-crop-preview" style={{ backgroundImage: `url("${photo.url}")`, backgroundPosition: `${position.x * 100}% ${position.y * 100}%`, backgroundSize }} onPointerDown={(event) => { const bounds = event.currentTarget.getBoundingClientRect(); drag.current = { startX: position.x, startY: position.y, x: event.clientX, y: event.clientY, width: bounds.width, height: bounds.height }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={updatePositionFromPointer} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} />
+      <label className="photo-crop-zoom">Zoom<input type="range" min="1" max="3" step="0.01" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label>
+      <p>Drag the image to position it. Your original stays on this device; DOORSTEP uploads a cropped JPEG profile photo.</p>
+      <div className="photo-cropper-actions"><button className="quiet-button" type="button" onClick={onCancel} disabled={saving}>Choose another photo</button><button className="checkout-button" type="button" onClick={saveCrop} disabled={saving}>{saving ? 'Preparing photo...' : 'Use this photo'} <Check size={17} /></button></div>
+    </section>
+  </div>
+}
+
+function openProfilePhotoCropper(photo, onConfirm) {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const close = () => {
+    root.unmount()
+    host.remove()
+    URL.revokeObjectURL(photo.url)
+  }
+  root.render(<ProfilePhotoCropper photo={photo} onCancel={close} onConfirm={(file) => {
+    close()
+    onConfirm(file)
+  }} />)
+}
+
 function ProfilePage() {
   const [user, setUser] = useState(null)
   const [message, setMessage] = useState('')
@@ -260,12 +325,36 @@ function ProfilePage() {
     }
   }, [user?.profileImageKey])
   const updateField = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }))
+  const selectPhoto = (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (file.size > maxProfileSourceBytes) {
+      setMessage('Choose an image smaller than 100 MB so it can be safely prepared on this device.')
+      return
+    }
+    const url = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => {
+      if (image.naturalWidth * image.naturalHeight > maxProfilePixels) {
+        URL.revokeObjectURL(url)
+        setMessage('This image has too many pixels to safely crop on this device. Choose a smaller version of the photo.')
+        return
+      }
+      openProfilePhotoCropper({ image, url }, (croppedFile) => uploadPhoto({ target: { files: [croppedFile] } }))
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(url)
+      setMessage('This device cannot prepare that image format. Choose the image from your gallery in a compatible browser.')
+    }
+    image.src = url
+  }
   const saveProfile = async (event) => { event.preventDefault(); setSaving(true); setMessage(''); const response = await fetch(`${apiBase}/api/auth/me`, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(form) }); const body = await response.json(); setSaving(false); setMessage(response.ok ? 'Your profile details have been saved.' : body.error === 'PHONE_ALREADY_IN_USE' ? 'That phone number is already linked to another account.' : body.error || 'Could not save your profile.'); if (response.ok) setUser(body.user) }
     const uploadPhoto = async (event) => { const file = event.target.files?.[0]; const token = localStorage.getItem('doorstep-token'); if (!file || !token) return; setPhotoBusy(true); setMessage(''); const uploadData = new FormData(); uploadData.append('document', file); const uploadResponse = await fetch(`${apiBase}/api/uploads/private-document`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: uploadData }); const uploadBody = await uploadResponse.json(); if (!uploadResponse.ok) { setPhotoBusy(false); setMessage(uploadBody.error || 'Could not upload your profile photo.'); return } const profileResponse = await fetch(`${apiBase}/api/profile/photo`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ storageKey: uploadBody.storageKey }) }); const profileBody = await profileResponse.json(); setPhotoBusy(false); setMessage(profileResponse.ok ? 'Your profile photo has been saved.' : profileBody.error || 'Could not save your profile photo.'); if (profileResponse.ok) setUser(profileBody.user) }
     useEffect(() => { const formElement = document.querySelector('.profile-edit-form'); if (!formElement || formElement.querySelector('.profile-extra-fields')) return undefined; const section = document.createElement('div'); section.className = 'profile-extra-fields'; section.innerHTML = '<div class="form-row"><label>Preferred name<input name="preferredName" placeholder="What should we call you?"></label><label>Date of birth<input type="date" name="dateOfBirth"></label></div><label>Dietary preference<select name="dietaryPreference"><option value="">No preference selected</option><option>No pork</option><option>Vegetarian</option><option>Vegan</option><option>Halal</option><option>Low spice</option></select></label><label>General delivery notes<textarea name="deliveryNotes" rows="3" placeholder="Helpful context for future deliveries, such as a preferred landmark."></textarea></label>'; const phone = formElement.querySelector('input[name="phone"]'); phone?.closest('label')?.after(section); const values = { preferredName: form.preferredName, dateOfBirth: form.dateOfBirth, dietaryPreference: form.dietaryPreference, deliveryNotes: form.deliveryNotes }; Object.entries(values).forEach(([name, value]) => { const field = section.querySelector(`[name="${name}"]`); if (field) field.value = value || ''; field?.addEventListener('input', (event) => setForm((current) => ({ ...current, [name]: event.target.value }))) }); const syncFields = () => { Object.keys(values).forEach((name) => { let hidden = formElement.querySelector(`input[type="hidden"][name="${name}"]`); if (!hidden) { hidden = document.createElement('input'); hidden.type = 'hidden'; hidden.name = name; formElement.append(hidden) } hidden.value = section.querySelector(`[name="${name}"]`)?.value || '' }) }; formElement.addEventListener('submit', syncFields, true); return () => formElement.removeEventListener('submit', syncFields, true) }, [user])
   if (!user) return <PageFrame eyebrow="PROFILE" title="Your details" intro={message || 'Loading your profile...'}><div className="submitted-card"><Clock3 size={24} /></div></PageFrame>
   const completion = [form.firstName, form.lastName, user.email, form.phone, form.preferredName, form.dietaryPreference, form.deliveryNotes].filter(Boolean).length * 14
-  return <PageFrame eyebrow="PROFILE & SECURITY" title="Keep your details current." intro="Update your personal details whenever you need to. Your changes are saved securely to your DOORSTEP account."><section className="profile-account-layout"><div><form className="profile-edit-form" onSubmit={saveProfile}><div className="profile-edit-header"><label className="profile-photo-picker"><div className="profile-icon">{photoUrl ? <img src={photoUrl} alt="" /> : user.profileImageKey ? <Camera size={30} /> : <UserCircle size={39} />}</div><input type="file" accept="image/jpeg,image/png" onChange={uploadPhoto} disabled={photoBusy} /><span>{photoBusy ? 'Saving photo...' : 'Change photo'}</span></label><div><span className="section-kicker">CUSTOMER ACCOUNT</span><h2>{user.firstName} {user.lastName}</h2><p>{user.email}</p><small className="profile-verified"><Check size={12} /> Account active</small></div></div><div className="profile-completion"><div><strong>Profile completeness</strong><span>{completion}%</span></div><div className="profile-progress"><i style={{ width: `${completion}%` }} /></div></div><div className="form-row"><label>First name<input required name="firstName" value={form.firstName} onChange={updateField} /></label><label>Last name<input required name="lastName" value={form.lastName} onChange={updateField} /></label></div><label>Email address<input disabled value={user.email} readOnly /></label><label>Phone number<input name="phone" value={form.phone} onChange={updateField} placeholder="080 0000 0000" /></label>{message && <div className="profile-message">{message}</div>}<div className="profile-form-actions"><button className="checkout-button" type="submit" disabled={saving}>{saving ? 'Saving changes...' : 'Save changes'} <Check size={17} /></button><button className="quiet-button" type="button" onClick={() => setForm({ firstName: user.firstName || '', lastName: user.lastName || '', phone: user.phone || '' })}>Discard edits</button></div></form><div className="profile-security-grid"><div><ShieldCheck size={21} /><strong>Secure session</strong><small>Your account uses a revocable server session.</small><button className="quiet-button" onClick={() => navigate('/forgot-password')}>Reset password <KeyRound size={13} /></button></div><div><MapPin size={21} /><strong>Saved delivery places</strong><small>Keep addresses and landmarks ready for faster checkout.</small><button className="quiet-button" onClick={() => navigate('/account/addresses')}>Manage addresses <ArrowRight size={13} /></button></div></div></div><aside className="profile-account-menu"><span className="section-kicker">ACCOUNT CENTRE</span><h2>Everything in one place.</h2><button onClick={() => navigate('/account/addresses')}><MapPin size={18} /><span><strong>Addresses</strong><small>Home, work, and delivery notes</small></span><ArrowRight size={14} /></button><button onClick={() => navigate('/account/favorites')}><Star size={18} /><span><strong>Favorites</strong><small>Your saved kitchens and dishes</small></span><ArrowRight size={14} /></button><button onClick={() => navigate('/account/notifications')}><Bell size={18} /><span><strong>Notifications</strong><small>Order and account updates</small></span><ArrowRight size={14} /></button><button onClick={() => navigate('/account/support')}><HelpCircle size={18} /><span><strong>Support centre</strong><small>Get help from DOORSTEP</small></span><ArrowRight size={14} /></button><button onClick={() => navigate('/forgot-password')}><Settings size={18} /><span><strong>Security settings</strong><small>Manage your password access</small></span><ArrowRight size={14} /></button></aside></section></PageFrame>
+  return <PageFrame eyebrow="PROFILE & SECURITY" title="Keep your details current." intro="Update your personal details whenever you need to. Your changes are saved securely to your DOORSTEP account."><section className="profile-account-layout"><div><form className="profile-edit-form" onSubmit={saveProfile}><div className="profile-edit-header"><label className="profile-photo-picker"><div className="profile-icon">{photoUrl ? <img src={photoUrl} alt="" /> : user.profileImageKey ? <Camera size={30} /> : <UserCircle size={39} />}</div><input type="file" accept="image/*" onChange={selectPhoto} disabled={photoBusy} /><span>{photoBusy ? 'Saving photo...' : 'Change photo'}</span></label><div><span className="section-kicker">CUSTOMER ACCOUNT</span><h2>{user.firstName} {user.lastName}</h2><p>{user.email}</p><small className="profile-verified"><Check size={12} /> Account active</small></div></div><div className="profile-completion"><div><strong>Profile completeness</strong><span>{completion}%</span></div><div className="profile-progress"><i style={{ width: `${completion}%` }} /></div></div><div className="form-row"><label>First name<input required name="firstName" value={form.firstName} onChange={updateField} /></label><label>Last name<input required name="lastName" value={form.lastName} onChange={updateField} /></label></div><label>Email address<input disabled value={user.email} readOnly /></label><label>Phone number<input name="phone" value={form.phone} onChange={updateField} placeholder="080 0000 0000" /></label>{message && <div className="profile-message">{message}</div>}<div className="profile-form-actions"><button className="checkout-button" type="submit" disabled={saving}>{saving ? 'Saving changes...' : 'Save changes'} <Check size={17} /></button><button className="quiet-button" type="button" onClick={() => setForm({ firstName: user.firstName || '', lastName: user.lastName || '', phone: user.phone || '' })}>Discard edits</button></div></form><div className="profile-security-grid"><div><ShieldCheck size={21} /><strong>Secure session</strong><small>Your account uses a revocable server session.</small><button className="quiet-button" onClick={() => navigate('/forgot-password')}>Reset password <KeyRound size={13} /></button></div><div><MapPin size={21} /><strong>Saved delivery places</strong><small>Keep addresses and landmarks ready for faster checkout.</small><button className="quiet-button" onClick={() => navigate('/account/addresses')}>Manage addresses <ArrowRight size={13} /></button></div></div></div><aside className="profile-account-menu"><span className="section-kicker">ACCOUNT CENTRE</span><h2>Everything in one place.</h2><button onClick={() => navigate('/account/addresses')}><MapPin size={18} /><span><strong>Addresses</strong><small>Home, work, and delivery notes</small></span><ArrowRight size={14} /></button><button onClick={() => navigate('/account/favorites')}><Star size={18} /><span><strong>Favorites</strong><small>Your saved kitchens and dishes</small></span><ArrowRight size={14} /></button><button onClick={() => navigate('/account/notifications')}><Bell size={18} /><span><strong>Notifications</strong><small>Order and account updates</small></span><ArrowRight size={14} /></button><button onClick={() => navigate('/account/support')}><HelpCircle size={18} /><span><strong>Support centre</strong><small>Get help from DOORSTEP</small></span><ArrowRight size={14} /></button><button onClick={() => navigate('/forgot-password')}><Settings size={18} /><span><strong>Security settings</strong><small>Manage your password access</small></span><ArrowRight size={14} /></button></aside></section></PageFrame>
 }
 
 function AddressesPage() {
