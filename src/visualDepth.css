@@ -34,3 +34,71 @@ button, a, input, select, textarea { transition: border-color .2s ease, box-shad
   .hero-image-wrap { box-shadow: 14px 18px 0 rgba(216, 231, 217, .82), var(--depth-shadow); }
   :is(.route-restaurant, .route-menu-item, .category-card, .menu-card, .role-card, .help-topic, .account-dashboard-grid button, .mood-grid button, .recent-order-row, .account-active-order, .profile-completion, .track-result, .portal-panel, .metric-grid > div, .rider-delivery-card, .admin-panel, .admin-stat, .admin-warning, .submitted-card, .application-form, .auth-form, .onboarding-success) { border-radius: 10px; }
 }
+
+/* Customer experience: layered, high-clarity surfaces without changing product flows. */
+:root {
+  --surface-hi: rgba(255, 255, 255, .88);
+  --surface-soft: rgba(255, 253, 247, .78);
+  --stroke-hi: rgba(255, 255, 255, .7);
+  --ink-soft: #466055;
+  --depth-card: 0 22px 48px rgba(21, 50, 39, .12), 0 3px 9px rgba(20, 47, 37, .06);
+}
+
+.route-page { isolation: isolate; position: relative; }
+.route-page::before { background: radial-gradient(circle at 95% 5%, rgba(255, 193, 71, .2), transparent 21rem), radial-gradient(circle at 1% 38%, rgba(74, 153, 111, .13), transparent 26rem); content: ''; inset: 0 0 auto; height: 38rem; pointer-events: none; position: absolute; z-index: -1; }
+.route-hero { background: linear-gradient(130deg, rgba(255, 255, 255, .78), rgba(255, 253, 247, .48)); border: 1px solid var(--stroke-hi); border-radius: 24px; box-shadow: 0 18px 42px rgba(30, 62, 47, .08), inset 0 1px rgba(255, 255, 255, .75); margin-bottom: 22px; overflow: hidden; padding: clamp(28px, 5vw, 56px); position: relative; }
+.route-hero::after { border: 1px solid rgba(35, 71, 59, .1); border-radius: 50%; content: ''; height: 15rem; position: absolute; right: -6rem; top: -9rem; width: 15rem; }
+.route-hero > * { position: relative; z-index: 1; }
+.route-hero h1 { max-width: 12ch; }
+
+.account-dashboard { gap: 22px; }
+.account-profile-card { background: linear-gradient(125deg, #123e31, #1e6650 62%, #2f8767); border: 1px solid rgba(255, 255, 255, .18); border-radius: 22px; box-shadow: 0 26px 52px rgba(15, 54, 42, .22), inset 0 1px rgba(255, 255, 255, .18); overflow: hidden; position: relative; }
+.account-profile-card::before { background: radial-gradient(circle, rgba(255, 196, 68, .38) 0 2px, transparent 3px); background-size: 22px 22px; content: ''; height: 11rem; opacity: .45; position: absolute; right: -3rem; top: -2rem; transform: rotate(17deg); width: 13rem; }
+.account-profile-card > * { position: relative; z-index: 1; }
+.account-profile-card .profile-icon, .account-profile-avatar { border: 3px solid rgba(255, 255, 255, .68); box-shadow: 0 9px 20px rgba(0, 0, 0, .22), inset 0 1px rgba(255, 255, 255, .5); }
+.account-profile-card .quiet-button { background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .25); border-radius: 999px; padding: 10px 14px; }
+.account-profile-card .quiet-button:hover { background: rgba(255, 255, 255, .22); }
+.account-welcome-band { background: linear-gradient(125deg, #fffdf5, #edf7ed); border: 1px solid rgba(255, 255, 255, .8); min-height: 230px; overflow: hidden; position: relative; }
+.account-welcome-band::after { background: linear-gradient(145deg, rgba(255, 192, 70, .25), transparent); border-radius: 50%; content: ''; height: 16rem; position: absolute; right: -7rem; top: -7rem; width: 16rem; }
+.account-welcome-band > * { position: relative; z-index: 1; }
+.account-confidence-row { background: var(--surface-soft); border: 1px solid var(--stroke-hi); border-radius: 18px; box-shadow: 0 14px 32px rgba(27, 60, 45, .06); overflow: hidden; }
+.account-confidence-row > div { padding: 20px; }
+.confidence-number { background: linear-gradient(145deg, #f6c34a, #ec9c45); border-radius: 12px; box-shadow: 0 6px 12px rgba(213, 130, 38, .23); color: #17352d; padding: 7px 9px; }
+.account-dashboard-grid { gap: 15px; }
+.account-dashboard-grid > button { background: linear-gradient(145deg, var(--surface-hi), rgba(243, 249, 243, .75)); border: 1px solid var(--stroke-hi); min-height: 155px; padding: 23px; text-align: left; }
+.account-dashboard-grid > button svg { background: linear-gradient(145deg, #e0f0df, #bee0c1); border-radius: 13px; box-shadow: inset 0 1px rgba(255, 255, 255, .65), 0 6px 12px rgba(36, 94, 58, .12); color: var(--green); padding: 7px; width: 39px; height: 39px; }
+.account-dashboard-grid > button span, .mood-grid button small { color: var(--ink-soft); }
+.mood-grid { gap: 15px; }
+.mood-grid button { background: linear-gradient(145deg, #fffdf7, #f2f8f0); border: 1px solid var(--stroke-hi); min-height: 152px; padding: 22px; }
+.mood-grid button > span { background: linear-gradient(145deg, #fff4d6, #f4d99a); border-radius: 50%; box-shadow: 0 7px 15px rgba(192, 143, 33, .16); display: grid; height: 49px; margin-bottom: 13px; place-items: center; width: 49px; }
+.recent-order-row, .account-active-order { background: var(--surface-hi); border: 1px solid var(--stroke-hi); }
+
+.profile-account-layout { gap: 24px; max-width: 1120px; }
+.profile-edit-form { background: linear-gradient(145deg, rgba(255, 255, 255, .94), rgba(248, 252, 247, .76)); border: 1px solid var(--stroke-hi); border-radius: 22px; box-shadow: var(--depth-card); padding: clamp(22px, 4vw, 38px); }
+.profile-edit-header { border-bottom: 1px solid rgba(35, 71, 59, .1); margin-bottom: 23px; padding-bottom: 22px; }
+.profile-photo-picker .profile-icon { border: 4px solid #fff; box-shadow: 0 10px 24px rgba(22, 68, 50, .18); height: 78px; width: 78px; }
+.profile-photo-picker span { background: rgba(233, 111, 79, .1); border-radius: 999px; padding: 5px 9px; }
+.profile-completion { background: linear-gradient(135deg, #eef7eb, #f9fcf6); border-radius: 14px; box-shadow: inset 0 1px rgba(255, 255, 255, .85); }
+.profile-progress { border-radius: 999px; height: 7px; }
+.profile-progress i { background: linear-gradient(90deg, var(--orange), #f7bf4d); border-radius: inherit; }
+.profile-edit-form input, .profile-edit-form select, .profile-edit-form textarea { background: rgba(255, 255, 255, .82); border-radius: 9px; box-shadow: inset 0 1px 2px rgba(20, 55, 40, .04); }
+.profile-edit-form input:focus, .profile-edit-form select:focus, .profile-edit-form textarea:focus { box-shadow: 0 0 0 4px rgba(233, 111, 79, .12); }
+.profile-account-menu { background: linear-gradient(155deg, #123e31, #1f6951); border: 1px solid rgba(255, 255, 255, .15); border-radius: 22px; box-shadow: 0 22px 45px rgba(17, 58, 44, .2); overflow: hidden; }
+.profile-account-menu > button { transition: background .2s ease, padding .2s ease; }
+.profile-account-menu > button:hover { background: rgba(255, 255, 255, .08); padding-left: 8px; }
+
+.route-grid, .menu-directory-grid { gap: 20px; }
+.route-restaurant, .route-menu-item, .menu-directory-card { background: linear-gradient(145deg, rgba(255, 255, 255, .94), rgba(247, 251, 246, .78)); border: 1px solid var(--stroke-hi); overflow: hidden; }
+.route-restaurant img, .menu-directory-card img { transition: transform .4s ease, filter .4s ease; }
+@media (hover: hover) { .route-restaurant:hover img, .menu-directory-card:hover img { filter: saturate(1.12) contrast(1.04); transform: scale(1.055); } }
+.discovery-toolbar, .route-search { background: rgba(255, 255, 255, .74); border: 1px solid var(--stroke-hi); border-radius: 14px; box-shadow: 0 10px 24px rgba(22, 58, 42, .06); }
+.auth-layout, .onboarding-card { position: relative; }
+.auth-form, .application-form, .onboarding-success { border: 1px solid var(--stroke-hi); box-shadow: 0 26px 55px rgba(23, 53, 41, .13); }
+.chat-launcher { box-shadow: 0 13px 30px rgba(14, 62, 46, .28); }
+
+@media (max-width: 700px) {
+  .route-hero { border-radius: 17px; margin-left: 0; margin-right: 0; padding: 27px 21px; }
+  .account-profile-card, .profile-edit-form, .profile-account-menu { border-radius: 16px; }
+  .account-dashboard-grid > button, .mood-grid button { min-height: 130px; }
+  .profile-photo-picker .profile-icon { height: 70px; width: 70px; }
+}
