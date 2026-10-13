@@ -4,6 +4,10 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/ready
+    disk:
+      name: private-uploads
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -44,7 +48,7 @@ services:
       - key: SMS_PROVIDER
         value: twilio
       - key: PRIVATE_UPLOAD_DIR
-        value: /tmp/private-uploads
+        value: /var/data/private-uploads
 
   - type: web
     name: mydoorstep-web

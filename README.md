@@ -17,7 +17,7 @@ DOORSTEP is a production-oriented food delivery marketplace for Sapele, Delta St
 - Database: PostgreSQL with Prisma ORM
 - Auth: scrypt password hashing and opaque session tokens
 - Payments: Paystack-first provider adapter with server-side verification
-- Storage: private upload adapter with validation and storage-key based references
+- Storage: authenticated private uploads stored on a persistent Render disk in production
 - Domain: role-based access across customer, restaurant, rider, and admin flows
 
 ## Project docs
@@ -59,7 +59,7 @@ The project includes the required documentation set:
 
 - Managed PostgreSQL deployment and migrations
 - Real operating secrets in environment management
-- Production object storage for private uploads
+- A persistent Render disk is configured for private uploads; migrate to managed object storage before multi-instance scaling
 - Full email/SMS/push notification providers
 - Live admin and finance operations UI connected to all APIs
 - Final legal copy and owner-specific business setup
@@ -100,6 +100,10 @@ PRIVATE_UPLOAD_DIR=./private-uploads
 ```
 
 Keep all secrets server-side. Never expose private provider keys in the frontend bundle.
+
+### Private upload persistence
+
+Production profile photos and application documents must use durable storage. The Render Blueprint mounts a persistent disk at `/var/data` and sets `PRIVATE_UPLOAD_DIR=/var/data/private-uploads`. Do not use `/tmp` for production uploads: Render clears it whenever the API service restarts or redeploys. A service with a persistent disk must run as a single instance; use managed private object storage before enabling horizontal scaling.
 
 ### Customer verification email
 
