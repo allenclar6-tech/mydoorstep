@@ -150,3 +150,6 @@
 .topbar:not(.is-scrolled) .icon-button, .topbar:not(.is-scrolled) .profile-button { border-color: rgba(18, 61, 45, .24); color: #123d2d; }
 .topbar:not(.is-scrolled) .menu-toggle { color: #123d2d; }
 @media (max-width: 700px) { .topbar:not(.is-scrolled) .main-nav a, .topbar:not(.is-scrolled) .main-nav a.active, .topbar:not(.is-scrolled) .main-nav a:hover { color: #123d2d; }.topbar:not(.is-scrolled) .main-nav a.active::after { background: #123d2d; } }
+
+/* Keep the authenticated photo visible while the account text remains compact. */
+.topbar .profile-button .profile-avatar { display: inline-flex; }
