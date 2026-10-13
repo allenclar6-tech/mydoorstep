@@ -3,6 +3,11 @@ const apiOrigin = 'https://mydoorstep-api.onrender.com'
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+    if (url.protocol === 'http:') {
+      url.protocol = 'https:'
+      return Response.redirect(url, 301)
+    }
+
     if (url.pathname.startsWith('/api/')) {
       const upstreamUrl = new URL(`${url.pathname}${url.search}`, apiOrigin)
       const response = await fetch(new Request(upstreamUrl, request))
@@ -15,6 +20,9 @@ export default {
       return response
     }
 
-    return env.ASSETS.fetch(request)
+    const assetResponse = await env.ASSETS.fetch(request)
+    const headers = new Headers(assetResponse.headers)
+    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    return new Response(assetResponse.body, { status: assetResponse.status, statusText: assetResponse.statusText, headers })
   },
 }
