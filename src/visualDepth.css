@@ -191,3 +191,12 @@ h1 { font-weight: 800; letter-spacing: -4px; }
   .account-profile-card, .account-welcome-band, .profile-edit-form, .profile-account-menu { border-radius: 14px; }
   .topbar, .topbar:not(.is-scrolled) { background: #007c63; }
 }
+
+/* Retain the established DOORSTEP header palette. */
+.topbar, .topbar:not(.is-scrolled) { background: linear-gradient(110deg, #0c3022, #1a5940 58%, #184c38); }
+.topbar .brand-mark { background: #ffc244; }
+.topbar .brand-mark::after { background: #ffc244; }
+.topbar .cart-button { background: #fff; color: #123d2d; }
+.topbar .cart-button:hover { background: #f1f5ef; }
+.topbar .cart-button b { background: #e96f4f; }
+@media (max-width: 700px) { .topbar, .topbar:not(.is-scrolled) { background: linear-gradient(110deg, #007b65, #00a082 58%, #008c72); } }
