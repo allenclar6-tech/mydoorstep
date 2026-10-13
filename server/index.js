@@ -288,6 +288,7 @@ app.post('/api/grocery-applications/multipart', onboardingLimiter, upload.array(
       const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, role: 'RESTAURANT' } })
       const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${data.businessType.replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: grocery.id } })
+      await transaction.notification.create({ data: { userId: user.id, type: 'ACCOUNT', title: 'Grocery store application received', body: `${grocery.name} is pending DOORSTEP review. We will notify you when your store is approved or if more information is needed.` } })
       return { groceryId: grocery.id, status: 'PENDING_APPROVAL' }
     })
     console.info('[grocery-application] submitted', JSON.stringify({ groceryId: created.groceryId }))
