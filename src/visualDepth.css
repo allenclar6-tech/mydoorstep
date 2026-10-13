@@ -102,3 +102,92 @@ button, a, input, select, textarea { transition: border-color .2s ease, box-shad
   .account-dashboard-grid > button, .mood-grid button { min-height: 130px; }
   .profile-photo-picker .profile-icon { height: 70px; width: 70px; }
 }
+
+/* Bright delivery-marketplace direction: confident type, generous space, and clear actions. */
+:root {
+  --green: #007c63;
+  --ink: #102f27;
+  --muted: #5f716b;
+  --paper: #f7f8f4;
+  --cream: #fffefa;
+  --mint: #dff3e9;
+  --orange: #f5a800;
+  --line: #dce8e0;
+  --depth-shadow: 0 12px 28px rgba(17, 67, 52, .1), 0 2px 6px rgba(17, 67, 52, .05);
+  --depth-shadow-hover: 0 18px 34px rgba(17, 67, 52, .16), 0 4px 10px rgba(17, 67, 52, .07);
+}
+
+body { background: #f7f8f4; font-weight: 500; }
+body::before { background-image: none; }
+h1, h2, h3, strong { color: var(--ink); font-weight: 800; }
+h1 { font-weight: 800; letter-spacing: -4px; }
+.route-page::before { background: radial-gradient(circle at 92% 0, rgba(245, 168, 0, .18), transparent 20rem), radial-gradient(circle at 5% 26%, rgba(0, 160, 130, .11), transparent 25rem); }
+.section-kicker, .eyebrow { color: #007c63; font-weight: 800; letter-spacing: 1.45px; }
+
+.topbar { background: #007c63; box-shadow: 0 5px 18px rgba(0, 83, 65, .2); }
+.topbar:not(.is-scrolled) { background: #007c63; }
+.topbar .brand-mark { background: #ffc400; box-shadow: none; }
+.topbar .brand-mark::after { background: #ffc400; }
+.topbar .main-nav a { color: rgba(255, 255, 255, .82); font-weight: 800; }
+.topbar .main-nav a.active, .topbar .main-nav a:hover { color: #fff; }
+.topbar .main-nav a.active::after { background: #ffc400; }
+.topbar .cart-button { background: #ffc400; color: #123c32; font-weight: 900; }
+.topbar .cart-button:hover { background: #ffd23f; }
+.topbar .cart-button b { background: #006b56; }
+.topbar .icon-button, .topbar .profile-button { border-color: rgba(255, 255, 255, .36); }
+
+.route-hero { background: linear-gradient(135deg, #ecfbf4, #fffdf1); border: 0; border-radius: 20px; box-shadow: none; padding: clamp(30px, 5vw, 58px); }
+.route-hero::after { border-color: rgba(0, 124, 99, .12); }
+.route-hero h1 { font-size: clamp(38px, 5vw, 64px); letter-spacing: -3.2px; line-height: 1.02; }
+.route-hero p { color: var(--ink-soft); font-size: 15px; font-weight: 600; max-width: 46rem; }
+
+.primary-button, .checkout-button, .add-button, .portal-primary, .admin-primary { background: #007c63; border-radius: 12px; box-shadow: 0 7px 14px rgba(0, 124, 99, .2); font-weight: 800; }
+.primary-button:hover, .checkout-button:hover, .add-button:hover, .portal-primary:hover, .admin-primary:hover { background: #006b56; box-shadow: 0 10px 19px rgba(0, 124, 99, .26); transform: translateY(-2px); }
+.quiet-button, .text-link { font-weight: 800; }
+
+.account-dashboard { gap: 18px; }
+.account-profile-card { background: linear-gradient(128deg, #007c63, #00a082); border: 0; border-radius: 18px; box-shadow: 0 13px 26px rgba(0, 113, 87, .21); padding: clamp(22px, 4vw, 31px); }
+.account-profile-card::before { background: radial-gradient(circle, rgba(255, 196, 0, .7) 0 2px, transparent 3px); opacity: .32; }
+.account-profile-card h2, .account-profile-card strong { color: #fff; }
+.account-profile-card .section-kicker { color: #d8fff0; }
+.account-profile-card .quiet-button { background: #fff; border: 0; color: #006b56; font-weight: 800; }
+.account-welcome-band { background: linear-gradient(135deg, #fff7cf, #ffed9c); border: 0; border-radius: 18px; box-shadow: none; min-height: 220px; }
+.account-welcome-band h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -1.7px; }
+.account-welcome-band::after { background: rgba(0, 124, 99, .11); }
+.account-confidence-row { background: #fff; border: 1px solid #e4eee8; border-radius: 16px; box-shadow: none; }
+.account-confidence-row > div { padding: 18px; }
+.confidence-number { background: #e0f5ea; box-shadow: none; color: #007c63; font-weight: 900; }
+.account-dashboard-grid { gap: 12px; }
+.account-dashboard-grid > button, .mood-grid button { background: #fff; border: 1px solid #e1ebe5; border-radius: 16px; box-shadow: 0 4px 12px rgba(22, 72, 55, .05); min-height: 142px; }
+.account-dashboard-grid > button svg { background: #e4f6ed; box-shadow: none; color: #007c63; }
+.account-dashboard-grid > button strong, .mood-grid button strong { font-size: 14px; font-weight: 800; }
+.mood-grid button > span { background: #fff3cc; box-shadow: none; }
+.recent-order-row, .account-active-order { background: #fff; border: 1px solid #e1ebe5; box-shadow: none; }
+
+.profile-edit-form { background: #fff; border: 1px solid #e0ebe4; border-radius: 18px; box-shadow: 0 10px 25px rgba(22, 72, 55, .06); }
+.profile-edit-header h2, .profile-account-menu h2 { font-weight: 800; letter-spacing: -1px; }
+.profile-completion { background: #eaf8f0; border: 0; box-shadow: none; }
+.profile-edit-form input, .profile-edit-form select, .profile-edit-form textarea { background: #f9fcfa; border: 1px solid #d9e8df; border-radius: 10px; font-weight: 600; }
+.profile-edit-form input:focus, .profile-edit-form select:focus, .profile-edit-form textarea:focus { border-color: #00a082; box-shadow: 0 0 0 4px rgba(0, 160, 130, .12); }
+.profile-account-menu { background: #0c4d3f; border: 0; border-radius: 18px; box-shadow: none; }
+.profile-account-menu .section-kicker { color: #a8efd6; }
+.profile-account-menu > button { border-top-color: rgba(255, 255, 255, .13); font-weight: 700; }
+.profile-account-menu > button > svg:first-child { color: #ffc400; }
+
+.route-restaurant, .route-menu-item, .menu-directory-card { background: #fff; border: 1px solid #e1ebe5; border-radius: 16px; box-shadow: 0 5px 14px rgba(20, 69, 52, .06); }
+.route-restaurant h2, .route-menu-item h3, .menu-directory-card h2 { font-weight: 800; letter-spacing: -.5px; }
+.route-restaurant p, .route-menu-item p, .menu-directory-card p { color: var(--ink-soft); font-weight: 600; }
+.discovery-toolbar, .route-search { background: #fff; border: 1px solid #e1ebe5; box-shadow: none; }
+.auth-form, .application-form, .onboarding-success { background: #fff; border: 1px solid #e1ebe5; box-shadow: 0 12px 28px rgba(22, 72, 55, .08); }
+.auth-layout .partner-cta { border-radius: 18px; }
+
+@media (hover: hover) {
+  :is(.route-restaurant, .route-menu-item, .category-card, .menu-card, .role-card, .help-topic, .account-dashboard-grid button, .mood-grid button, .recent-order-row, .portal-panel, .metric-grid > div, .rider-delivery-card, .admin-panel, .admin-stat):hover { box-shadow: 0 14px 26px rgba(14, 73, 54, .13); transform: translateY(-3px); }
+}
+
+@media (max-width: 700px) {
+  h1 { letter-spacing: -2.6px; }
+  .route-hero { border-radius: 14px; }
+  .account-profile-card, .account-welcome-band, .profile-edit-form, .profile-account-menu { border-radius: 14px; }
+  .topbar, .topbar:not(.is-scrolled) { background: #007c63; }
+}
