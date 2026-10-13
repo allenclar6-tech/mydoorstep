@@ -1,6 +1,7 @@
 {
   "name": "mydoorstep-site-20260922",
   "compatibility_date": "2026-09-21",
+  "main": "worker.js",
   "assets": {
     "directory": "dist",
     "not_found_handling": "single-page-application"

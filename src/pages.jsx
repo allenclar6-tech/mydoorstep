@@ -219,7 +219,7 @@ function AccountDashboard() {
 function PackageIcon() { return <ShoppingBag size={24} /> }
 function HeartIcon() { return <span className="account-heart">♡</span> }
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' })
 export function SignOutButton() { const [open, setOpen] = useState(false); const signOut = async () => { await fetch(`${apiBase}/api/auth/logout`, { method: 'POST', headers: authHeaders() }).catch(() => undefined); localStorage.removeItem('doorstep-token'); navigate('/') }; return <span className="sign-out-menu"><button className="sign-out-button" type="button" aria-label="Open sign-out options" title="Open sign-out options" onClick={() => setOpen(!open)}><span className="sign-out-icon"><LogOut size={15} /></span><ArrowRight size={14} /></button>{open && <button className="sign-out-confirm" type="button" onClick={signOut}>Sign out</button>}</span> }
 
