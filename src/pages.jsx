@@ -109,17 +109,7 @@ function OnboardingCustomerRegistration() {
     }
     const body = await response.json().catch(() => ({}))
       if (!response.ok) {
-        const messages = {
-          EMAIL_VERIFICATION_NOT_CONFIGURED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
-          EMAIL_VERIFICATION_PROVIDER_UNSUPPORTED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
-          EMAIL_VERIFICATION_RATE_LIMITED: 'Too many verification emails have been requested. Please wait a few minutes before trying again.',
-          SMS_VERIFICATION_NOT_CONFIGURED: 'SMS verification is temporarily unavailable. Please choose email verification or try again later.',
-          SMS_VERIFICATION_PROVIDER_UNSUPPORTED: 'SMS verification is temporarily unavailable. Please choose email verification or try again later.',
-          SMS_VERIFICATION_RATE_LIMITED: 'Too many verification messages have been requested. Please wait a few minutes before trying again.',
-          SMS_VERIFICATION_UNAVAILABLE: 'Our SMS service is temporarily unavailable. Please choose email verification or try again shortly.',
-          VERIFICATION_SERVICE_UNAVAILABLE: 'Our email service is temporarily unavailable. Please try again shortly.',
-        }
-        throw new Error(messages[body.error] || 'We could not send a verification email. Please try again.')
+          throw new Error(verificationErrorMessage(body.error))
       }
       setRegistration({ ...values, termsAccepted: true })
       setChallenge(body)
@@ -200,11 +190,16 @@ function VerifiedCustomerRegistration() {
   const requestCode = async (event) => {
     event.preventDefault(); setError('')
     const form = new FormData(event.currentTarget); const email = form.get('email'); setDestination(email); setRegistration(Object.fromEntries(form.entries()))
-    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/verification/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destination: email, channel: 'email' }) })
-    const body = await response.json(); if (!response.ok) return setError(body.error || 'Could not send verification code.')
-    setChallenge(body); setStep('verify')
+    try {
+      const response = await fetch(`${apiBase}/api/auth/verification/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destination: email, channel: 'email' }) })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) return setError(verificationErrorMessage(body.error))
+      setChallenge(body); setStep('verify')
+    } catch (requestError) {
+      setError(requestError instanceof TypeError ? 'We could not reach the verification service. Check your connection and try again.' : requestError.message)
+    }
   }
-  if (step === 'verify') return <form className="auth-form verification-card" onSubmit={async (event) => { event.preventDefault(); const code = new FormData(event.currentTarget).get('code'); const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/verification/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.challengeId, destination, code }) }); const body = await response.json(); if (!body.verified) return setError('That code is invalid or expired.'); const registerResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...registration, verificationId: challenge.challengeId }) }); const registered = await registerResponse.json(); if (!registerResponse.ok) return setError(registered.error || 'Could not create account.'); localStorage.setItem('doorstep-token', registered.token); navigate('/account') }}><span className="section-kicker">CHECK YOUR EMAIL</span><h2>Enter your 6-digit code.</h2><p>We sent a verification code to {destination}. Development mode shows the code in the API terminal.</p><label>Verification code<input required name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength="6" /></label>{error && <div className="admin-login-error">{error}</div>}<button className="checkout-button" type="submit">Verify and create account <Check size={17} /></button></form>
+  if (step === 'verify') return <form className="auth-form verification-card" onSubmit={async (event) => { event.preventDefault(); const code = new FormData(event.currentTarget).get('code'); const response = await fetch(`${apiBase}/api/auth/verification/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: challenge.challengeId, destination, code }) }); const body = await response.json(); if (!body.verified) return setError('That code is invalid or expired.'); const registerResponse = await fetch(`${apiBase}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...registration, verificationId: challenge.challengeId }) }); const registered = await registerResponse.json(); if (!registerResponse.ok) return setError(registered.error || 'Could not create account.'); localStorage.setItem('doorstep-token', registered.token); navigate('/account') }}><span className="section-kicker">CHECK YOUR EMAIL</span><h2>Enter your 6-digit code.</h2><p>We sent a verification code to {destination}. Development mode shows the code in the API terminal.</p><label>Verification code<input required name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength="6" /></label>{error && <div className="admin-login-error">{error}</div>}<button className="checkout-button" type="submit">Verify and create account <Check size={17} /></button></form>
   return <form className="auth-form customer-register-card" onSubmit={requestCode}><span className="section-kicker">CUSTOMER ACCOUNT</span><h2>Create your account.</h2><div className="form-row"><label>First name<input required name="firstName" /></label><label>Last name<input required name="lastName" /></label></div><label>Email address<input required type="email" name="email" /></label><label>Phone number<input required type="tel" name="phone" /></label><PasswordField required label="Password" name="password" minLength="8" />{error && <div className="admin-login-error">{error}</div>}<button className="checkout-button" type="submit">Send verification code <ArrowRight size={17} /></button></form>
 }
 
@@ -220,6 +215,18 @@ function PackageIcon() { return <ShoppingBag size={24} /> }
 function HeartIcon() { return <span className="account-heart">♡</span> }
 
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+const verificationErrorMessage = (code) => ({
+  EMAIL_VERIFICATION_NOT_CONFIGURED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
+  EMAIL_VERIFICATION_PROVIDER_UNSUPPORTED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
+  EMAIL_VERIFICATION_RATE_LIMITED: 'Too many verification emails have been requested. Please wait a few minutes before trying again.',
+  SMS_VERIFICATION_NOT_CONFIGURED: 'SMS verification is temporarily unavailable. Please choose email verification or try again later.',
+  SMS_VERIFICATION_PROVIDER_UNSUPPORTED: 'SMS verification is temporarily unavailable. Please choose email verification or try again later.',
+  SMS_VERIFICATION_RATE_LIMITED: 'Too many verification messages have been requested. Please wait a few minutes before trying again.',
+  SMS_VERIFICATION_UNAVAILABLE: 'Our SMS service is temporarily unavailable. Please choose email verification or try again shortly.',
+  VERIFICATION_SERVICE_UNAVAILABLE: 'Our email service is temporarily unavailable. Please try again shortly.',
+  INVALID_VERIFICATION_REQUEST: 'Enter a valid email address or E.164 mobile number and try again.',
+  RATE_LIMITED: 'Too many verification requests have been made. Please wait a few minutes before trying again.',
+}[code] || 'We could not send a verification email. Please try again.')
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' })
 export function SignOutButton() { const [open, setOpen] = useState(false); const signOut = async () => { await fetch(`${apiBase}/api/auth/logout`, { method: 'POST', headers: authHeaders() }).catch(() => undefined); localStorage.removeItem('doorstep-token'); navigate('/') }; return <span className="sign-out-menu"><button className="sign-out-button" type="button" aria-label="Open sign-out options" title="Open sign-out options" onClick={() => setOpen(!open)}><span className="sign-out-icon"><LogOut size={15} /></span><ArrowRight size={14} /></button>{open && <button className="sign-out-confirm" type="button" onClick={signOut}>Sign out</button>}</span> }
 
