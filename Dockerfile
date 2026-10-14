@@ -7,9 +7,9 @@ COPY package*.json ./
 RUN npm ci
 
 COPY prisma ./prisma
-RUN npx prisma generate && npm prune --omit=dev
+RUN npx prisma generate
 
 COPY server ./server
 
 EXPOSE 4000
-CMD ["node", "server/index.js"]
+CMD ["sh", "-c", "node server/migrate.js && node server/index.js"]

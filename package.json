@@ -30,14 +30,12 @@
     "lucide-react": "latest",
     "mapbox-gl": "^3.33.0",
     "multer": "latest",
+    "prisma": "^6.19.0",
     "react": "latest",
     "react-dom": "latest",
     "supertest": "latest",
     "vite": "latest",
     "ws": "^8.18.3",
     "zod": "latest"
-  },
-  "devDependencies": {
-    "prisma": "^6.19.0"
   }
 }
