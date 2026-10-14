@@ -907,6 +907,99 @@ h1 { font-weight: 800; letter-spacing: -4px; }
   .tracking-connection.live::before { animation: none; }
   .tracking-recenter, .admin-table-row { transition: none; }
 }
+
+/* Original high-definition storefront depth system. */
+.hero-section {
+  background:
+    radial-gradient(circle at 80% 18%, rgba(255, 255, 255, .58), transparent 18%),
+    radial-gradient(circle at 72% 76%, rgba(0, 113, 84, .15), transparent 31%),
+    linear-gradient(116deg, #ffc445 0%, #ffd66d 51%, #f7edc2 51%);
+  isolation: isolate;
+}
+.hero-section::before {
+  background-image: linear-gradient(rgba(18, 61, 45, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(18, 61, 45, .045) 1px, transparent 1px);
+  background-size: 26px 26px;
+  content: "";
+  inset: 0;
+  mask-image: linear-gradient(90deg, transparent 40%, #000 70%, transparent);
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+.hero-copy h1 {
+  letter-spacing: -.065em;
+  text-wrap: balance;
+}
+.hero-copy > p { font-size: clamp(.94rem, 1.2vw, 1.07rem); }
+.hero-image-wrap {
+  border-color: rgba(255, 255, 255, .96);
+  box-shadow: 0 28px 0 rgba(18, 61, 45, .12), 0 38px 65px rgba(18, 61, 45, .28), inset 0 1px 0 #fff;
+  transform: perspective(1100px) rotateX(3deg) rotateY(-8deg) rotate(4deg);
+}
+.hero-image-wrap::before {
+  background: linear-gradient(130deg, rgba(255,255,255,.5), transparent 26%);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+.hero-sticker {
+  box-shadow: 0 14px 0 rgba(18, 61, 45, .14), 0 24px 32px rgba(18, 61, 45, .22), inset 0 1px 0 rgba(255,255,255,.25);
+  transform: translateZ(30px) rotate(11deg);
+}
+.category-pill {
+  border: 1px solid rgba(255,255,255,.45);
+  border-radius: 20px;
+  box-shadow: 0 11px 0 rgba(18, 61, 45, .1), 0 24px 35px rgba(18, 61, 45, .12);
+  transform: perspective(800px) rotateX(0);
+}
+.category-pill::before {
+  background: linear-gradient(125deg, rgba(255,255,255,.22), transparent 35%);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+.category-pill:hover, .category-pill.selected {
+  box-shadow: 0 5px 0 rgba(18, 61, 45, .1), 0 30px 44px rgba(18, 61, 45, .22);
+  transform: perspective(800px) rotateX(2deg) translateY(5px);
+}
+.restaurant-card, .grocery-store-card, .menu-directory-card {
+  background: linear-gradient(145deg, #fff, #f7fbf8);
+  border: 1px solid rgba(18, 61, 45, .08);
+  box-shadow: 0 13px 0 rgba(18, 61, 45, .05), 0 26px 42px rgba(18, 61, 45, .1);
+  overflow: hidden;
+  position: relative;
+}
+.restaurant-card::after, .grocery-store-card::after, .menu-directory-card::after {
+  background: linear-gradient(110deg, rgba(255,255,255,.34), transparent 27%);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+.restaurant-card:hover, .grocery-store-card:hover, .menu-directory-card:hover {
+  box-shadow: 0 7px 0 rgba(18, 61, 45, .05), 0 31px 52px rgba(18, 61, 45, .18);
+  transform: perspective(900px) rotateX(2deg) translateY(5px);
+}
+.restaurant-image, .grocery-store-image {
+  box-shadow: inset 0 -26px 28px rgba(4, 43, 31, .18);
+}
+.home-section-heading, .section-heading {
+  letter-spacing: -.035em;
+  text-wrap: balance;
+}
+@media (max-width: 760px) {
+  .hero-section { background: linear-gradient(162deg, #ffc445 0%, #ffd66d 57%, #f7edc2 57%); }
+  .hero-image-wrap { box-shadow: 0 17px 0 rgba(18, 61, 45, .11), 0 24px 38px rgba(18, 61, 45, .22); transform: perspective(800px) rotateX(2deg) rotateY(-4deg) rotate(2deg); }
+  .category-pill { border-radius: 16px; box-shadow: 0 7px 0 rgba(18, 61, 45, .09), 0 14px 22px rgba(18, 61, 45, .12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .category-pill, .restaurant-card, .grocery-store-card, .menu-directory-card { transition: none; }
+  .category-pill:hover, .category-pill.selected, .restaurant-card:hover, .grocery-store-card:hover, .menu-directory-card:hover { transform: none; }
+}
 @keyframes location-pulse {
   0% { opacity: .85; transform: scale(.55); }
   75%, 100% { opacity: 0; transform: scale(1.45); }
