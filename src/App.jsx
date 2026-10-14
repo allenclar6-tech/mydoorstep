@@ -274,6 +274,7 @@ function App() {
   if (path.startsWith('/rider/')) return <PortalAccessGate role="RIDER"><RiderPortal path={path} /></PortalAccessGate>
   if (path === '/admin/login') return <AdminLogin onLogin={() => { window.history.pushState({}, '', '/admin/dashboard'); setPath('/admin/dashboard') }} />
   if (path === '/forgot-password' || path === '/reset-password') return <ForgotPasswordPage />
+  if (path === '/admin/forgot-password') return <ForgotPasswordPage loginPath="/admin/login" />
   if (path.startsWith('/admin/') && !localStorage.getItem('doorstep-admin-token')) return <AdminLogin onLogin={() => { window.history.pushState({}, '', path); setPath(path) }} />
   if (path.startsWith('/admin/')) return <AdminPortal path={path} />
   if (path.startsWith('/account') && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
