@@ -29,6 +29,8 @@
 
 Cloudflare Pages hosts the Vite frontend. The Express/Prisma API must run on a Node-capable service with managed PostgreSQL; it should not be deployed as static Pages output.
 
+If the Cloudflare Worker asset bundle is behind the Render frontend deployment, the Worker forwards public web requests to `https://mydoorstep-web.onrender.com` while continuing to proxy `/api/*` requests to the API service. This keeps the custom domain current until the next Wrangler asset deployment.
+
 ## API deployment blueprint
 
 The repository includes `Dockerfile`, `.dockerignore`, and `render.yaml` for a Node/Docker API deployment with managed PostgreSQL. On Render:
