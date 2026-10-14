@@ -47,11 +47,15 @@ export async function claimDelivery(deliveryId, riderId) {
   return prisma.$transaction(async (transaction) => {
     const rider = await transaction.rider.findUnique({ where: { id: riderId } })
     if (!rider || rider.status !== 'APPROVED' || rider.availability !== 'ONLINE') throw serviceError('RIDER_NOT_AVAILABLE', 'Rider must be approved and online.', 403)
+    const deliveryBeforeClaim = await transaction.delivery.findUnique({ where: { id: deliveryId }, include: { order: { select: { restaurantId: true } } } })
+    if (!deliveryBeforeClaim) throw serviceError('DELIVERY_NOT_FOUND', 'Delivery was not found.', 404)
+    if (rider.network === 'BUSINESS_OWNED' && rider.restaurantId !== deliveryBeforeClaim.order.restaurantId) {
+      throw serviceError('BUSINESS_RIDER_DELIVERY_FORBIDDEN', 'Business riders can only claim deliveries for their own business.', 403)
+    }
     const claimed = await transaction.delivery.updateMany({ where: { id: deliveryId, status: { in: ['AVAILABLE', 'REQUESTED'] }, riderId: null }, data: { riderId, status: 'ACCEPTED', acceptedAt: new Date() } })
     if (claimed.count !== 1) throw serviceError('DELIVERY_ALREADY_CLAIMED', 'Another rider has already accepted this delivery.', 409)
-    const delivery = await transaction.delivery.findUnique({ where: { id: deliveryId } })
-    await transaction.order.update({ where: { id: delivery.orderId }, data: { riderId, status: 'RIDER_ASSIGNED' } })
-    return delivery
+    await transaction.order.update({ where: { id: deliveryBeforeClaim.orderId }, data: { riderId, status: 'RIDER_ASSIGNED' } })
+    return transaction.delivery.findUnique({ where: { id: deliveryId } })
   })
 }
 

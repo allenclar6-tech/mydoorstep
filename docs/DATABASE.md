@@ -44,3 +44,25 @@ The application uses PostgreSQL with Prisma as the object-relational mapper.
 3. Run `npm.cmd run db:generate`.
 4. Run `npm.cmd run db:push` for local schema sync, or use reviewed migrations for production.
 5. Run `npm.cmd run db:seed` for development seed data.
+
+## Production migration baseline
+
+The existing production database predates committed Prisma migrations. The baseline
+migration in `prisma/migrations/20261014114500_baseline_existing_schema` describes
+that existing schema and must be marked as applied only after an operator verifies
+that the target database matches it.
+
+Do not run the baseline SQL against an existing database. From a secure deployment
+environment with the production `DATABASE_URL` available:
+
+1. Back up the database and verify the backup can be restored.
+2. Compare the database with the baseline schema using `prisma migrate diff`.
+3. If and only if there is no difference, mark the baseline as applied with:
+   `npx prisma migrate resolve --applied 20261014114500_baseline_existing_schema`.
+4. Run `npx prisma migrate deploy` to apply later reviewed migrations, including
+   `20261014115500_add_rider_network`.
+5. Verify `/api/ready`, rider delivery claims, and the application logs.
+
+The rider-network migration is additive: current riders remain in the
+`DOORSTEP_POOL`, while future `BUSINESS_OWNED` riders can be linked to one
+restaurant or grocery business.
