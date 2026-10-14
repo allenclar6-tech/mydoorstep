@@ -844,6 +844,67 @@ app.post('/api/payments/webhook', async (request, response) => {
   }
 })
 
+async function getRestaurantMembership(userId) {
+  return prisma.restaurantUser.findFirst({ where: { userId }, select: { restaurantId: true, role: true } })
+}
+
+function canManageBusinessRiders(membership) {
+  return membership && ['OWNER', 'MANAGER'].includes(membership.role)
+}
+
+app.get('/api/restaurant/riders', requireUser, async (request, response) => {
+  if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
+  try {
+    const membership = await getRestaurantMembership(request.user.id)
+    if (!canManageBusinessRiders(membership)) return response.status(403).json({ error: 'BUSINESS_RIDER_MANAGEMENT_REQUIRED' })
+    const riders = await prisma.rider.findMany({
+      where: { restaurantId: membership.restaurantId, network: 'BUSINESS_OWNED' },
+      include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } } },
+      orderBy: { user: { firstName: 'asc' } },
+    })
+    return response.json({ riders })
+  } catch (error) {
+    console.error('[restaurant-riders] list_failed', JSON.stringify({ name: error.name }))
+    return response.status(503).json({ error: 'BUSINESS_RIDER_SERVICE_UNAVAILABLE' })
+  }
+})
+
+app.patch('/api/restaurant/riders/:riderId', requireUser, async (request, response) => {
+  if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
+  const result = z.object({ assigned: z.boolean() }).safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_BUSINESS_RIDER_ASSIGNMENT' })
+  try {
+    const membership = await getRestaurantMembership(request.user.id)
+    if (!canManageBusinessRiders(membership)) return response.status(403).json({ error: 'BUSINESS_RIDER_MANAGEMENT_REQUIRED' })
+    const rider = await prisma.rider.findUnique({ where: { id: request.params.riderId }, select: { id: true, status: true, network: true, restaurantId: true } })
+    if (!rider) return response.status(404).json({ error: 'RIDER_NOT_FOUND' })
+    if (result.data.assigned) {
+      if (rider.status !== 'APPROVED') return response.status(409).json({ error: 'RIDER_NOT_APPROVED' })
+      if (rider.network === 'BUSINESS_OWNED' && rider.restaurantId !== membership.restaurantId) return response.status(409).json({ error: 'RIDER_ASSIGNED_TO_ANOTHER_BUSINESS' })
+    } else if (rider.restaurantId !== membership.restaurantId || rider.network !== 'BUSINESS_OWNED') {
+      return response.status(404).json({ error: 'BUSINESS_RIDER_NOT_FOUND' })
+    }
+    const updated = await prisma.rider.update({
+      where: { id: rider.id },
+      data: result.data.assigned ? { network: 'BUSINESS_OWNED', restaurantId: membership.restaurantId } : { network: 'DOORSTEP_POOL', restaurantId: null },
+      include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } } },
+    })
+    await prisma.auditLog.create({
+      data: {
+        actorId: request.user.id,
+        action: result.data.assigned ? 'ASSIGN_BUSINESS_RIDER' : 'REMOVE_BUSINESS_RIDER',
+        entityType: 'Rider',
+        entityId: rider.id,
+        metadata: { restaurantId: membership.restaurantId },
+      },
+    })
+    return response.json({ rider: updated })
+  } catch (error) {
+    console.error('[restaurant-riders] assignment_failed', JSON.stringify({ name: error.name }))
+    return response.status(503).json({ error: 'BUSINESS_RIDER_SERVICE_UNAVAILABLE' })
+  }
+})
+
 app.get('/api/restaurant/orders', requireUser, async (request, response) => {
   if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
   const result = z.object({ cursor: z.string().min(1).optional(), limit: z.coerce.number().int().min(1).max(100).default(100) }).safeParse(request.query)

@@ -43,6 +43,13 @@ enum RiderNetwork {
   BUSINESS_OWNED
 }
 
+enum RestaurantMemberRole {
+  OWNER
+  MANAGER
+  FINANCE
+  STAFF
+}
+
 enum OrderStatus {
   PENDING_PAYMENT
   PAID
@@ -224,11 +231,13 @@ model RestaurantUser {
   id           String     @id @default(cuid())
   userId       String
   restaurantId String
+  role         RestaurantMemberRole @default(OWNER)
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   createdAt    DateTime   @default(now())
 
   @@unique([userId, restaurantId])
+  @@index([restaurantId, role])
 }
 
 model Rider {

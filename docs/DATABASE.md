@@ -66,3 +66,8 @@ environment with the production `DATABASE_URL` available:
 The rider-network migration is additive: current riders remain in the
 `DOORSTEP_POOL`, while future `BUSINESS_OWNED` riders can be linked to one
 restaurant or grocery business.
+
+The restaurant-member-role migration is also additive. Existing business
+members receive the `OWNER` role, while future memberships can use `MANAGER`,
+`FINANCE`, or `STAFF`. Only Owners and Managers may manage business-owned
+rider assignments.
