@@ -18,7 +18,7 @@ import { issueVerificationCode, verificationFailure, verifyCode } from './verifi
 import { buildAiReply } from './aiBrain.js'
 
 const app = express()
-const port = Number(process.env.API_PORT || 4000)
+const port = Number(process.env.PORT || process.env.API_PORT || 4000)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 5 } })
 const authFlowLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
