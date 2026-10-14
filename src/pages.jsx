@@ -1,17 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, Bell, Camera, Check, Clock3, HelpCircle, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
+import { ArrowRight, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
 import { categories, formatNaira, groceryStores, restaurants, sapeleLocations } from './data'
 import { loadOrders } from './services/orderService'
 import { PasswordField } from './PasswordField'
 import { ProfileAvatar } from './ProfileAvatar'
 import { GroceryOwnerApplication } from './GroceryOwnerApplication'
 import { LocationMap } from './LocationMap'
+import { DeliveryTrackingMap } from './DeliveryTrackingMap'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 
+function MobileStoreDock() {
+  const path = window.location.pathname
+  if (['/login', '/register', '/forgot-password', '/reset-password'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/')) return null
+  const items = [
+    { label: 'Home', href: '/', icon: Home, active: path === '/' },
+    { label: 'Food', href: '/restaurants', icon: Utensils, active: path.startsWith('/restaurants') || path === '/menu' },
+    { label: 'Groceries', href: '/groceries', icon: ShoppingBag, active: path.startsWith('/groceries') },
+    { label: 'Orders', href: '/track-order', icon: Clock3, active: path === '/track-order' || path === '/cart' || path === '/checkout' || path.startsWith('/account/orders') },
+    { label: 'Account', href: '/account', icon: UserCircle, active: path === '/account' || path.startsWith('/account/') },
+  ]
+  return <nav className="mobile-store-dock" aria-label="Primary mobile navigation">{items.map(({ label, href, icon: Icon, active }) => <a key={href} href={href} onClick={(event) => { event.preventDefault(); navigate(href) }} className={active ? 'is-active' : ''} aria-current={active ? 'page' : undefined}><Icon size={19} /><span>{label}</span></a>)}</nav>
+}
+
 function PageFrame({ eyebrow, title, intro, children }) {
-  return <main className="route-page"><div className="route-hero"><span className="section-kicker">{eyebrow}</span><h1>{title}</h1><p>{intro}</p></div>{children}</main>
+  return <main className="route-page"><div className="route-hero"><span className="section-kicker">{eyebrow}</span><h1>{title}</h1><p>{intro}</p></div>{children}<MobileStoreDock /></main>
 }
 
 function DiscoveryPage({ offers = false, grocery = false }) {
@@ -370,7 +384,7 @@ function AddressesPage() {
   return <PageFrame eyebrow="DELIVERY LOCATIONS" title="Save the places life happens." intro="Choose a Sapele area, then add the exact street, house number, and landmark for reliable delivery."><section className="address-page"><div className="address-actions"><button className="primary-button" onClick={locate}><MapPin size={16} /> Use current device location</button>{message && <span>{message}</span>}</div><form className="address-form" onSubmit={save}><span className="section-kicker">NEW SAVED PLACE · SAPELE</span><div className="form-row"><label>Label<input required name="label" placeholder="Home, work, school..." /></label><label>Area<select required name="area" defaultValue=""><option value="" disabled>Select a Sapele area</option>{sapeleLocations.map((location) => <option key={location} value={location}>{location}</option>)}</select></label></div><label>Street, house number, or address<input required name="addressLine" placeholder="Exact street and house number" /></label><label>Landmark or delivery note<input name="landmark" placeholder="Near the pharmacy, beside the junction..." /></label><button className="checkout-button" type="submit">Save delivery location <Check size={17} /></button></form><div className="location-directory"><span className="section-kicker">DELIVERY DIRECTORY</span><h2>Sapele areas</h2><p>Area suggestions are configurable by DOORSTEP operations as delivery coverage grows.</p><div>{sapeleLocations.slice(0, 12).map((location) => <span key={location}>{location}</span>)}</div></div><div className="address-list">{addresses.length === 0 ? <div className="empty-state">No saved locations yet.</div> : addresses.map((address) => <div className="address-card" key={address.id}><MapPin size={19} /><div><strong>{address.label}</strong><p>{address.addressLine}</p><small>{address.landmark || 'No landmark added'}</small></div><button className="quiet-button" onClick={() => fetch(`${apiBase}/api/addresses/${address.id}`, { method: 'DELETE', headers: authHeaders() }).then(load)}>Remove</button></div>)}</div></section></PageFrame>
 }
 
-function LocationPage() { const [location, setLocation] = useState(localStorage.getItem('doorstep-location') || 'Amukpe, Sapele'); const [message, setMessage] = useState(''); const saveLocation = (value) => { localStorage.setItem('doorstep-location', value); window.dispatchEvent(new Event('doorstep-location-change')); setLocation(value); setMessage(`Delivering to ${value}`) }; const useLive = () => navigator.geolocation?.getCurrentPosition((position) => saveLocation(`Current device · ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`), () => setMessage('Location permission was not granted. Choose a Sapele area instead.')); return <PageFrame eyebrow="DELIVERY LOCATION" title="Where should we meet you?" intro="Choose a Sapele area, use your current device location, or save an exact address with a landmark."><section className="location-page"><div className="location-current"><MapPin size={22} /><div><span className="section-kicker">CURRENT DELIVERY LOCATION</span><h2>{location}</h2><p>{message || 'Used for restaurant discovery, delivery estimates, and checkout.'}</p></div></div><button className="primary-button live-location-button" onClick={useLive}><MapPin size={17} /> Use current device location</button><LocationMap onSelect={({ latitude, longitude }) => saveLocation(`Pinned map location · ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`)} /><div className="location-directory"><span className="section-kicker">SAPELE DELIVERY AREAS</span><h2>Choose your area</h2><p>Coverage is configured by DOORSTEP operations and can expand as the service grows.</p><div>{sapeleLocations.map((area) => <button key={area} onClick={() => saveLocation(`${area}, Sapele`)}>{area}</button>)}</div></div><button className="checkout-button" onClick={() => navigate('/account/addresses')}>Manage exact addresses <ArrowRight size={17} /></button></section></PageFrame> }
+function LocationPage() { const [location, setLocation] = useState(localStorage.getItem('doorstep-location') || 'Amukpe, Sapele'); const [message, setMessage] = useState(''); const saveLocation = (value) => { localStorage.setItem('doorstep-location', value); window.dispatchEvent(new Event('doorstep-location-change')); setLocation(value); setMessage(`Delivering to ${value}`) }; const useLive = () => navigator.geolocation?.getCurrentPosition((position) => saveLocation(`Current device · ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`), () => setMessage('Location permission was not granted. Choose a Sapele area instead.')); return <PageFrame eyebrow="DELIVERY LOCATION" title="Where should we meet you?" intro="Search your address, use precise device location, or position the delivery pin at your exact doorstep."><section className="location-page"><div className="location-current"><MapPin size={22} /><div><span className="section-kicker">CURRENT DELIVERY LOCATION</span><h2>{location}</h2><p>{message || 'Used for restaurant discovery, delivery estimates, and checkout.'}</p></div></div><button className="primary-button live-location-button" onClick={useLive}><MapPin size={17} /> Use current device location</button><LocationMap onSelect={({ latitude, longitude, label }) => saveLocation(label || `Pinned map location · ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`)} /><div className="location-directory"><span className="section-kicker">SAPELE DELIVERY AREAS</span><h2>Choose your area</h2><p>Coverage is configured by DOORSTEP operations and can expand as the service grows.</p><div>{sapeleLocations.map((area) => <button key={area} onClick={() => saveLocation(`${area}, Sapele`)}>{area}</button>)}</div></div><button className="checkout-button" onClick={() => navigate('/account/addresses')}>Manage exact addresses <ArrowRight size={17} /></button></section></PageFrame> }
 
 function FavoritesPage() { const [favorites, setFavorites] = useState([]); useEffect(() => { fetch(`${apiBase}/api/favorites`, { headers: authHeaders() }).then((response) => response.json()).then((body) => setFavorites(body.favorites || [])) }, []); return <PageFrame eyebrow="YOUR FAVORITES" title="Keep the good stuff close." intro="Save restaurants and dishes you want to find again when hunger has no patience."><section className="favorites-page">{favorites.length === 0 ? <div className="notification-empty"><HeartIcon /><h2>Your favorites are waiting.</h2><p>Tap the heart on a restaurant or food item to build your personal Sapele shortlist.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Discover restaurants <ArrowRight size={16} /></button></div> : <div className="favorite-grid">{favorites.map((favorite) => <article className="favorite-card" key={favorite.id}><div className="favorite-image" /><div><span className="section-kicker">{favorite.restaurant ? 'RESTAURANT' : 'FOOD'}</span><h2>{favorite.restaurant?.name || favorite.menuItem?.name}</h2><p>{favorite.restaurant?.description || favorite.menuItem?.description || 'Saved for your next order.'}</p></div></article>)}</div>}</section></PageFrame> }
 
@@ -486,6 +500,87 @@ function OrdersPage() {
   return <PageFrame eyebrow="ACCOUNT ORDERS" title="Your order history." intro={source === 'api' ? 'These orders are stored in your DOORSTEP account and update from the server.' : 'Local development orders are shown here until you sign in with a database-backed customer account.'}>{orders.length === 0 ? <div className="submitted-card"><Clock3 size={24} /><h2>No orders yet</h2><p>Your completed orders will appear here with payment and delivery history.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Find food <ArrowRight size={16} /></button></div> : <div className="orders-list">{orders.map((order) => <button className="order-row" key={order.id} onClick={() => navigate(`/account/orders/${order.id}`)}><div><span className="section-kicker">{order.orderNumber}</span><h2>{order.restaurant?.name || order.restaurantName}</h2><p>{order.items?.length || 0} item(s) · {new Date(order.createdAt).toLocaleDateString('en-NG')}</p></div><div><strong>{formatNaira(order.total || (order.totalMinor ? Math.round(order.totalMinor / 100) : 0))}</strong><span className="order-status">{order.status}</span></div><ArrowRight size={16} /></button>)}</div>}</PageFrame>
 }
 
+function useCustomerDeliveryTracking(deliveryId) {
+  const [snapshot, setSnapshot] = useState(null)
+  const [connection, setConnection] = useState('connecting')
+
+  useEffect(() => {
+    if (!deliveryId) {
+      setSnapshot(null)
+      return undefined
+    }
+
+    const token = localStorage.getItem('doorstep-token')
+    if (!token) return undefined
+    let active = true
+    let socket
+    let retryTimer
+    let retryCount = 0
+    const endpoint = apiBase || import.meta.env.VITE_API_BASE_URL || 'https://mydoorstep-api.onrender.com'
+    const fetchSnapshot = async () => {
+      try {
+        const response = await fetch(`${endpoint}/api/deliveries/${deliveryId}/tracking`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!response.ok) throw new Error('Tracking snapshot request failed')
+        const body = await response.json()
+        if (active) setSnapshot(body)
+      } catch {
+        if (active) setConnection('offline')
+      }
+    }
+    const scheduleReconnect = () => {
+      if (!active) return
+      retryTimer = window.setTimeout(connect, Math.min(30000, 1000 * 2 ** retryCount))
+      retryCount += 1
+    }
+    const connect = () => {
+      if (!active || document.visibilityState !== 'visible') return
+      setConnection('connecting')
+      const websocketUrl = new URL(`${endpoint}/api/deliveries/${deliveryId}/live`)
+      websocketUrl.protocol = websocketUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+      socket = new WebSocket(websocketUrl, ['bearer', token])
+      socket.onopen = () => {
+        retryCount = 0
+        if (active) setConnection('live')
+      }
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data)
+          if (message.type === 'tracking.snapshot' && message.data) setSnapshot(message.data)
+          if (message.type === 'tracking.location' && message.data && active) setSnapshot((current) => current ? { ...current, delivery: { ...current.delivery, location: message.data } } : current)
+        } catch {
+          if (active) setConnection('offline')
+        }
+      }
+      socket.onclose = () => {
+        if (active) {
+          setConnection('offline')
+          scheduleReconnect()
+        }
+      }
+      socket.onerror = () => socket.close()
+    }
+    const refresh = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSnapshot()
+        if (!socket || socket.readyState === WebSocket.CLOSED) connect()
+      }
+    }
+    fetchSnapshot()
+    connect()
+    const pollingTimer = window.setInterval(fetchSnapshot, 15000)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      active = false
+      window.clearTimeout(retryTimer)
+      window.clearInterval(pollingTimer)
+      document.removeEventListener('visibilitychange', refresh)
+      socket?.close()
+    }
+  }, [deliveryId])
+
+  return { snapshot, connection }
+}
+
 function OrderPage({ orderId }) {
   const [apiOrder, setApiOrder] = useState(null)
   const [rating, setRating] = useState(5)
@@ -493,6 +588,7 @@ function OrderPage({ orderId }) {
   const [reviewMessage, setReviewMessage] = useState('')
   const [localOrder] = useState(() => loadOrders().find((item) => item.id === orderId) || loadOrders()[0])
   useEffect(() => { const token = localStorage.getItem('doorstep-token'); if (!token || orderId.startsWith('local-')) return; let active = true; let timer; const load = () => { if (document.visibilityState !== 'visible') return; fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/orders/${orderId}/tracking`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.ok ? response.json() : null).then((body) => { if (active && body?.order) setApiOrder(body.order) }).catch(() => undefined) }; const start = () => { load(); window.clearInterval(timer); timer = window.setInterval(load, 15000) }; const stop = () => window.clearInterval(timer); start(); document.addEventListener('visibilitychange', start); return () => { active = false; stop(); document.removeEventListener('visibilitychange', start) } }, [orderId])
+  const tracking = useCustomerDeliveryTracking(apiOrder?.delivery?.id)
   const order = apiOrder || localOrder
   if (!order) return <OrdersPage />
   const stages = ['PAID', 'RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']
@@ -500,7 +596,7 @@ function OrderPage({ orderId }) {
   const currentApiStage = stages.indexOf(currentStatus)
   const total = order.total || (order.totalMinor ? Math.round(order.totalMinor / 100) : 0)
   const submitReview = async (event) => { event.preventDefault(); setReviewMessage(''); const token = localStorage.getItem('doorstep-token'); const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/reviews`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, rating, body: reviewBody || undefined }) }); const body = await response.json(); setReviewMessage(response.ok ? 'Thanks. Your review helps the next customer choose well.' : body.error === 'ORDER_ALREADY_REVIEWED' ? 'You already reviewed this order.' : body.error || 'Could not save your review.') }
-  return <PageFrame eyebrow="ORDER TRACKING" title={order.orderNumber} intro={`${order.restaurant || order.restaurantName} · ${order.address || 'Delivery address on file'}`}><section className="order-page-layout"><div className="order-timeline">{stages.map((stage, index) => <div className={index <= Math.max(0, currentApiStage) ? 'timeline-step complete' : 'timeline-step'} key={stage}><span>{index <= Math.max(0, currentApiStage) ? '✓' : index + 1}</span><div><strong>{stage.replaceAll('_', ' ')}</strong><small>{index === 0 ? 'Payment confirmed' : 'This stage updates from the restaurant, rider, and DOORSTEP operations API.'}</small></div></div>)}</div><div className="cart-page-summary"><span className="section-kicker">ORDER SUMMARY</span><div><span>Restaurant</span><strong>{order.restaurant || order.restaurantName}</strong></div><div><span>Status</span><strong>{currentStatus}</strong></div><div><span>Payment</span><strong>{order.paymentStatus || 'SERVER TRACKED'}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(total)}</strong></div>{apiOrder?.delivery?.rider?.callAllowed ? <a className="call-rider-button" href={`tel:${apiOrder.delivery.rider.phone}`}>Call assigned rider</a> : <small className="call-rider-note">Rider contact appears only during an active assigned delivery.</small>}<button className="checkout-button" onClick={() => navigate('/help')}>Contact support <ArrowRight size={17} /></button></div></section>{currentStatus === 'DELIVERED' && apiOrder && <section className="review-card"><div><span className="section-kicker">TASTE NOTES</span><h2>How did {order.restaurant || order.restaurantName} do?</h2><p>Your review helps local customers find the right kitchen.</p></div><form onSubmit={submitReview}><div className="review-stars" aria-label="Choose a rating">{[1, 2, 3, 4, 5].map((value) => <button type="button" className={value <= rating ? 'is-selected' : ''} key={value} onClick={() => setRating(value)} aria-label={`${value} star${value === 1 ? '' : 's'}`}><Star size={25} fill="currentColor" /></button>)}</div><textarea value={reviewBody} onChange={(event) => setReviewBody(event.target.value)} maxLength={2000} rows="4" placeholder="What should another Sapele customer know?" />{reviewMessage && <div className="profile-message">{reviewMessage}</div>}<button className="checkout-button" type="submit">Publish review <Sparkles size={17} /></button></form></section>}</PageFrame>
+  return <PageFrame eyebrow="ORDER TRACKING" title={order.orderNumber} intro={`${order.restaurant || order.restaurantName} · ${order.address || 'Delivery address on file'}`}><section className="order-page-layout"><div className="order-timeline">{stages.map((stage, index) => <div className={index <= Math.max(0, currentApiStage) ? 'timeline-step complete' : 'timeline-step'} key={stage}><span>{index <= Math.max(0, currentApiStage) ? '✓' : index + 1}</span><div><strong>{stage.replaceAll('_', ' ')}</strong><small>{index === 0 ? 'Payment confirmed' : 'This stage updates from the restaurant, rider, and DOORSTEP operations API.'}</small></div></div>)}</div><div className="cart-page-summary"><span className="section-kicker">ORDER SUMMARY</span><div><span>Restaurant</span><strong>{order.restaurant || order.restaurantName}</strong></div><div><span>Status</span><strong>{currentStatus}</strong></div><div><span>Payment</span><strong>{order.paymentStatus || 'SERVER TRACKED'}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(total)}</strong></div>{apiOrder?.delivery?.rider?.callAllowed ? <a className="call-rider-button" href={`tel:${apiOrder.delivery.rider.phone}`}>Call assigned rider</a> : <small className="call-rider-note">Rider contact appears only during an active assigned delivery.</small>}<button className="checkout-button" onClick={() => navigate('/help')}>Contact support <ArrowRight size={17} /></button></div></section>{tracking.snapshot && <section aria-label="Live delivery map"><DeliveryTrackingMap tracking={tracking.snapshot} connection={tracking.connection} /></section>}{currentStatus === 'DELIVERED' && apiOrder && <section className="review-card"><div><span className="section-kicker">TASTE NOTES</span><h2>How did {order.restaurant || order.restaurantName} do?</h2><p>Your review helps local customers find the right kitchen.</p></div><form onSubmit={submitReview}><div className="review-stars" aria-label="Choose a rating">{[1, 2, 3, 4, 5].map((value) => <button type="button" className={value <= rating ? 'is-selected' : ''} key={value} onClick={() => setRating(value)} aria-label={`${value} star${value === 1 ? '' : 's'}`}><Star size={25} fill="currentColor" /></button>)}</div><textarea value={reviewBody} onChange={(event) => setReviewBody(event.target.value)} maxLength={2000} rows="4" placeholder="What should another Sapele customer know?" />{reviewMessage && <div className="profile-message">{reviewMessage}</div>}<button className="checkout-button" type="submit">Publish review <Sparkles size={17} /></button></form></section>}</PageFrame>
 }
 
 export function RoutePage({ path, cart = [], checkoutError = '', onAddToCart = () => {}, onChangeQuantity = () => {}, onCheckout = () => {}, onComplete = () => {} }) {

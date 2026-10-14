@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Bike, Bell, Check, Clock3, DollarSign, MapPin, Menu, Package, Settings, ShieldCheck, Store, Truck } from 'lucide-react'
 import { formatNaira } from './data'
 
@@ -19,14 +19,97 @@ function RiderShell({ path, children }) {
 
 function RiderIntro({ eyebrow, title, action }) { return <div className="portal-intro"><div><span className="section-kicker">{eyebrow}</span><h2>{title}</h2></div>{action}</div> }
 
+function RiderLocationSharing({ deliveryId, active }) {
+  const watchId = useRef(null)
+  const socket = useRef(null)
+  const [state, setState] = useState('idle')
+  const [message, setMessage] = useState('Start sharing when you begin this active delivery. Your location is only sent to authorized delivery participants.')
+
+  const stop = () => {
+    if (watchId.current !== null) navigator.geolocation?.clearWatch(watchId.current)
+    watchId.current = null
+    socket.current?.close()
+    socket.current = null
+  }
+  useEffect(() => () => stop(), [])
+  useEffect(() => {
+    if (!active) {
+      stop()
+      setState('idle')
+    }
+  }, [active])
+
+  const sendLocation = async (position) => {
+    const location = { type: 'location', latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp }
+    if (socket.current?.readyState === WebSocket.OPEN) {
+      socket.current.send(JSON.stringify(location))
+      setState('sharing')
+      setMessage('Location sharing is active for this delivery.')
+      return
+    }
+    const response = await fetch(`${apiBase}/api/deliveries/${deliveryId}/location`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' }, body: JSON.stringify(location) })
+    if (!response.ok) throw new Error('Location update could not be delivered')
+    setState('sharing')
+    setMessage('Live connection is restoring. Your latest location was sent securely.')
+  }
+  const start = () => {
+    if (!navigator.geolocation) {
+      setState('error')
+      setMessage('This browser does not support location sharing. Use a current mobile browser to continue.')
+      return
+    }
+    const token = localStorage.getItem('doorstep-token')
+    if (!token) {
+      setState('error')
+      setMessage('Your rider session has expired. Sign in again before sharing your location.')
+      return
+    }
+    stop()
+    setState('requesting')
+    setMessage('Allow precise location when your browser asks. It is used only while this delivery is active.')
+    const websocketUrl = new URL(`${apiBase}/api/deliveries/${deliveryId}/live`)
+    websocketUrl.protocol = websocketUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+    socket.current = new WebSocket(websocketUrl, ['bearer', token])
+    socket.current.onclose = () => { if (watchId.current !== null) setMessage('Live connection lost. Location updates will use the secure backup connection.') }
+    socket.current.onerror = () => socket.current?.close()
+    watchId.current = navigator.geolocation.watchPosition(
+      (position) => { sendLocation(position).catch(() => { setState('error'); setMessage('We could not send this location. Check your connection and keep this delivery active.') }) },
+      (error) => {
+        stop()
+        setState('error')
+        setMessage(error.code === error.PERMISSION_DENIED ? 'Location permission was denied. Enable precise location in your browser settings to share this delivery.' : error.code === error.TIMEOUT ? 'Location took too long to respond. Move to a clearer area and try sharing again.' : 'Your current location is unavailable. Check GPS and try again.')
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+    )
+  }
+  return <div className={`rider-location-sharing ${state}`}><strong>Live location</strong><p>{message}</p>{state === 'sharing' ? <button type="button" className="portal-secondary" onClick={() => { stop(); setState('idle'); setMessage('Location sharing is paused.') }}>Pause sharing</button> : <button type="button" className="portal-primary" disabled={!active || state === 'requesting'} onClick={start}><MapPin size={16} />{state === 'requesting' ? 'Requesting location...' : 'Start location sharing'}</button>}</div>
+}
+
 function CurrentDelivery({ delivery, setDelivery }) {
   const stage = stages.indexOf(delivery.status)
   const next = stages[stage + 1]
-    const advance = async () => { const response = await fetch(`${apiBase}/api/deliveries/by-order/${encodeURIComponent(delivery.order)}/status`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next }) }); if (response.ok) setDelivery({ ...delivery, status: next }) }
-  return <section className="rider-delivery-card"><div className="delivery-card-head"><div><span className="section-kicker">ACTIVE DELIVERY</span><h3>{delivery.order}</h3></div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span></div><div className="delivery-route"><div><Store size={17} /><span><small>Pickup</small><strong>{delivery.restaurant}</strong><em>{delivery.pickup}</em></span></div><div className="route-line" /><div><MapPin size={17} /><span><small>Drop-off</small><strong>{delivery.customer}</strong><em>{delivery.dropoff}</em></span></div></div>{next ? <button className="portal-primary" onClick={advance}>{next === 'DELIVERED' ? <Check size={16} /> : <ArrowRight size={16} />} {next.replaceAll('_', ' ')}</button> : <div className="delivered-label"><Check size={17} /> Delivery completed</div>}</section>
+  const active = next !== undefined
+  const advance = async () => { const response = await fetch(`${apiBase}/api/deliveries/by-order/${encodeURIComponent(delivery.order)}/status`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next }) }); if (response.ok) setDelivery({ ...delivery, status: next }) }
+  return <section className="rider-delivery-card"><div className="delivery-card-head"><div><span className="section-kicker">ACTIVE DELIVERY</span><h3>{delivery.order}</h3></div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span></div><div className="delivery-route"><div><Store size={17} /><span><small>Pickup</small><strong>{delivery.restaurant}</strong><em>{delivery.pickup}</em></span></div><div className="route-line" /><div><MapPin size={17} /><span><small>Drop-off</small><strong>{delivery.customer}</strong><em>{delivery.dropoff}</em></span></div></div><RiderLocationSharing deliveryId={delivery.id} active={active} />{next ? <button className="portal-primary" onClick={advance}>{next === 'DELIVERED' ? <Check size={16} /> : <ArrowRight size={16} />} {next.replaceAll('_', ' ')}</button> : <div className="delivered-label"><Check size={17} /> Delivery completed</div>}</section>
 }
 
-function RiderDashboard() { const [online, setOnline] = useState(false); const [delivery, setDelivery] = useState(null); const token = localStorage.getItem('doorstep-token'); useEffect(() => { fetch('http://localhost:4000/api/rider/deliveries', { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => { const active = body.deliveries?.find((item) => item.riderId); if (active) setDelivery({ order: active.order.orderNumber, restaurant: active.order.restaurant.name, pickup: active.order.restaurant.address, customer: 'Customer', dropoff: active.order.addressSnapshot, status: active.status }) }).catch(() => undefined) }, []); const toggleOnline = async () => { const next = online ? 'OFFLINE' : 'ONLINE'; const response = await fetch('http://localhost:4000/api/rider/availability', { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ availability: next }) }); if (response.ok) setOnline(!online) }; return <><RiderIntro eyebrow="TODAY AT A GLANCE" title="Ready for the next good trip?" action={<button className={online ? 'online-toggle active' : 'online-toggle'} onClick={toggleOnline}><span /> {online ? 'Online' : 'Offline'}</button>} /><div className="demo-banner"><span>LIVE RIDER WORKSPACE</span><p>Your availability and assigned deliveries are now synchronized with DOORSTEP operations.</p></div><section className="metric-grid"><div><span>Today's deliveries</span><strong>7</strong><small>2 still active</small></div><div><span>Today's earnings</span><strong>{formatNaira(9800)}</strong><small>Before payout</small></div><div><span>Acceptance rate</span><strong>88%</strong><small>Last 30 days</small></div><div><span>Your rating</span><strong>4.9 <em>★</em></strong><small>From 84 deliveries</small></div></section><section className="rider-layout">{delivery ? <CurrentDelivery delivery={delivery} setDelivery={setDelivery} /> : <div className="rider-delivery-card"><span className="section-kicker">NO ACTIVE DELIVERY</span><h3>Ready when an assignment arrives.</h3><p>Go online to receive available delivery requests.</p></div>}<div className="portal-panel"><div className="panel-heading"><div><span className="section-kicker">DELIVERY CARE</span><h3>Before you move</h3></div></div><div className="rider-care"><Bike size={20} /><p>Only share your location while an active delivery is in progress. Customer and restaurant details stay limited to the current order.</p></div><button className="text-link" onClick={() => navigate('/rider/verification')}>View verification <ArrowRight size={14} /></button></div></section></> }
+function RiderDashboard() {
+  const [online, setOnline] = useState(false)
+  const [delivery, setDelivery] = useState(null)
+  const token = localStorage.getItem('doorstep-token')
+  useEffect(() => {
+    fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => {
+      const active = body.deliveries?.find((item) => item.riderId)
+      if (active) setDelivery({ id: active.id, order: active.order.orderNumber, restaurant: active.order.restaurant.name, pickup: active.order.restaurant.address, customer: 'Customer', dropoff: active.order.addressSnapshot, status: active.status })
+    }).catch(() => undefined)
+  }, [token])
+  const toggleOnline = async () => {
+    const next = online ? 'OFFLINE' : 'ONLINE'
+    const response = await fetch(`${apiBase}/api/rider/availability`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ availability: next }) })
+    if (response.ok) setOnline(!online)
+  }
+  return <><RiderIntro eyebrow="TODAY AT A GLANCE" title="Ready for the next good trip?" action={<button className={online ? 'online-toggle active' : 'online-toggle'} onClick={toggleOnline}><span /> {online ? 'Online' : 'Offline'}</button>} /><div className="demo-banner"><span>LIVE RIDER WORKSPACE</span><p>Your availability and assigned deliveries are now synchronized with DOORSTEP operations.</p></div><section className="metric-grid"><div><span>Today's deliveries</span><strong>7</strong><small>2 still active</small></div><div><span>Today's earnings</span><strong>{formatNaira(9800)}</strong><small>Before payout</small></div><div><span>Acceptance rate</span><strong>88%</strong><small>Last 30 days</small></div><div><span>Your rating</span><strong>4.9 <em>★</em></strong><small>From 84 deliveries</small></div></section><section className="rider-layout">{delivery ? <CurrentDelivery delivery={delivery} setDelivery={setDelivery} /> : <div className="rider-delivery-card"><span className="section-kicker">NO ACTIVE DELIVERY</span><h3>Ready when an assignment arrives.</h3><p>Go online to receive available delivery requests.</p></div>}<div className="portal-panel"><div className="panel-heading"><div><span className="section-kicker">DELIVERY CARE</span><h3>Before you move</h3></div></div><div className="rider-care"><Bike size={20} /><p>Only share your location while an active delivery is in progress. Customer and restaurant details stay limited to the current order.</p></div><button className="text-link" onClick={() => navigate('/rider/verification')}>View verification <ArrowRight size={14} /></button></div></section></>
+}
 
 function Available() { const [deliveries, setDeliveries] = useState([]); const token = localStorage.getItem('doorstep-token'); useEffect(() => { fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => setDeliveries(body.deliveries || [])).catch(() => undefined) }, []); const claim = async (id) => { const response = await fetch(`${apiBase}/api/deliveries/${id}/claim`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }); if (response.ok) navigate('/rider/dashboard') }; return <><RiderIntro eyebrow="AVAILABLE DELIVERIES" title="Choose your next route." /><section className="orders-panel">{deliveries.filter((delivery) => delivery.status === 'AVAILABLE').map((delivery) => <div className="portal-order-row" key={delivery.id}><div className="order-id"><strong>{delivery.order.orderNumber}</strong><small>{delivery.order.restaurant.name}</small></div><div className="order-items">{delivery.order.restaurant.address} → {delivery.order.addressSnapshot}</div><strong>{formatNaira(delivery.order.deliveryFeeMinor / 100)}</strong><button className="small-action" onClick={() => claim(delivery.id)}>Accept</button></div>)}{deliveries.length === 0 && <div className="empty-state">No delivery requests are available right now.</div>}</section></> }
 

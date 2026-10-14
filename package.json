@@ -34,6 +34,7 @@
     "react-dom": "latest",
     "supertest": "latest",
     "vite": "latest",
+    "ws": "^8.18.3",
     "zod": "latest"
   },
   "devDependencies": {

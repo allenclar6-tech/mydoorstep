@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ArrowRight, BarChart3, Bell, Check, ClipboardList, DollarSign, FileText, LayoutDashboard, Menu, Settings, Shield, Store, Truck, Users } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BarChart3, Bell, Check, ClipboardList, DollarSign, FileText, LayoutDashboard, MapPin, Menu, Settings, Shield, Store, Truck, Users } from 'lucide-react'
 import { formatNaira } from './data'
 import { PasswordField } from './PasswordField'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
-const adminNav = [['Dashboard', '/admin/dashboard', LayoutDashboard], ['Customers', '/admin/customers', Users], ['Restaurants', '/admin/restaurants', Store], ['Riders', '/admin/riders', Truck], ['Orders', '/admin/orders', ClipboardList], ['Reviews', '/admin/reviews', ClipboardList], ['Support', '/admin/support', Bell], ['Finance', '/admin/payments', DollarSign], ['Analytics', '/admin/analytics', BarChart3], ['Audit logs', '/admin/audit-logs', FileText], ['Settings', '/admin/settings', Settings]]
+const adminNav = [['Dashboard', '/admin/dashboard', LayoutDashboard], ['Active deliveries', '/admin/deliveries', MapPin], ['Customers', '/admin/customers', Users], ['Restaurants', '/admin/restaurants', Store], ['Riders', '/admin/riders', Truck], ['Orders', '/admin/orders', ClipboardList], ['Reviews', '/admin/reviews', ClipboardList], ['Support', '/admin/support', Bell], ['Finance', '/admin/payments', DollarSign], ['Analytics', '/admin/analytics', BarChart3], ['Audit logs', '/admin/audit-logs', FileText], ['Settings', '/admin/settings', Settings]]
 
 export function AdminLogin({ onLogin }) {
 	const [error, setError] = useState('')
@@ -45,5 +45,32 @@ function Reviews() { const [reviews, setReviews] = useState([]); const [message,
 
 function SettingsPage() { const [settings, setSettings] = useState([]); const [message, setMessage] = useState(''); const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'; const token = localStorage.getItem('doorstep-admin-token'); const labels = { restaurant_commission_percentage: 'Restaurant commission (%)', service_fee_percentage: 'Customer service fee (%)', maximum_delivery_radius_km: 'Maximum delivery radius (km)', rider_base_earning_minor: 'Rider base earning (minor units)' }; const load = () => fetch(`${apiBase}/api/admin/settings`, { headers: { Authorization: `Bearer ${token}` } }).then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Could not load settings.'); setSettings(body.settings || []) }).catch((error) => setMessage(error.message)); useEffect(() => { load() }, []); const save = async (key, value) => { const response = await fetch(`${apiBase}/api/admin/settings`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ key, value: Number(value) }) }); if (response.ok) { setMessage('Setting saved and audited.'); load() } else { const body = await response.json(); setMessage(body.error || 'Could not save setting.') } }; return <><AdminIntro eyebrow="PLATFORM SETTINGS" title="Rules the marketplace follows." />{message && <div className="profile-message">{message}</div>}<section className="admin-table">{settings.length === 0 ? <div className="empty-state">Loading settings...</div> : settings.map((setting) => <form className="admin-table-row" key={setting.key} onSubmit={(event) => { event.preventDefault(); save(setting.key, new FormData(event.currentTarget).get('value')) }}><div><strong>{labels[setting.key] || setting.key}</strong><small>Server-owned setting · audited changes</small></div><input name="value" type="number" min="0" step="0.01" defaultValue={typeof setting.value === 'number' ? setting.value : ''} /><button className="admin-review" type="submit"><Check size={14} /> Save</button></form>)}</section></> }
 
+function ActiveDeliveries() {
+  const [deliveries, setDeliveries] = useState([])
+  const [message, setMessage] = useState('')
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+  const token = localStorage.getItem('doorstep-admin-token')
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/admin/deliveries/active`, { headers: { Authorization: `Bearer ${token}` } })
+        const body = await response.json()
+        if (!response.ok) throw new Error(body.error || 'Could not load active deliveries.')
+        if (active) {
+          setDeliveries(body.deliveries || [])
+          setMessage('')
+        }
+      } catch (error) {
+        if (active) setMessage(error.message)
+      }
+    }
+    load()
+    const timer = window.setInterval(load, 15000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [apiBase, token])
+  return <><AdminIntro eyebrow="DELIVERY OPERATIONS" title="Live delivery command view." /><p className="admin-delivery-privacy">This protected view exposes only operational status, rider identity, and the latest authorized location time. Customer details and location history stay private.</p>{message && <div className="admin-login-error">{message}</div>}<section className="admin-table">{deliveries.length === 0 ? <div className="empty-state">No active deliveries are currently available.</div> : deliveries.map((delivery) => <div className="admin-table-row" key={delivery.id}><div><strong>{delivery.orderNumber}</strong><small>{delivery.restaurant} · {delivery.rider}</small></div><div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span><small>{delivery.location?.recordedAt ? `Last verified rider location: ${new Date(delivery.location.recordedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for the rider’s first verified location.'}</small></div></div>)}</section></>
+}
+
 function AdminComingSoon({ title, detail }) { return <><AdminIntro eyebrow="ADMIN CONTROL CENTER" title={title} /><section className="admin-panel finance-note"><Settings size={22} /><div><h3>Operational workspace ready</h3><p>{detail}</p><button className="admin-primary" onClick={() => navigate('/admin/dashboard')}>Return to overview <ArrowRight size={15} /></button></div></section></> }
-export function AdminPortal({ path, onLogout }) { let content = <LiveDashboard />; if (path === '/admin/restaurants') content = <Management kind="Restaurants" />; if (path === '/admin/riders') content = <Management kind="Riders" />; if (path === '/admin/customers') content = <Customers />; if (path === '/admin/orders') content = <LiveAdminOrders />; if (path === '/admin/reviews') content = <Reviews />; if (path === '/admin/payments' || path === '/admin/analytics') content = <Finance />; if (path === '/admin/audit-logs') content = <AuditLogs />; if (path === '/admin/settings') content = <SettingsPage />; if (path === '/admin/support') content = <SupportInbox />; return <AdminShell path={path}>{content}</AdminShell> }
+export function AdminPortal({ path, onLogout }) { let content = <LiveDashboard />; if (path === '/admin/deliveries') content = <ActiveDeliveries />; if (path === '/admin/restaurants') content = <Management kind="Restaurants" />; if (path === '/admin/riders') content = <Management kind="Riders" />; if (path === '/admin/customers') content = <Customers />; if (path === '/admin/orders') content = <LiveAdminOrders />; if (path === '/admin/reviews') content = <Reviews />; if (path === '/admin/payments' || path === '/admin/analytics') content = <Finance />; if (path === '/admin/audit-logs') content = <AuditLogs />; if (path === '/admin/settings') content = <SettingsPage />; if (path === '/admin/support') content = <SupportInbox />; return <AdminShell path={path}>{content}</AdminShell> }

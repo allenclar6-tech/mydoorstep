@@ -24,6 +24,7 @@ export const sapeleLocations = [
   'Warri-Sapele Road',
   'Benin-Sapele Road',
   'Urban Area',
+  'Ugbeyi',
   'Okpe Road',
   'Oton Road',
   'Oghara Junction',
@@ -35,6 +36,12 @@ export const sapeleLocations = [
   'Jesse Road',
   'Other Sapele location',
 ]
+
+export const sapeleDeliveryDirectory = sapeleLocations.map((name) => ({
+  name,
+  type: name.includes('Road') || name.includes('Junction') ? 'Road and route area' : 'Delivery community',
+  description: `DOORSTEP delivery coverage area in Sapele. Search for a precise street, landmark, or house number to refine the map pin.`,
+}))
 
 export const restaurants = [
   {

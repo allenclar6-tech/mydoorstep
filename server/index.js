@@ -10,7 +10,8 @@ import { z } from 'zod'
 import { prisma } from './prisma.js'
 import { createSession, hashPassword, requireUser, revokeSession, revokeUserSessions, verifyPassword } from './auth.js'
 import { initializePayment, isOrderPayable, matchesPaystackPayment, PaymentError, verifyWebhookSignature } from './paymentService.js'
-import { advanceDelivery, claimDelivery, recordLocation } from './deliveryService.js'
+import { advanceDelivery, claimDelivery, getDeliveryTrackingSnapshot, recordLocation, validateLocationUpdate } from './deliveryService.js'
+import { deliveryRealtime } from './realtime.js'
 import { requireAdmin, reviewApplication } from './adminService.js'
 import { readPrivateDocument, storePrivateDocument, uploadError } from './uploadService.js'
 import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
@@ -938,12 +939,12 @@ app.post('/api/deliveries/by-order/:orderNumber/status', requireUser, async (req
 })
 
 app.post('/api/deliveries/:deliveryId/location', requireUser, async (request, response) => {
-  const result = z.object({ latitude: z.number().gte(-90).lte(90), longitude: z.number().gte(-180).lte(180) }).safeParse(request.body)
-  if (!result.success) return response.status(400).json({ error: 'INVALID_LOCATION' })
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
-    await recordLocation(request.params.deliveryId, request.user.rider.id, result.data.latitude, result.data.longitude)
-    return response.status(202).json({ accepted: true })
+    const location = validateLocationUpdate(request.body)
+    const saved = await recordLocation(request.params.deliveryId, request.user.rider.id, location)
+    deliveryRealtime.broadcastLocation(request.params.deliveryId, saved)
+    return response.status(202).json({ accepted: true, recordedAt: saved.recordedAt })
   } catch (error) {
     return response.status(error.status || 503).json({ error: error.code || 'LOCATION_SERVICE_UNAVAILABLE', message: error.message })
   }
@@ -954,13 +955,47 @@ app.get('/api/orders/:orderId/tracking', requireUser, async (request, response) 
     const order = await prisma.order.findUnique({ where: { id: request.params.orderId }, include: { restaurant: { include: { users: { select: { userId: true } } } }, delivery: { include: { rider: { include: { user: true } } } } } })
     if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
     if (request.user.role === 'CUSTOMER' && order.customerId !== request.user.id) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
-    if (!['CUSTOMER', 'ADMIN', 'RESTAURANT'].includes(request.user.role)) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
-    if (request.user.role === 'RESTAURANT' && !order.restaurant.users.some((member) => member.userId === request.user.id)) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
-    const location = order.delivery?.riderId ? await prisma.riderLocation.findFirst({ where: { riderId: order.delivery.riderId, deliveryId: order.delivery.id }, orderBy: { recordedAt: 'desc' } }) : null
-    const activeDelivery = order.delivery && !['DELIVERED', 'CANCELLED'].includes(order.delivery.status)
-    return response.json({ order: { id: order.id, orderNumber: order.orderNumber, restaurant: order.restaurant.name, status: order.status, delivery: order.delivery ? { status: order.delivery.status, location: location ? { latitude: location.latitude, longitude: location.longitude, recordedAt: location.recordedAt } : null, rider: activeDelivery && order.delivery.rider ? { name: `${order.delivery.rider.user.firstName} ${order.delivery.rider.user.lastName}`, phone: order.delivery.rider.user.phone, callAllowed: Boolean(order.delivery.rider.user.phone) } : null } : null } })
-  } catch {
-    return response.status(503).json({ error: 'TRACKING_SERVICE_UNAVAILABLE' })
+    if (request.user.role === 'RIDER' && order.delivery?.riderId !== request.user.rider?.id) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
+    const activeDelivery = order.delivery && ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'].includes(order.delivery.status)
+    if (!['CUSTOMER', 'RIDER', 'ADMIN'].includes(request.user.role) || (request.user.role === 'ADMIN' && !activeDelivery)) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
+    const snapshot = order.delivery ? await getDeliveryTrackingSnapshot(order.delivery.id, request.user) : null
+    return response.json({ order: { id: order.id, orderNumber: order.orderNumber, restaurant: order.restaurant.name, status: order.status, delivery: order.delivery ? { id: order.delivery.id, status: order.delivery.status, location: snapshot?.delivery.location || null, rider: activeDelivery && order.delivery.rider ? { name: `${order.delivery.rider.user.firstName} ${order.delivery.rider.user.lastName}`, phone: order.delivery.rider.user.phone, callAllowed: Boolean(order.delivery.rider.user.phone) } : null } : null } })
+  } catch (error) {
+    return response.status(error.status || 503).json({ error: error.code || 'TRACKING_SERVICE_UNAVAILABLE' })
+  }
+})
+
+app.get('/api/deliveries/:deliveryId/tracking', requireUser, async (request, response) => {
+  try {
+    return response.json(await getDeliveryTrackingSnapshot(request.params.deliveryId, request.user))
+  } catch (error) {
+    return response.status(error.status || 503).json({ error: error.code || 'TRACKING_SERVICE_UNAVAILABLE' })
+  }
+})
+
+app.get('/api/admin/deliveries/active', requireUser, async (request, response) => {
+  if (request.user.role !== 'ADMIN') return response.status(403).json({ error: 'ADMIN_ACCESS_REQUIRED' })
+  try {
+    const deliveries = await prisma.delivery.findMany({
+      where: { status: { in: ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } },
+      include: { order: { select: { orderNumber: true, restaurant: { select: { name: true } } } }, rider: { select: { user: { select: { firstName: true, lastName: true } } } } },
+      orderBy: { acceptedAt: 'desc' },
+    })
+    const activeDeliveries = await Promise.all(deliveries.map(async (delivery) => {
+      const snapshot = await getDeliveryTrackingSnapshot(delivery.id, request.user)
+      return {
+        id: delivery.id,
+        status: delivery.status,
+        orderNumber: delivery.order.orderNumber,
+        restaurant: delivery.order.restaurant.name,
+        rider: delivery.rider ? `${delivery.rider.user.firstName} ${delivery.rider.user.lastName}`.trim() : 'Awaiting rider',
+        location: snapshot.delivery.location,
+      }
+    }))
+    return response.json({ deliveries: activeDeliveries })
+  } catch (error) {
+    console.error('Could not load active delivery operations view', { code: error.code, name: error.name })
+    return response.status(error.status || 503).json({ error: error.code || 'TRACKING_SERVICE_UNAVAILABLE' })
   }
 })
 
@@ -1058,7 +1093,8 @@ export { app }
 
 if (process.env.NODE_ENV !== 'test') {
   const host = process.env.API_HOST || '0.0.0.0'
-  app.listen(port, host, () => {
+  const server = app.listen(port, host, () => {
     console.log(`DOORSTEP API listening on http://${host}:${port}`)
   })
+  deliveryRealtime.attach(server)
 }

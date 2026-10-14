@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import request from 'supertest'
+import { validateLocationUpdate } from '../server/deliveryService.js'
 import { isOrderPayable, matchesPaystackPayment, verifyWebhookSignature } from '../server/paymentService.js'
 import { verificationFailure } from '../server/verificationService.js'
 
@@ -91,6 +92,37 @@ test('delivery claim requires authentication', async () => {
   const response = await request(app).post('/api/deliveries/example/claim')
   assert.equal(response.status, 401)
   assert.equal(response.body.error, 'AUTHENTICATION_REQUIRED')
+})
+
+test('live delivery locations require authenticated rider sessions', async () => {
+  const response = await request(app).post('/api/deliveries/example/location').send({
+    latitude: 5.89,
+    longitude: 5.67,
+    accuracy: 12,
+    timestamp: new Date().toISOString(),
+  })
+  assert.equal(response.status, 401)
+  assert.equal(response.body.error, 'AUTHENTICATION_REQUIRED')
+})
+
+test('delivery location validation rejects invalid accuracy and stale timestamps', () => {
+  const now = Date.now()
+  assert.throws(
+    () => validateLocationUpdate({ latitude: 5.89, longitude: 5.67, accuracy: 101, timestamp: new Date(now).toISOString() }, now),
+    { code: 'INVALID_LOCATION_ACCURACY' },
+  )
+  assert.throws(
+    () => validateLocationUpdate({ latitude: 5.89, longitude: 5.67, accuracy: 12, timestamp: new Date(now - 300001).toISOString() }, now),
+    { code: 'STALE_LOCATION' },
+  )
+})
+
+test('delivery location validation retains only current, accurate coordinates', () => {
+  const now = Date.now()
+  const update = validateLocationUpdate({ latitude: 5.89, longitude: 5.67, accuracy: 12, timestamp: new Date(now).toISOString() }, now)
+  assert.equal(update.latitude, 5.89)
+  assert.equal(update.longitude, 5.67)
+  assert.equal(update.accuracy, 12)
 })
 
 test('partner application validates required identity fields', async () => {

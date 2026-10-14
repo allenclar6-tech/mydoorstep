@@ -29,16 +29,22 @@ export async function createSession(userId) {
   return token
 }
 
+export async function authenticateBearerToken(token) {
+  if (!token || typeof token !== 'string') return null
+  const session = await prisma.session.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: { include: { rider: true } } } })
+  if (!session || session.expiresAt <= new Date() || session.user.status !== 'ACTIVE') return null
+  return { user: session.user, sessionId: session.id }
+}
+
 export async function requireUser(request, response, next) {
   const header = request.get('authorization') || ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : null
   if (!token) return response.status(401).json({ error: 'AUTHENTICATION_REQUIRED' })
-
   try {
-    const session = await prisma.session.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: { include: { rider: true } } } })
-    if (!session || session.expiresAt <= new Date() || session.user.status !== 'ACTIVE') return response.status(401).json({ error: 'SESSION_INVALID' })
-    request.user = session.user
-    request.sessionId = session.id
+    const authenticated = await authenticateBearerToken(token)
+    if (!authenticated) return response.status(401).json({ error: 'SESSION_INVALID' })
+    request.user = authenticated.user
+    request.sessionId = authenticated.sessionId
     return next()
   } catch (error) {
     return response.status(503).json({ error: 'AUTH_SERVICE_UNAVAILABLE' })
