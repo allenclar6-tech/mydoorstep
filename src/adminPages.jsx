@@ -15,12 +15,12 @@ export function AdminLogin({ onLogin }) {
 		setError('')
 		const form = new FormData(event.currentTarget)
 		try {
-			const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: form.get('email'), password: form.get('password') }) })
-			const body = await response.json()
+			const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: form.get('email'), password: form.get('password') }), signal: AbortSignal.timeout(20_000) })
+			const body = await response.json().catch(() => ({}))
 			if (!response.ok || body.user?.role !== 'ADMIN') throw new Error(body.user ? 'This account does not have admin access.' : 'Invalid admin credentials.')
 			localStorage.setItem('doorstep-admin-token', body.token)
 			onLogin()
-		} catch (loginError) { setError(loginError.message) } finally { setBusy(false) }
+		} catch (loginError) { setError(loginError.name === 'TimeoutError' ? 'The sign-in service did not respond. Please try again.' : loginError.message || 'Unable to sign in. Please try again.') } finally { setBusy(false) }
 	}
 	return <main className="admin-login-page"><div className="admin-login-card"><div className="admin-brand"><span className="brand-mark">✦</span><span>doorstep<small>control center</small></span></div><span className="section-kicker">OWNER ACCESS</span><h1>Admin control center</h1><p>Sign in with the business owner account. Normal customer, partner, and rider accounts cannot enter this workspace.</p><form onSubmit={submit}><label>Email address<input required type="email" name="email" autoComplete="username" /></label><PasswordField required label="Password" name="password" autoComplete="current-password" />{error && <div className="admin-login-error">{error}</div>}<button className="admin-primary" disabled={busy} type="submit">{busy ? 'Signing in...' : 'Sign in to admin'} <ArrowRight size={16} /></button><button className="forgot-password-link" type="button" onClick={() => navigate('/admin/forgot-password')}>Forgot password?</button></form></div></main>
 }
