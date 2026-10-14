@@ -1160,6 +1160,33 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .partner-registration-choice .checkout-button { margin-top: auto; position: relative; width: 100%; z-index: 1; }
 .partner-registration-login { color: #557368; font-size: .86rem; margin: 22px auto 0; text-align: center; }
 .partner-registration-login button { background: none; color: #007c63; font: inherit; font-weight: 850; padding: 0; text-decoration: underline; }
+.application-status-card {
+  background: linear-gradient(145deg, #fff, #edf8f1);
+  border: 1px solid rgba(0, 124, 99, .15);
+  border-radius: 22px;
+  box-shadow: 0 18px 42px rgba(18, 61, 45, .12), inset 0 1px 0 #fff;
+  display: grid;
+  gap: 14px;
+  margin: 30px auto;
+  max-width: 520px;
+  padding: clamp(22px, 4vw, 38px);
+}
+.application-status-card .auth-form { background: none; border: 0; box-shadow: none; display: grid; gap: 15px; padding: 0; }
+.application-status-card h2 { color: #123d2d; letter-spacing: -.04em; margin: 0; }
+.application-status-card p { color: #557368; line-height: 1.6; margin: 0; }
+.application-status-card small { color: #71867c; }
+.application-status-badge {
+  border-radius: 999px;
+  font-size: .7rem;
+  font-weight: 900;
+  justify-self: start;
+  letter-spacing: .04em;
+  padding: 8px 11px;
+}
+.application-status-badge.pending_approval { background: #fff1cb; color: #8a6100; }
+.application-status-badge.approved { background: #dcf5e7; color: #087653; }
+.application-status-badge.rejected, .application-status-badge.suspended { background: #fbe6e2; color: #a54739; }
+.application-review-note { background: rgba(255,255,255,.8); border-left: 3px solid #00a879; border-radius: 0 10px 10px 0; padding: 12px; }
 @media (max-width: 850px) { .partner-registration-grid { grid-template-columns: 1fr; max-width: 570px; } .partner-registration-choice { min-height: 0; } }
 @media (prefers-reduced-motion: reduce) { .partner-registration-choice { transition: none; } .partner-registration-choice:hover { transform: none; } }
 @keyframes location-pulse {

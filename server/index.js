@@ -439,6 +439,32 @@ app.post('/api/auth/login', async (request, response) => {
   }
 })
 
+app.post('/api/application-status', authFlowLimiter, async (request, response) => {
+  const result = credentialsSchema.pick({ email: true, password: true }).safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_APPLICATION_STATUS_REQUEST' })
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: result.data.email },
+      include: {
+        rider: { include: { application: true } },
+        restaurantUsers: { include: { restaurant: { include: { application: true } } } },
+      },
+    })
+    if (!user || !(await verifyPassword(result.data.password, user.passwordHash)) || user.status !== 'ACTIVE') return response.status(401).json({ error: 'INVALID_CREDENTIALS' })
+    if (user.role === 'RIDER' && user.rider?.application) {
+      const application = user.rider.application
+      return response.json({ application: { type: 'RIDER', status: application.status, submittedAt: application.submittedAt, reviewedAt: application.reviewedAt, reviewNote: application.reviewNote || null } })
+    }
+    const application = user.restaurantUsers.map(({ restaurant }) => restaurant.application).find(Boolean)
+    if (user.role === 'RESTAURANT' && application) {
+      return response.json({ application: { type: 'PARTNER', status: application.status, submittedAt: application.submittedAt, reviewedAt: application.reviewedAt, reviewNote: application.reviewNote || null } })
+    }
+    return response.status(404).json({ error: 'APPLICATION_NOT_FOUND' })
+  } catch {
+    return response.status(503).json({ error: 'APPLICATION_STATUS_UNAVAILABLE' })
+  }
+})
+
 app.get('/api/auth/me', requireUser, (request, response) => response.json({ user: publicUser(request.user) }))
 app.patch('/api/auth/me', requireUser, async (request, response) => {
   const result = z.object({ firstName: z.string().min(1).max(80), lastName: z.string().min(1).max(80), preferredName: z.string().max(80).optional(), dateOfBirth: z.string().optional(), dietaryPreference: z.string().max(120).optional(), deliveryNotes: z.string().max(500).optional(), email: z.string().email().optional(), phone: z.string().min(7).max(30).optional() }).safeParse(request.body)

@@ -196,3 +196,9 @@ test('operational restaurant and rider APIs require their roles', async () => {
   assert.equal(restaurantResponse.status, 401)
   assert.equal(riderResponse.status, 401)
 })
+
+test('application status checks require valid account credentials', async () => {
+  const response = await request(app).post('/api/application-status').send({ email: 'not-an-email', password: '' })
+  assert.equal(response.status, 400)
+  assert.equal(response.body.error, 'INVALID_APPLICATION_STATUS_REQUEST')
+})
