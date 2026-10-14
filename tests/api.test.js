@@ -6,7 +6,7 @@ import { isOrderPayable, matchesPaystackPayment, verifyWebhookSignature } from '
 import { verificationFailure } from '../server/verificationService.js'
 
 process.env.NODE_ENV = 'test'
-const { app } = await import('../server/index.js')
+const { app, storeApplicationDocuments } = await import('../server/index.js')
 
 test('health endpoint reports API availability', async () => {
   const response = await request(app).get('/api/health')
@@ -125,22 +125,51 @@ test('delivery location validation retains only current, accurate coordinates', 
   assert.equal(update.accuracy, 12)
 })
 
-test('partner application validates required identity fields', async () => {
+test('partner application validates required core fields', async () => {
   const response = await request(app).post('/api/partner-applications').send({})
   assert.equal(response.status, 400)
   assert.equal(response.body.error, 'INVALID_PARTNER_APPLICATION')
 })
 
-test('multipart partner applications require private verification documents', async () => {
-  const response = await request(app).post('/api/partner-applications/multipart').field('restaurantName', 'Test Kitchen')
+test('partner applications reject creation until an email verification challenge is supplied', async () => {
+  const response = await request(app).post('/api/partner-applications/multipart')
+    .field('restaurantName', 'Test Kitchen')
+    .field('businessPhone', '+2348012345678')
+    .field('businessEmail', 'owner@example.com')
+    .field('address', '12 Test Street, Sapele')
+    .field('ownerName', 'Test Owner')
+    .field('password', 'secure-password')
   assert.equal(response.status, 400)
   assert.equal(response.body.error, 'INVALID_PARTNER_APPLICATION')
 })
 
-test('grocery owner applications validate their store details before persistence', async () => {
-  const response = await request(app).post('/api/grocery-applications/multipart').field('groceryName', 'Test Grocer')
+test('grocery applications reject creation until an email verification challenge is supplied', async () => {
+  const response = await request(app).post('/api/grocery-applications/multipart')
+    .field('groceryName', 'Test Grocer')
+    .field('businessPhone', '+2348012345678')
+    .field('businessEmail', 'grocer@example.com')
+    .field('address', '12 Test Street, Sapele')
+    .field('ownerName', 'Test Owner')
+    .field('password', 'secure-password')
   assert.equal(response.status, 400)
   assert.equal(response.body.error, 'INVALID_GROCERY_APPLICATION')
+})
+
+test('rider applications reject creation until an email verification challenge is supplied', async () => {
+  const response = await request(app).post('/api/rider-applications/multipart')
+    .field('firstName', 'Test')
+    .field('lastName', 'Rider')
+    .field('email', 'rider@example.com')
+    .field('phone', '+2348012345678')
+    .field('address', '12 Test Street, Sapele')
+    .field('password', 'secure-password')
+  assert.equal(response.status, 400)
+  assert.equal(response.body.error, 'INVALID_RIDER_APPLICATION')
+})
+
+test('application document handling safely accepts no uploads', async () => {
+  assert.deepEqual(await storeApplicationDocuments(), [])
+  assert.deepEqual(await storeApplicationDocuments([]), [])
 })
 
 test('public support AI returns a grounded marketplace response', async () => {

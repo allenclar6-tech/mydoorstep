@@ -214,8 +214,8 @@ model RestaurantApplication {
   reviewedById   String?
   status         ApplicationStatus    @default(PENDING_APPROVAL)
   reviewNote     String?
-  identityType   String
-  identityNumber String
+  identityType   String?
+  identityNumber String?
   documents      RestaurantDocument[]
 }
 
@@ -274,10 +274,10 @@ model RiderApplication {
   reviewedById      String?
   status            ApplicationStatus       @default(PENDING_APPROVAL)
   reviewNote        String?
-  identityType      String
-  identityNumber    String
-  emergencyName     String
-  emergencyPhone    String
+  identityType      String?
+  identityNumber    String?
+  emergencyName     String?
+  emergencyPhone    String?
   identityDocuments RiderIdentityDocument[]
 }
 

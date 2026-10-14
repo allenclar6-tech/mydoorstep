@@ -19,7 +19,7 @@ import { buildAiReply } from './aiBrain.js'
 
 const app = express()
 const port = Number(process.env.API_PORT || 4000)
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } })
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 5 } })
 const authFlowLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 12,
@@ -255,17 +255,25 @@ const customerRegistrationSchema = credentialsSchema.extend({
 })
 const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional() })
 const privateDocumentSchema = z.object({ type: z.string().min(2).max(80), storageKey: z.string().startsWith('private/applications/').max(500) })
-const partnerApplicationSchema = z.object({ restaurantName: z.string().min(2).max(120), businessType: z.string().min(2).max(60), registrationNumber: z.string().min(2).max(100), businessPhone: z.string().min(7).max(30), businessEmail: z.string().email(), address: z.string().min(5).max(240), cityName: z.string().default('Sapele'), ownerName: z.string().min(2).max(120), ownerIdentityType: z.string().min(2).max(60), ownerIdentityNumber: z.string().min(3).max(120), password: z.string().min(8), documents: z.array(privateDocumentSchema).min(2).max(5) })
-const groceryApplicationSchema = partnerApplicationSchema.extend({ groceryName: z.string().min(2).max(120), businessType: z.enum(['supermarket', 'mini_market', 'produce_market', 'pharmacy', 'specialty_store']) })
-const riderApplicationSchema = z.object({ firstName: z.string().min(1).max(80), lastName: z.string().min(1).max(80), email: z.string().email(), phone: z.string().min(7).max(30), address: z.string().min(5).max(240), identityType: z.string().min(2).max(60), identityNumber: z.string().min(3).max(120), vehicleType: z.string().min(2).max(50), vehicleRegistration: z.string().min(2).max(100), emergencyName: z.string().min(2).max(120), emergencyPhone: z.string().min(7).max(30), password: z.string().min(8), documents: z.array(privateDocumentSchema).min(2).max(5) })
+const optionalText = (max) => z.string().trim().max(max).optional().transform((value) => value || null)
+const partnerApplicationSchema = z.object({ restaurantName: z.string().min(2).max(120), businessType: optionalText(60), registrationNumber: optionalText(100), businessPhone: z.string().min(7).max(30), businessEmail: z.string().email(), address: z.string().min(5).max(240), cityName: z.string().default('Sapele'), ownerName: z.string().min(2).max(120), ownerIdentityType: optionalText(60), ownerIdentityNumber: optionalText(120), verificationId: z.string().min(1), password: z.string().min(8), documents: z.array(privateDocumentSchema).max(5).default([]) })
+const groceryApplicationSchema = partnerApplicationSchema.extend({ groceryName: z.string().min(2).max(120), businessType: z.enum(['supermarket', 'mini_market', 'produce_market', 'pharmacy', 'specialty_store']).optional().transform((value) => value || null) })
+const riderApplicationSchema = z.object({ firstName: z.string().min(1).max(80), lastName: z.string().min(1).max(80), email: z.string().email(), phone: z.string().min(7).max(30), address: z.string().min(5).max(240), identityType: optionalText(60), identityNumber: optionalText(120), vehicleType: optionalText(50), vehicleRegistration: optionalText(100), emergencyName: optionalText(120), emergencyPhone: optionalText(30), verificationId: z.string().min(1), password: z.string().min(8), documents: z.array(privateDocumentSchema).max(5).default([]) })
 const verificationRequestSchema = z.object({ destination: z.string().min(6), channel: z.enum(['email', 'phone']) }).superRefine(({ destination, channel }, context) => {
   if (channel === 'phone' && !/^\+[1-9]\d{7,14}$/.test(destination)) context.addIssue({ code: 'custom', path: ['destination'], message: 'Phone verification requires an E.164 phone number.' })
 })
 const verificationSchema = z.object({ challengeId: z.string().min(1), destination: z.string().min(6), code: z.string().regex(/^\d{6}$/) })
 
-async function storeApplicationDocuments(files) {
-  if (!files || files.length < 2 || files.length > 5) throw Object.assign(new Error('At least two verification documents are required.'), { code: 'APPLICATION_DOCUMENTS_REQUIRED', status: 400 })
+export async function storeApplicationDocuments(files = []) {
+  if (files.length > 5) throw Object.assign(new Error('At most five verification documents can be uploaded.'), { code: 'APPLICATION_DOCUMENTS_INVALID', status: 400 })
   return Promise.all(files.map((file, index) => storePrivateDocument({ buffer: file.buffer, mimeType: file.mimetype, originalName: file.originalname, keyPrefix: 'private/applications' }).then((stored) => ({ type: index === 0 ? 'IDENTITY' : 'BUSINESS_OR_VEHICLE', storageKey: stored.storageKey }))))
+}
+
+async function requireVerifiedApplicationEmail(verificationId, email) {
+  const verification = await prisma.verificationCode.findFirst({
+    where: { id: verificationId, destination: email.toLowerCase(), channel: 'email', verifiedAt: { not: null }, expiresAt: { gt: new Date() } },
+  })
+  if (!verification) throw Object.assign(new Error('A verified email code is required.'), { code: 'APPLICATION_EMAIL_VERIFICATION_REQUIRED', status: 400 })
 }
 
 app.post('/api/auth/verification/request', authFlowLimiter, async (request, response) => {
@@ -313,11 +321,12 @@ app.post('/api/partner-applications', async (request, response) => {
   if (!result.success) return response.status(400).json({ error: 'INVALID_PARTNER_APPLICATION', details: result.error.flatten() })
   try {
     const data = result.data
+    await requireVerifiedApplicationEmail(data.verificationId, data.businessEmail)
     const city = await prisma.city.findFirst({ where: { name: data.cityName } })
     if (!city) return response.status(400).json({ error: 'CITY_NOT_SUPPORTED' })
     const slug = `${data.restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${randomUUID().slice(0, 6)}`
     const created = await prisma.$transaction(async (transaction) => {
-      const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, role: 'RESTAURANT' } })
+      const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
       const restaurant = await transaction.restaurant.create({ data: { name: data.restaurantName, slug, address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: restaurant.id } })
       return { restaurantId: restaurant.id, status: 'PENDING_APPROVAL' }
@@ -325,7 +334,7 @@ app.post('/api/partner-applications', async (request, response) => {
     return response.status(201).json(created)
   } catch (error) {
     if (error.code === 'P2002') return response.status(409).json({ error: 'PARTNER_ACCOUNT_ALREADY_EXISTS' })
-    return response.status(503).json({ error: 'PARTNER_APPLICATION_UNAVAILABLE' })
+    return response.status(error.status || 503).json({ error: error.code || 'PARTNER_APPLICATION_UNAVAILABLE' })
   }
 })
 
@@ -335,11 +344,12 @@ app.post('/api/partner-applications/multipart', onboardingLimiter, upload.array(
     if (!fields.success) return response.status(400).json({ error: 'INVALID_PARTNER_APPLICATION', details: fields.error.flatten() })
     const documents = await storeApplicationDocuments(request.files)
     const data = { ...fields.data, documents }
+    await requireVerifiedApplicationEmail(data.verificationId, data.businessEmail)
     const city = await prisma.city.findFirst({ where: { name: data.cityName } })
     if (!city) return response.status(400).json({ error: 'CITY_NOT_SUPPORTED' })
     const slug = `${data.restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${randomUUID().slice(0, 6)}`
     const created = await prisma.$transaction(async (transaction) => {
-      const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, role: 'RESTAURANT' } })
+      const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
       const restaurant = await transaction.restaurant.create({ data: { name: data.restaurantName, slug, address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: restaurant.id } })
       return { restaurantId: restaurant.id, status: 'PENDING_APPROVAL' }
@@ -357,12 +367,13 @@ app.post('/api/grocery-applications/multipart', onboardingLimiter, upload.array(
     if (!fields.success) return response.status(400).json({ error: 'INVALID_GROCERY_APPLICATION', details: fields.error.flatten() })
     const documents = await storeApplicationDocuments(request.files)
     const data = { ...fields.data, documents }
+    await requireVerifiedApplicationEmail(data.verificationId, data.businessEmail)
     const city = await prisma.city.findFirst({ where: { name: data.cityName } })
     if (!city) return response.status(400).json({ error: 'CITY_NOT_SUPPORTED' })
     const slug = `${data.groceryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${randomUUID().slice(0, 6)}`
     const created = await prisma.$transaction(async (transaction) => {
-      const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, role: 'RESTAURANT' } })
-      const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${data.businessType.replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
+      const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${(data.businessType || 'grocery store').replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: grocery.id } })
       await transaction.notification.create({ data: { userId: user.id, type: 'ACCOUNT', title: 'Grocery store application received', body: `${grocery.name} is pending DOORSTEP review. We will notify you when your store is approved or if more information is needed.` } })
       return { groceryId: grocery.id, status: 'PENDING_APPROVAL' }
@@ -380,15 +391,16 @@ app.post('/api/rider-applications', async (request, response) => {
   if (!result.success) return response.status(400).json({ error: 'INVALID_RIDER_APPLICATION', details: result.error.flatten() })
   try {
     const data = result.data
+    await requireVerifiedApplicationEmail(data.verificationId, data.email)
     const created = await prisma.$transaction(async (transaction) => {
-      const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, role: 'RIDER' } })
+      const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, emailVerifiedAt: new Date(), role: 'RIDER' } })
       const rider = await transaction.rider.create({ data: { userId: user.id, vehicleType: data.vehicleType, vehicleDetails: data.vehicleRegistration, application: { create: { identityType: data.identityType, identityNumber: data.identityNumber, emergencyName: data.emergencyName, emergencyPhone: data.emergencyPhone, identityDocuments: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       return { riderId: rider.id, status: 'PENDING_APPROVAL' }
     })
     return response.status(201).json(created)
   } catch (error) {
     if (error.code === 'P2002') return response.status(409).json({ error: 'RIDER_ACCOUNT_ALREADY_EXISTS' })
-    return response.status(503).json({ error: 'RIDER_APPLICATION_UNAVAILABLE' })
+    return response.status(error.status || 503).json({ error: error.code || 'RIDER_APPLICATION_UNAVAILABLE' })
   }
 })
 
@@ -398,8 +410,9 @@ app.post('/api/rider-applications/multipart', onboardingLimiter, upload.array('d
     if (!fields.success) return response.status(400).json({ error: 'INVALID_RIDER_APPLICATION', details: fields.error.flatten() })
     const documents = await storeApplicationDocuments(request.files)
     const data = { ...fields.data, documents }
+    await requireVerifiedApplicationEmail(data.verificationId, data.email)
     const created = await prisma.$transaction(async (transaction) => {
-      const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, role: 'RIDER' } })
+      const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, emailVerifiedAt: new Date(), role: 'RIDER' } })
       const rider = await transaction.rider.create({ data: { userId: user.id, vehicleType: data.vehicleType, vehicleDetails: data.vehicleRegistration, application: { create: { identityType: data.identityType, identityNumber: data.identityNumber, emergencyName: data.emergencyName, emergencyPhone: data.emergencyPhone, identityDocuments: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       return { riderId: rider.id, status: 'PENDING_APPROVAL' }
     })
