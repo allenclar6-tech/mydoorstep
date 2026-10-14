@@ -89,8 +89,8 @@ function RegistrationPage() {
 
 const onboardingSteps = {
   customer: ['Your details', 'Verify email', 'Ready to order'],
-  restaurant: ['Business', 'Owner', 'Documents', 'Review'],
-  rider: ['Your details', 'Vehicle', 'Documents', 'Review'],
+  restaurant: ['Set up store', 'Owner account', 'Secure check', 'Launch review'],
+  rider: ['Your profile', 'How you deliver', 'Secure check', 'Launch review'],
 }
 
 function OnboardingProgress({ type, current }) {

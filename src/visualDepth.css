@@ -1000,6 +1000,117 @@ h1 { font-weight: 800; letter-spacing: -4px; }
   .category-pill, .restaurant-card, .grocery-store-card, .menu-directory-card { transition: none; }
   .category-pill:hover, .category-pill.selected, .restaurant-card:hover, .grocery-store-card:hover, .menu-directory-card:hover { transform: none; }
 }
+
+/* Guided partner setup: original DOORSTEP onboarding, optimized for short mobile forms. */
+.onboarding-card.application-form {
+  background: linear-gradient(145deg, #fff 0%, #f3fbf6 100%);
+  border: 1px solid rgba(0, 124, 99, .16);
+  border-radius: 24px;
+  box-shadow: 0 24px 58px rgba(10, 74, 54, .14), inset 0 1px 0 rgba(255,255,255,.95);
+  max-width: 730px;
+  overflow: hidden;
+  padding: clamp(20px, 4vw, 42px);
+}
+.onboarding-progress {
+  align-items: flex-start;
+  background: linear-gradient(110deg, #f2fbf6, #fff);
+  border: 1px solid rgba(0, 124, 99, .12);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+  gap: 0;
+  margin: 0 0 30px;
+  padding: 15px 12px;
+}
+.onboarding-progress li { flex: 1; min-width: 0; position: relative; }
+.onboarding-progress li:not(:last-child)::after {
+  background: #cfe5d8;
+  content: "";
+  height: 2px;
+  left: calc(50% + 20px);
+  position: absolute;
+  right: calc(-50% + 20px);
+  top: 17px;
+}
+.onboarding-progress li.complete:not(:last-child)::after { background: #00a879; }
+.onboarding-progress li span {
+  background: #fff;
+  border: 2px solid #bad9c8;
+  box-shadow: 0 5px 12px rgba(6, 91, 65, .1);
+  color: #527569;
+  height: 36px;
+  position: relative;
+  width: 36px;
+  z-index: 1;
+}
+.onboarding-progress li.active span, .onboarding-progress li.complete span {
+  background: linear-gradient(145deg, #0aa67a, #00745b);
+  border-color: #00745b;
+  box-shadow: 0 7px 14px rgba(0, 124, 99, .22), inset 0 1px 0 rgba(255,255,255,.35);
+  color: #fff;
+}
+.onboarding-progress small { color: #6c8278; font-size: .67rem; font-weight: 800; line-height: 1.2; margin-top: 8px; padding: 0 3px; text-align: center; }
+.onboarding-progress li.active small, .onboarding-progress li.complete small { color: #075c46; }
+.application-form section > h2 { color: #123d2d; font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -.04em; margin-bottom: 7px; }
+.application-form section > p { color: #557368; line-height: 1.55; margin-bottom: 22px; max-width: 56ch; }
+.application-form label {
+  background: rgba(255,255,255,.78);
+  border: 1px solid rgba(18, 61, 45, .09);
+  border-radius: 13px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+  padding: 8px 12px;
+}
+.application-form label:focus-within {
+  border-color: #00a879;
+  box-shadow: 0 0 0 4px rgba(0,168,121,.12), inset 0 1px 0 rgba(255,255,255,.9);
+}
+.application-form label input, .application-form label select { background: transparent; border: 0; box-shadow: none; padding-left: 0; padding-right: 0; }
+.application-form .document-upload {
+  align-items: center;
+  background: linear-gradient(135deg, #effaf4, #fff);
+  border: 1px dashed #83b9a0;
+  color: #075c46;
+  display: flex;
+  font-weight: 800;
+  gap: 10px;
+  min-height: 68px;
+}
+.application-form .onboarding-actions, .grocery-owner-application section > .checkout-button, .grocery-owner-application section > .quiet-button { margin-top: 18px; }
+.setup-promises {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 20px;
+}
+.setup-promises span {
+  align-items: center;
+  background: rgba(255,255,255,.7);
+  border: 1px solid rgba(18, 61, 45, .12);
+  border-radius: 999px;
+  color: #123d2d;
+  display: inline-flex;
+  font-size: .75rem;
+  font-weight: 800;
+  gap: 6px;
+  padding: 8px 11px;
+}
+.setup-promises svg, .setup-tip { color: #007c63; }
+.setup-tip {
+  background: #e9f7ef;
+  border-left: 3px solid #00a879;
+  border-radius: 0 9px 9px 0;
+  font-size: .78rem;
+  font-weight: 700;
+  padding: 9px 11px;
+}
+@media (max-width: 560px) {
+  .onboarding-card.application-form { border-radius: 18px; padding: 17px; }
+  .onboarding-progress { margin-bottom: 22px; padding: 12px 5px; }
+  .onboarding-progress li:not(:last-child)::after { left: calc(50% + 16px); right: calc(-50% + 16px); top: 15px; }
+  .onboarding-progress li span { height: 32px; width: 32px; }
+  .onboarding-progress small { font-size: .56rem; }
+  .setup-promises { gap: 7px; }
+  .setup-promises span { font-size: .67rem; padding: 7px 9px; }
+}
 @keyframes location-pulse {
   0% { opacity: .85; transform: scale(.55); }
   75%, 100% { opacity: 0; transform: scale(1.45); }
