@@ -13,7 +13,7 @@ const navigate = (path) => { window.history.pushState({}, '', path); window.disp
 
 function MobileStoreDock() {
   const path = window.location.pathname
-  if (['/login', '/register', '/forgot-password', '/reset-password'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/')) return null
+  if (['/login', '/register', '/forgot-password', '/reset-password'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/') || path.startsWith('/partner/') || path === '/rider/register') return null
   const items = [
     { label: 'Home', href: '/', icon: Home, active: path === '/' },
     { label: 'Food', href: '/restaurants', icon: Utensils, active: path.startsWith('/restaurants') || path === '/menu' },
@@ -599,7 +599,22 @@ function OrderPage({ orderId }) {
   return <PageFrame eyebrow="ORDER TRACKING" title={order.orderNumber} intro={`${order.restaurant || order.restaurantName} · ${order.address || 'Delivery address on file'}`}><section className="order-page-layout"><div className="order-timeline">{stages.map((stage, index) => <div className={index <= Math.max(0, currentApiStage) ? 'timeline-step complete' : 'timeline-step'} key={stage}><span>{index <= Math.max(0, currentApiStage) ? '✓' : index + 1}</span><div><strong>{stage.replaceAll('_', ' ')}</strong><small>{index === 0 ? 'Payment confirmed' : 'This stage updates from the restaurant, rider, and DOORSTEP operations API.'}</small></div></div>)}</div><div className="cart-page-summary"><span className="section-kicker">ORDER SUMMARY</span><div><span>Restaurant</span><strong>{order.restaurant || order.restaurantName}</strong></div><div><span>Status</span><strong>{currentStatus}</strong></div><div><span>Payment</span><strong>{order.paymentStatus || 'SERVER TRACKED'}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(total)}</strong></div>{apiOrder?.delivery?.rider?.callAllowed ? <a className="call-rider-button" href={`tel:${apiOrder.delivery.rider.phone}`}>Call assigned rider</a> : <small className="call-rider-note">Rider contact appears only during an active assigned delivery.</small>}<button className="checkout-button" onClick={() => navigate('/help')}>Contact support <ArrowRight size={17} /></button></div></section>{tracking.snapshot && <section aria-label="Live delivery map"><DeliveryTrackingMap tracking={tracking.snapshot} connection={tracking.connection} /></section>}{currentStatus === 'DELIVERED' && apiOrder && <section className="review-card"><div><span className="section-kicker">TASTE NOTES</span><h2>How did {order.restaurant || order.restaurantName} do?</h2><p>Your review helps local customers find the right kitchen.</p></div><form onSubmit={submitReview}><div className="review-stars" aria-label="Choose a rating">{[1, 2, 3, 4, 5].map((value) => <button type="button" className={value <= rating ? 'is-selected' : ''} key={value} onClick={() => setRating(value)} aria-label={`${value} star${value === 1 ? '' : 's'}`}><Star size={25} fill="currentColor" /></button>)}</div><textarea value={reviewBody} onChange={(event) => setReviewBody(event.target.value)} maxLength={2000} rows="4" placeholder="What should another Sapele customer know?" />{reviewMessage && <div className="profile-message">{reviewMessage}</div>}<button className="checkout-button" type="submit">Publish review <Sparkles size={17} /></button></form></section>}</PageFrame>
 }
 
+function PartnerRegistrationLanding() {
+  const choices = [
+    { icon: <Utensils size={25} />, title: 'Restaurant partner', detail: 'For restaurants, food vendors, cafes, bakeries, and takeaway businesses.', action: 'Register your restaurant', path: '/partner/register/restaurant' },
+    { icon: <Store size={25} />, title: 'Grocery & supermarket', detail: 'For supermarkets, grocery stores, fruit shops, convenience stores, and approved local retail.', action: 'Register your store', path: '/partner/register/store' },
+    { icon: <MapPin size={25} />, title: 'Delivery rider', detail: 'For independent riders who want to deliver eligible DOORSTEP orders.', action: 'Become a rider', path: '/rider/register' },
+  ]
+  return <PageFrame eyebrow="PARTNER SETUP" title="Grow your business with DOORSTEP." intro="Reach more customers, receive online orders, and grow your business with a short, guided application."><section className="partner-registration-grid">{choices.map((choice) => <article className="partner-registration-choice" key={choice.path}><span className="partner-registration-icon">{choice.icon}</span><h2>{choice.title}</h2><p>{choice.detail}</p><button className="checkout-button" onClick={() => navigate(choice.path)}>{choice.action} <ArrowRight size={17} /></button></article>)}</section><p className="partner-registration-login">Already registered? <button type="button" onClick={() => navigate('/partner/login')}>Partner sign in</button> or <button type="button" onClick={() => navigate('/rider/login')}>rider sign in</button>.</p></PageFrame>
+}
+
 export function RoutePage({ path, cart = [], checkoutError = '', onAddToCart = () => {}, onChangeQuantity = () => {}, onCheckout = () => {}, onComplete = () => {} }) {
+  if (path === '/partner/register') return <PartnerRegistrationLanding />
+  if (path === '/partner/register/restaurant') return <OnboardingPartnerApplication />
+  if (path === '/partner/register/store') return <GroceryOwnerApplication />
+  if (path === '/partner/login') return <AuthPage portalRole="RESTAURANT" />
+  if (path === '/rider/register') return <OnboardingRiderApplication />
+  if (path === '/rider/login') return <AuthPage portalRole="RIDER" />
   if (path.startsWith('/categories/')) { const slug = decodeURIComponent(path.split('/')[2] || ''); const category = categories.find((item) => item.name.toLowerCase().replaceAll(' ', '-') === slug); return category ? <CategoryPage category={category.name} /> : <DiscoveryPage /> }
   if (path === '/menu') return <MenuDirectoryPage />
   if (path === '/restaurants' || path === '/food') return <DiscoveryPage />

@@ -1111,6 +1111,57 @@ h1 { font-weight: 800; letter-spacing: -4px; }
   .setup-promises { gap: 7px; }
   .setup-promises span { font-size: .67rem; padding: 7px 9px; }
 }
+
+.partner-registration-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 34px auto 18px;
+  max-width: 1180px;
+}
+.partner-registration-choice {
+  background: linear-gradient(145deg, #fff, #edf8f1);
+  border: 1px solid rgba(0, 124, 99, .13);
+  border-radius: 24px;
+  box-shadow: 0 15px 0 rgba(18, 61, 45, .05), 0 26px 46px rgba(18, 61, 45, .12), inset 0 1px 0 #fff;
+  display: flex;
+  flex-direction: column;
+  min-height: 310px;
+  padding: 26px;
+  position: relative;
+  transition: box-shadow .2s ease, transform .2s ease;
+}
+.partner-registration-choice::after {
+  background: radial-gradient(circle at 85% 10%, rgba(255, 196, 69, .34), transparent 30%);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+.partner-registration-choice:hover {
+  box-shadow: 0 8px 0 rgba(18, 61, 45, .05), 0 34px 52px rgba(18, 61, 45, .18), inset 0 1px 0 #fff;
+  transform: translateY(6px);
+}
+.partner-registration-icon {
+  align-items: center;
+  background: linear-gradient(145deg, #0aa67a, #006e57);
+  border-radius: 16px;
+  box-shadow: 0 8px 0 rgba(0, 91, 70, .13), 0 13px 22px rgba(0, 91, 70, .18), inset 0 1px 0 rgba(255,255,255,.35);
+  color: #fff;
+  display: inline-flex;
+  height: 54px;
+  justify-content: center;
+  position: relative;
+  width: 54px;
+  z-index: 1;
+}
+.partner-registration-choice h2 { color: #123d2d; font-size: 1.35rem; letter-spacing: -.035em; margin: 23px 0 8px; position: relative; z-index: 1; }
+.partner-registration-choice p { color: #557368; font-size: .89rem; line-height: 1.55; margin: 0; position: relative; z-index: 1; }
+.partner-registration-choice .checkout-button { margin-top: auto; position: relative; width: 100%; z-index: 1; }
+.partner-registration-login { color: #557368; font-size: .86rem; margin: 22px auto 0; text-align: center; }
+.partner-registration-login button { background: none; color: #007c63; font: inherit; font-weight: 850; padding: 0; text-decoration: underline; }
+@media (max-width: 850px) { .partner-registration-grid { grid-template-columns: 1fr; max-width: 570px; } .partner-registration-choice { min-height: 0; } }
+@media (prefers-reduced-motion: reduce) { .partner-registration-choice { transition: none; } .partner-registration-choice:hover { transform: none; } }
 @keyframes location-pulse {
   0% { opacity: .85; transform: scale(.55); }
   75%, 100% { opacity: 0; transform: scale(1.45); }
