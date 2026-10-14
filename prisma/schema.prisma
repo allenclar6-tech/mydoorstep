@@ -22,6 +22,7 @@ enum UserStatus {
 
 enum ApplicationStatus {
   PENDING_APPROVAL
+  NEEDS_INFORMATION
   APPROVED
   REJECTED
   SUSPENDED
@@ -125,6 +126,7 @@ model User {
   notifications     Notification[]
   supportTickets    SupportTicket[]
   auditLogs         AuditLog[]       @relation("ActorAuditLogs")
+  applicationReviews ApplicationReview[] @relation("ApplicationReviewActor")
   addresses         Address[]
   reviews           Review[]
   favorites         Favorite[]
@@ -277,6 +279,20 @@ model RiderApplication {
   emergencyName     String
   emergencyPhone    String
   identityDocuments RiderIdentityDocument[]
+}
+
+model ApplicationReview {
+  id              String            @id @default(cuid())
+  applicationType String
+  applicationId   String
+  previousStatus  ApplicationStatus
+  status          ApplicationStatus
+  note            String?
+  actorId         String?
+  actor           User?             @relation("ApplicationReviewActor", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt       DateTime          @default(now())
+
+  @@index([applicationType, applicationId, createdAt])
 }
 
 model RiderDocument {

@@ -453,11 +453,13 @@ app.post('/api/application-status', authFlowLimiter, async (request, response) =
     if (!user || !(await verifyPassword(result.data.password, user.passwordHash)) || user.status !== 'ACTIVE') return response.status(401).json({ error: 'INVALID_CREDENTIALS' })
     if (user.role === 'RIDER' && user.rider?.application) {
       const application = user.rider.application
-      return response.json({ application: { type: 'RIDER', status: application.status, submittedAt: application.submittedAt, reviewedAt: application.reviewedAt, reviewNote: application.reviewNote || null } })
+      const history = await prisma.applicationReview.findMany({ where: { applicationType: 'RIDER', applicationId: application.id }, select: { status: true, note: true, createdAt: true }, orderBy: { createdAt: 'asc' } })
+      return response.json({ application: { type: 'RIDER', status: application.status, submittedAt: application.submittedAt, reviewedAt: application.reviewedAt, reviewNote: application.reviewNote || null, history } })
     }
     const application = user.restaurantUsers.map(({ restaurant }) => restaurant.application).find(Boolean)
     if (user.role === 'RESTAURANT' && application) {
-      return response.json({ application: { type: 'PARTNER', status: application.status, submittedAt: application.submittedAt, reviewedAt: application.reviewedAt, reviewNote: application.reviewNote || null } })
+      const history = await prisma.applicationReview.findMany({ where: { applicationType: 'RESTAURANT', applicationId: application.id }, select: { status: true, note: true, createdAt: true }, orderBy: { createdAt: 'asc' } })
+      return response.json({ application: { type: 'PARTNER', status: application.status, submittedAt: application.submittedAt, reviewedAt: application.reviewedAt, reviewNote: application.reviewNote || null, history } })
     }
     return response.status(404).json({ error: 'APPLICATION_NOT_FOUND' })
   } catch {
@@ -725,7 +727,7 @@ app.patch('/api/admin/customers/:customerId/status', requireUser, requireAdmin, 
 })
 
 app.post('/api/admin/applications/:type/:applicationId/review', requireUser, requireAdmin, async (request, response) => {
-  const result = z.object({ status: z.enum(['APPROVED', 'REJECTED', 'SUSPENDED']), note: z.string().max(1000).optional() }).safeParse(request.body)
+  const result = z.object({ status: z.enum(['NEEDS_INFORMATION', 'APPROVED', 'REJECTED', 'SUSPENDED']), note: z.string().max(1000).optional() }).safeParse(request.body)
   if (!result.success || !['restaurant', 'rider'].includes(request.params.type)) return response.status(400).json({ error: 'INVALID_APPLICATION_REVIEW' })
   try {
     const application = await reviewApplication({ type: request.params.type, id: request.params.applicationId, status: result.data.status, note: result.data.note, actorId: request.user.id })
