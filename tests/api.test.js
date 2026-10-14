@@ -74,6 +74,12 @@ test('public service areas expose the enabled Sapele operating area', async () =
   assert.ok(response.body.serviceAreas.some((area) => area.city === 'Sapele'))
 })
 
+test('Google location search remains unavailable without a configured server key', { skip: Boolean(process.env.GOOGLE_MAPS_API_KEY) }, async () => {
+  const response = await request(app).get('/api/locations/google/autocomplete').query({ query: 'Amukpe, Sapele' })
+  assert.equal(response.status, 503)
+  assert.equal(response.body.error, 'GOOGLE_PLACES_UNAVAILABLE')
+})
+
 test('readiness endpoint reports database availability separately', async () => {
   const response = await request(app).get('/api/ready')
   assert.ok([200, 503].includes(response.status))

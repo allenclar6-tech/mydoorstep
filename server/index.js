@@ -32,6 +32,7 @@ const authFlowLimiter = rateLimit({
 })
 const publicTrackingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false })
 const onboardingLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false })
+const locationSearchLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 50, standardHeaders: 'draft-7', legacyHeaders: false, handler: (_request, response) => response.status(429).json({ error: 'LOCATION_SEARCH_RATE_LIMITED' }) })
 const trustedDeployedWebOrigins = new Set([
   'https://mydoorstep-web.onrender.com',
   'https://mydoorstep-site-20260922.eyedofejiro10.workers.dev',
@@ -87,6 +88,80 @@ app.get('/api/service-areas', async (_request, response) => {
     response.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
     return response.json({ serviceAreas: serviceAreas.map((area) => ({ id: area.id, country: area.country.name, state: area.state.name, city: area.city.name, currency: area.currency, timezone: area.timezone })) })
   } catch { return response.status(503).json({ error: 'SERVICE_AREA_SERVICE_UNAVAILABLE' }) }
+})
+
+const googleLocationQuery = z.object({ query: z.string().trim().min(3).max(160) })
+const googlePlaceId = z.object({ placeId: z.string().regex(/^ChI[A-Za-z0-9_-]+$/).max(200) })
+
+app.get('/api/locations/google/autocomplete', locationSearchLimiter, async (request, response) => {
+  const query = googleLocationQuery.safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: 'INVALID_LOCATION_QUERY' })
+  if (!process.env.GOOGLE_MAPS_API_KEY) return response.status(503).json({ error: 'GOOGLE_PLACES_UNAVAILABLE' })
+  try {
+    const googleResponse = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': process.env.GOOGLE_MAPS_API_KEY,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat',
+      },
+      body: JSON.stringify({
+        input: query.data.query,
+        includedRegionCodes: ['ng'],
+        locationBias: { circle: { center: { latitude: 5.8916, longitude: 5.6846 }, radius: 50000 } },
+      }),
+    })
+    if (!googleResponse.ok) {
+      console.warn('[locations] google_autocomplete_failed', JSON.stringify({ status: googleResponse.status }))
+      return response.status(502).json({ error: 'GOOGLE_PLACES_UNAVAILABLE' })
+    }
+    const data = await googleResponse.json()
+    const results = (data.suggestions || [])
+      .map((suggestion) => suggestion.placePrediction)
+      .filter((prediction) => prediction?.placeId && prediction.text?.text)
+      .slice(0, 5)
+      .map((prediction) => ({
+        placeId: prediction.placeId,
+        label: prediction.text.text,
+        secondaryLabel: prediction.structuredFormat?.secondaryText?.text || '',
+      }))
+    response.set('Cache-Control', 'private, max-age=30')
+    return response.json({ results })
+  } catch (error) {
+    console.error('[locations] google_autocomplete_error', JSON.stringify({ name: error.name }))
+    return response.status(503).json({ error: 'GOOGLE_PLACES_UNAVAILABLE' })
+  }
+})
+
+app.get('/api/locations/google/:placeId', locationSearchLimiter, async (request, response) => {
+  const place = googlePlaceId.safeParse(request.params)
+  if (!place.success) return response.status(400).json({ error: 'INVALID_GOOGLE_PLACE' })
+  if (!process.env.GOOGLE_MAPS_API_KEY) return response.status(503).json({ error: 'GOOGLE_PLACES_UNAVAILABLE' })
+  try {
+    const googleResponse = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(place.data.placeId)}`, {
+      headers: {
+        'X-Goog-Api-Key': process.env.GOOGLE_MAPS_API_KEY,
+        'X-Goog-FieldMask': 'displayName,formattedAddress,location',
+      },
+    })
+    if (!googleResponse.ok) {
+      console.warn('[locations] google_place_failed', JSON.stringify({ status: googleResponse.status }))
+      return response.status(502).json({ error: 'GOOGLE_PLACE_UNAVAILABLE' })
+    }
+    const data = await googleResponse.json()
+    if (!Number.isFinite(data.location?.latitude) || !Number.isFinite(data.location?.longitude)) return response.status(404).json({ error: 'GOOGLE_PLACE_LOCATION_UNAVAILABLE' })
+    response.set('Cache-Control', 'private, max-age=300')
+    return response.json({
+      location: {
+        latitude: data.location.latitude,
+        longitude: data.location.longitude,
+        label: data.formattedAddress || data.displayName?.text || 'Selected Google place',
+      },
+    })
+  } catch (error) {
+    console.error('[locations] google_place_error', JSON.stringify({ name: error.name }))
+    return response.status(503).json({ error: 'GOOGLE_PLACE_UNAVAILABLE' })
+  }
 })
 
 function publicRestaurant(restaurant) {
