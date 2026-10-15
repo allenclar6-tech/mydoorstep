@@ -1053,6 +1053,10 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .application-form section > h2 { color: #123d2d; font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -.04em; margin-bottom: 7px; }
 .application-form section > p { color: #557368; line-height: 1.55; margin-bottom: 22px; max-width: 56ch; }
 .application-form section[hidden] { display: none !important; }
+.application-review-summary { background: #f5faf7; border: 1px solid #dcebe2; border-radius: 12px; display: grid; gap: 10px; margin: 0 0 18px; padding: 14px; }
+.application-review-summary > div { display: grid; gap: 3px; }
+.application-review-summary dt { color: #557368; font-size: .78rem; font-weight: 700; }
+.application-review-summary dd { color: #123d2d; margin: 0; overflow-wrap: anywhere; }
 .application-form label {
   background: rgba(255,255,255,.78);
   border: 1px solid rgba(18, 61, 45, .09);

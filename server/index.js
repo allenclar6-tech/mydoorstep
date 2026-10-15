@@ -1,5 +1,5 @@
 import dotenv from 'dotenv'
-dotenv.config({ override: true })
+dotenv.config()
 import { randomUUID } from 'node:crypto'
 import cors from 'cors'
 import express from 'express'
@@ -179,6 +179,7 @@ function publicRestaurant(restaurant) {
     name: restaurant.name,
     slug: restaurant.slug,
     description: restaurant.description,
+    cuisine: restaurant.cuisineCategory,
     image: restaurant.coverImageUrl,
     type: restaurant.storeType,
     address: restaurant.address,
@@ -187,6 +188,8 @@ function publicRestaurant(restaurant) {
     ratingCount: restaurant.ratingCount,
     openingTime: restaurant.openingTime,
     closingTime: restaurant.closingTime,
+    prepTimeMinutes: restaurant.prepTimeMinutes,
+    minimumOrderMinor: restaurant.minimumOrderMinor,
     temporarilyClosed: restaurant.temporarilyClosed,
     openNow: isRestaurantOpen(restaurant),
     categories: restaurant.categories.map((category) => category.name),
@@ -256,9 +259,26 @@ const customerRegistrationSchema = credentialsSchema.extend({
 const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional() })
 const privateDocumentSchema = z.object({ type: z.string().min(2).max(80), storageKey: z.string().startsWith('private/applications/').max(500) })
 const optionalText = (max) => z.string().trim().max(max).optional().transform((value) => value || null)
-const partnerApplicationSchema = z.object({ restaurantName: z.string().min(2).max(120), businessType: optionalText(60), registrationNumber: optionalText(100), businessPhone: z.string().min(7).max(30), businessEmail: z.string().email(), address: z.string().min(5).max(240), cityName: z.string().default('Sapele'), ownerName: z.string().min(2).max(120), ownerIdentityType: optionalText(60), ownerIdentityNumber: optionalText(120), verificationId: z.string().min(1), password: z.string().min(8), documents: z.array(privateDocumentSchema).max(5).default([]) })
-const groceryApplicationSchema = partnerApplicationSchema.extend({ groceryName: z.string().min(2).max(120), businessType: z.enum(['supermarket', 'mini_market', 'produce_market', 'pharmacy', 'specialty_store']).optional().transform((value) => value || null) })
-const riderApplicationSchema = z.object({ firstName: z.string().min(1).max(80), lastName: z.string().min(1).max(80), email: z.string().email(), phone: z.string().min(7).max(30), address: z.string().min(5).max(240), identityType: optionalText(60), identityNumber: optionalText(120), vehicleType: optionalText(50), vehicleRegistration: optionalText(100), emergencyName: optionalText(120), emergencyPhone: optionalText(30), verificationId: z.string().min(1), password: z.string().min(8), documents: z.array(privateDocumentSchema).max(5).default([]) })
+const optionalNumber = ({ min = 0, max }) => z.preprocess((value) => value === '' || value === undefined ? undefined : Number(value), z.number().finite().min(min).max(max).optional())
+const optionalTime = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional())
+const openingDays = z.preprocess((value) => value === '' || value === undefined ? [] : Array.isArray(value) ? value : [value], z.array(z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'])).max(7).default([]))
+const deliveryPreferenceSchema = z.enum(['DOORSTEP_RIDERS', 'OWN_RIDERS', 'BOTH'])
+const acceptedTermsSchema = z.union([z.literal('on'), z.literal('true'), z.literal(true)])
+const partnerApplicationFieldsSchema = z.object({ restaurantName: z.string().min(2).max(120), businessType: optionalText(60), registrationNumber: optionalText(100), businessPhone: z.string().min(7).max(30), businessEmail: z.string().email(), whatsApp: optionalText(30), address: z.string().min(5).max(240), cityName: z.string().default('Sapele'), businessDescription: optionalText(1000), cuisineCategory: optionalText(100), openingTime: optionalTime, closingTime: optionalTime, openingDays, prepTimeMinutes: optionalNumber({ min: 1, max: 240 }), minimumOrder: optionalNumber({ min: 0, max: 500000 }), deliveryPreference: deliveryPreferenceSchema, ownerName: z.string().min(2).max(120), ownerIdentityType: optionalText(60), ownerIdentityNumber: optionalText(120), verificationId: z.string().min(1), password: z.string().min(8), confirmPassword: z.string().min(8), termsAccepted: acceptedTermsSchema, documents: z.array(privateDocumentSchema).max(5).default([]) })
+const requireCompleteOpeningHours = (schema) => schema.superRefine((data, context) => {
+  if (Boolean(data.openingTime) !== Boolean(data.closingTime)) context.addIssue({ code: 'custom', path: ['openingTime'], message: 'Provide both opening and closing times.' })
+})
+const groceryApplicationFieldsSchema = partnerApplicationFieldsSchema.extend({ groceryName: z.string().min(2).max(120), businessType: z.preprocess((value) => value === '' ? undefined : value, z.enum(['supermarket', 'mini_market', 'produce_market', 'pharmacy', 'specialty_store']).optional().transform((value) => value || null)), cuisineCategory: optionalText(100).optional(), prepTimeMinutes: optionalNumber({ min: 1, max: 240 }).optional(), minimumOrder: optionalNumber({ min: 0, max: 500000 }).optional() })
+const partnerApplicationMultipartSchema = requireCompleteOpeningHours(partnerApplicationFieldsSchema.omit({ documents: true }))
+const groceryApplicationMultipartSchema = requireCompleteOpeningHours(groceryApplicationFieldsSchema.omit({ documents: true }))
+const partnerApplicationJsonSchema = requireCompleteOpeningHours(partnerApplicationFieldsSchema.extend({ documents: z.array(z.never()).max(0).default([]) }))
+const riderApplicationSchema = z.object({ firstName: z.string().min(1).max(80), lastName: z.string().min(1).max(80), email: z.string().email(), phone: z.string().min(7).max(30), address: z.string().min(5).max(240), preferredArea: z.string().min(2).max(160), preferredLanguage: optionalText(60), vehicleType: z.enum(['bicycle', 'motorcycle', 'car', 'other']), vehicleOwnership: z.enum(['OWNED', 'PERMITTED']), typicalAvailability: z.string().min(2).max(120), identityType: optionalText(60), identityNumber: optionalText(120), vehicleRegistration: optionalText(100), emergencyName: optionalText(120), emergencyPhone: optionalText(30), verificationId: z.string().min(1), password: z.string().min(8), confirmPassword: z.string().min(8), termsAccepted: acceptedTermsSchema, documents: z.array(privateDocumentSchema).max(5).default([]) })
+const riderApplicationJsonSchema = riderApplicationSchema.extend({ documents: z.array(z.never()).max(0).default([]) })
+const passwordsMatch = (data, response) => {
+  if (data.password === data.confirmPassword) return true
+  response.status(400).json({ error: 'PASSWORD_CONFIRMATION_MISMATCH' })
+  return false
+}
 const verificationRequestSchema = z.object({ destination: z.string().min(6), channel: z.enum(['email', 'phone']) }).superRefine(({ destination, channel }, context) => {
   if (channel === 'phone' && !/^\+[1-9]\d{7,14}$/.test(destination)) context.addIssue({ code: 'custom', path: ['destination'], message: 'Phone verification requires an E.164 phone number.' })
 })
@@ -317,8 +337,9 @@ app.post('/api/auth/reset-password', authFlowLimiter, async (request, response) 
 })
 
 app.post('/api/partner-applications', async (request, response) => {
-  const result = partnerApplicationSchema.safeParse(request.body)
+  const result = partnerApplicationJsonSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_PARTNER_APPLICATION', details: result.error.flatten() })
+  if (!passwordsMatch(result.data, response)) return
   try {
     const data = result.data
     await requireVerifiedApplicationEmail(data.verificationId, data.businessEmail)
@@ -327,7 +348,7 @@ app.post('/api/partner-applications', async (request, response) => {
     const slug = `${data.restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${randomUUID().slice(0, 6)}`
     const created = await prisma.$transaction(async (transaction) => {
       const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
-      const restaurant = await transaction.restaurant.create({ data: { name: data.restaurantName, slug, address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      const restaurant = await transaction.restaurant.create({ data: { name: data.restaurantName, slug, description: data.businessDescription, cuisineCategory: data.cuisineCategory, openingTime: data.openingTime, closingTime: data.closingTime, daysOpen: data.openingDays, prepTimeMinutes: data.prepTimeMinutes, minimumOrderMinor: Math.round((data.minimumOrder || 0) * 100), address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, businessCategory: data.businessType, registrationNumber: data.registrationNumber, whatsApp: data.whatsApp, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, deliveryPreference: data.deliveryPreference } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: restaurant.id } })
       return { restaurantId: restaurant.id, status: 'PENDING_APPROVAL' }
     })
@@ -340,17 +361,18 @@ app.post('/api/partner-applications', async (request, response) => {
 
 app.post('/api/partner-applications/multipart', onboardingLimiter, upload.array('documents', 5), async (request, response) => {
   try {
-    const fields = partnerApplicationSchema.omit({ documents: true }).safeParse(request.body)
+    const fields = partnerApplicationMultipartSchema.safeParse(request.body)
     if (!fields.success) return response.status(400).json({ error: 'INVALID_PARTNER_APPLICATION', details: fields.error.flatten() })
-    const documents = await storeApplicationDocuments(request.files)
-    const data = { ...fields.data, documents }
+    if (!passwordsMatch(fields.data, response)) return
+    const data = fields.data
     await requireVerifiedApplicationEmail(data.verificationId, data.businessEmail)
     const city = await prisma.city.findFirst({ where: { name: data.cityName } })
     if (!city) return response.status(400).json({ error: 'CITY_NOT_SUPPORTED' })
+    const documents = await storeApplicationDocuments(request.files)
     const slug = `${data.restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${randomUUID().slice(0, 6)}`
     const created = await prisma.$transaction(async (transaction) => {
       const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
-      const restaurant = await transaction.restaurant.create({ data: { name: data.restaurantName, slug, address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      const restaurant = await transaction.restaurant.create({ data: { name: data.restaurantName, slug, description: data.businessDescription, cuisineCategory: data.cuisineCategory, openingTime: data.openingTime, closingTime: data.closingTime, daysOpen: data.openingDays, prepTimeMinutes: data.prepTimeMinutes, minimumOrderMinor: Math.round((data.minimumOrder || 0) * 100), address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, businessCategory: data.businessType, registrationNumber: data.registrationNumber, whatsApp: data.whatsApp, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, deliveryPreference: data.deliveryPreference, documents: { create: documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: restaurant.id } })
       return { restaurantId: restaurant.id, status: 'PENDING_APPROVAL' }
     })
@@ -363,17 +385,18 @@ app.post('/api/partner-applications/multipart', onboardingLimiter, upload.array(
 
 app.post('/api/grocery-applications/multipart', onboardingLimiter, upload.array('documents', 5), async (request, response) => {
   try {
-    const fields = groceryApplicationSchema.omit({ documents: true }).safeParse(request.body)
+    const fields = groceryApplicationMultipartSchema.safeParse(request.body)
     if (!fields.success) return response.status(400).json({ error: 'INVALID_GROCERY_APPLICATION', details: fields.error.flatten() })
-    const documents = await storeApplicationDocuments(request.files)
-    const data = { ...fields.data, documents }
+    if (!passwordsMatch(fields.data, response)) return
+    const data = fields.data
     await requireVerifiedApplicationEmail(data.verificationId, data.businessEmail)
     const city = await prisma.city.findFirst({ where: { name: data.cityName } })
     if (!city) return response.status(400).json({ error: 'CITY_NOT_SUPPORTED' })
+    const documents = await storeApplicationDocuments(request.files)
     const slug = `${data.groceryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${randomUUID().slice(0, 6)}`
     const created = await prisma.$transaction(async (transaction) => {
       const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
-      const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${(data.businessType || 'grocery store').replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, documents: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${(data.businessType || 'grocery store').replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', openingTime: data.openingTime, closingTime: data.closingTime, daysOpen: data.openingDays, address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, businessCategory: data.businessType, registrationNumber: data.registrationNumber, deliveryPreference: data.deliveryPreference, documents: { create: documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: grocery.id } })
       await transaction.notification.create({ data: { userId: user.id, type: 'ACCOUNT', title: 'Grocery store application received', body: `${grocery.name} is pending DOORSTEP review. We will notify you when your store is approved or if more information is needed.` } })
       return { groceryId: grocery.id, status: 'PENDING_APPROVAL' }
@@ -387,14 +410,15 @@ app.post('/api/grocery-applications/multipart', onboardingLimiter, upload.array(
 })
 
 app.post('/api/rider-applications', async (request, response) => {
-  const result = riderApplicationSchema.safeParse(request.body)
+  const result = riderApplicationJsonSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_RIDER_APPLICATION', details: result.error.flatten() })
+  if (!passwordsMatch(result.data, response)) return
   try {
     const data = result.data
     await requireVerifiedApplicationEmail(data.verificationId, data.email)
     const created = await prisma.$transaction(async (transaction) => {
-      const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, emailVerifiedAt: new Date(), role: 'RIDER' } })
-      const rider = await transaction.rider.create({ data: { userId: user.id, vehicleType: data.vehicleType, vehicleDetails: data.vehicleRegistration, application: { create: { identityType: data.identityType, identityNumber: data.identityNumber, emergencyName: data.emergencyName, emergencyPhone: data.emergencyPhone, identityDocuments: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, preferredLanguage: data.preferredLanguage, emailVerifiedAt: new Date(), role: 'RIDER' } })
+      const rider = await transaction.rider.create({ data: { userId: user.id, vehicleType: data.vehicleType, vehicleDetails: data.vehicleRegistration, application: { create: { identityType: data.identityType, identityNumber: data.identityNumber, emergencyName: data.emergencyName, emergencyPhone: data.emergencyPhone, preferredArea: data.preferredArea, typicalAvailability: data.typicalAvailability, vehicleOwnership: data.vehicleOwnership, identityDocuments: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       return { riderId: rider.id, status: 'PENDING_APPROVAL' }
     })
     return response.status(201).json(created)
@@ -408,12 +432,13 @@ app.post('/api/rider-applications/multipart', onboardingLimiter, upload.array('d
   try {
     const fields = riderApplicationSchema.omit({ documents: true }).safeParse(request.body)
     if (!fields.success) return response.status(400).json({ error: 'INVALID_RIDER_APPLICATION', details: fields.error.flatten() })
-    const documents = await storeApplicationDocuments(request.files)
-    const data = { ...fields.data, documents }
+    if (!passwordsMatch(fields.data, response)) return
+    const data = fields.data
     await requireVerifiedApplicationEmail(data.verificationId, data.email)
+    const documents = await storeApplicationDocuments(request.files)
     const created = await prisma.$transaction(async (transaction) => {
-      const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, emailVerifiedAt: new Date(), role: 'RIDER' } })
-      const rider = await transaction.rider.create({ data: { userId: user.id, vehicleType: data.vehicleType, vehicleDetails: data.vehicleRegistration, application: { create: { identityType: data.identityType, identityNumber: data.identityNumber, emergencyName: data.emergencyName, emergencyPhone: data.emergencyPhone, identityDocuments: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, preferredLanguage: data.preferredLanguage, emailVerifiedAt: new Date(), role: 'RIDER' } })
+      const rider = await transaction.rider.create({ data: { userId: user.id, vehicleType: data.vehicleType, vehicleDetails: data.vehicleRegistration, application: { create: { identityType: data.identityType, identityNumber: data.identityNumber, emergencyName: data.emergencyName, emergencyPhone: data.emergencyPhone, preferredArea: data.preferredArea, typicalAvailability: data.typicalAvailability, vehicleOwnership: data.vehicleOwnership, identityDocuments: { create: documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       return { riderId: rider.id, status: 'PENDING_APPROVAL' }
     })
     return response.status(201).json(created)
@@ -604,12 +629,44 @@ app.post('/api/support/tickets/:ticketId/messages', requireUser, async (request,
 
 app.get('/api/admin/applications/:type', requireUser, requireAdmin, async (request, response) => {
   if (!['restaurant', 'grocery', 'rider'].includes(request.params.type)) return response.status(400).json({ error: 'INVALID_APPLICATION_TYPE' })
+  const query = z.object({
+    status: z.enum(['OPEN', 'PENDING_APPROVAL', 'NEEDS_INFORMATION', 'APPROVED', 'REJECTED', 'SUSPENDED']).default('OPEN'),
+    search: z.string().trim().max(100).optional(),
+    city: z.string().trim().max(100).optional(),
+    from: z.string().date().optional(),
+    to: z.string().date().optional(),
+  }).safeParse(request.query)
+  if (!query.success || (query.data.from && query.data.to && query.data.from > query.data.to)) return response.status(400).json({ error: 'INVALID_APPLICATION_FILTERS' })
+  const statuses = query.data.status === 'OPEN' ? ['PENDING_APPROVAL', 'NEEDS_INFORMATION'] : [query.data.status]
+  const submittedAt = {
+    ...(query.data.from ? { gte: new Date(`${query.data.from}T00:00:00.000Z`) } : {}),
+    ...(query.data.to ? { lte: new Date(`${query.data.to}T23:59:59.999Z`) } : {}),
+  }
+  const search = query.data.search
+  const city = query.data.city
   try {
     const applications = request.params.type === 'rider'
-      ? await prisma.riderApplication.findMany({ where: { status: 'PENDING_APPROVAL' }, include: { rider: { include: { user: true } }, identityDocuments: { select: { id: true, type: true, verifiedAt: true } } }, orderBy: { submittedAt: 'asc' } })
-      : await prisma.restaurantApplication.findMany({ where: { status: 'PENDING_APPROVAL', restaurant: { storeType: request.params.type === 'grocery' ? 'GROCERY' : 'RESTAURANT' } }, include: { restaurant: true, documents: { select: { id: true, type: true, verifiedAt: true } } }, orderBy: { submittedAt: 'asc' } })
+      ? await prisma.riderApplication.findMany({ where: { status: { in: statuses }, ...(Object.keys(submittedAt).length ? { submittedAt } : {}), ...(search ? { OR: [{ rider: { user: { firstName: { contains: search, mode: 'insensitive' } } } }, { rider: { user: { lastName: { contains: search, mode: 'insensitive' } } } }, { rider: { user: { email: { contains: search, mode: 'insensitive' } } } }, { rider: { user: { phone: { contains: search, mode: 'insensitive' } } } }] } : {}), ...(city ? { preferredArea: { contains: city, mode: 'insensitive' } } : {}) }, include: { rider: { include: { user: { select: { id: true, email: true, phone: true, firstName: true, lastName: true } } } }, identityDocuments: { select: { id: true, type: true, verifiedAt: true } } }, orderBy: { submittedAt: 'asc' } })
+      : await prisma.restaurantApplication.findMany({ where: { status: { in: statuses }, ...(Object.keys(submittedAt).length ? { submittedAt } : {}), restaurant: { storeType: request.params.type === 'grocery' ? 'GROCERY' : 'RESTAURANT', ...(city ? { city: { name: { contains: city, mode: 'insensitive' } } } : {}), ...(search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { email: { contains: search, mode: 'insensitive' } }, { phone: { contains: search, mode: 'insensitive' } }, { application: { ownerName: { contains: search, mode: 'insensitive' } } }] } : {}) } }, include: { restaurant: { include: { city: { select: { name: true } } } }, documents: { select: { id: true, type: true, verifiedAt: true } } }, orderBy: { submittedAt: 'asc' } })
     return response.json({ applications })
   } catch { return response.status(503).json({ error: 'APPLICATION_SERVICE_UNAVAILABLE' }) }
+})
+
+app.get('/api/admin/applications/:type/:applicationId/documents/:documentId', requireUser, requireAdmin, async (request, response) => {
+  if (!['restaurant', 'grocery', 'rider'].includes(request.params.type)) return response.status(400).json({ error: 'INVALID_APPLICATION_TYPE' })
+  try {
+    const document = request.params.type === 'rider'
+      ? await prisma.riderIdentityDocument.findFirst({ where: { id: request.params.documentId, applicationId: request.params.applicationId } })
+      : await prisma.restaurantDocument.findFirst({ where: { id: request.params.documentId, applicationId: request.params.applicationId, application: { is: { restaurant: { is: { storeType: request.params.type === 'grocery' ? 'GROCERY' : 'RESTAURANT' } } } } } })
+    if (!document) return response.status(404).json({ error: 'APPLICATION_DOCUMENT_NOT_FOUND' })
+    const file = await readPrivateDocument(document.storageKey)
+    response.set('Cache-Control', 'private, no-store')
+    response.set('X-Content-Type-Options', 'nosniff')
+    response.set('Content-Type', file.mimeType)
+    return response.send(file.buffer)
+  } catch (error) {
+    return response.status(error.status || 503).json({ error: error.code || 'APPLICATION_DOCUMENT_UNAVAILABLE' })
+  }
 })
 
 app.get('/api/admin/summary', requireUser, requireAdmin, async (_request, response) => {
@@ -742,7 +799,9 @@ app.patch('/api/admin/customers/:customerId/status', requireUser, requireAdmin, 
 })
 
 app.post('/api/admin/applications/:type/:applicationId/review', requireUser, requireAdmin, async (request, response) => {
-  const result = z.object({ status: z.enum(['NEEDS_INFORMATION', 'APPROVED', 'REJECTED', 'SUSPENDED']), note: z.string().max(1000).optional() }).safeParse(request.body)
+  const result = z.object({ status: z.enum(['NEEDS_INFORMATION', 'APPROVED', 'REJECTED', 'SUSPENDED']), note: z.string().trim().max(1000).optional() }).superRefine((value, context) => {
+    if (['NEEDS_INFORMATION', 'REJECTED'].includes(value.status) && !value.note) context.addIssue({ code: 'custom', path: ['note'], message: 'A note is required for this decision.' })
+  }).safeParse(request.body)
   if (!result.success || !['restaurant', 'grocery', 'rider'].includes(request.params.type)) return response.status(400).json({ error: 'INVALID_APPLICATION_REVIEW' })
   try {
     const application = await reviewApplication({ type: request.params.type, id: request.params.applicationId, status: result.data.status, note: result.data.note, actorId: request.user.id })
@@ -1056,14 +1115,25 @@ app.post('/api/deliveries/:deliveryId/location', requireUser, async (request, re
 
 app.get('/api/orders/:orderId/tracking', requireUser, async (request, response) => {
   try {
-    const order = await prisma.order.findUnique({ where: { id: request.params.orderId }, include: { restaurant: { include: { users: { select: { userId: true } } } }, delivery: { include: { rider: { include: { user: true } } } } } })
+    const order = await prisma.order.findUnique({ where: { id: request.params.orderId }, include: { restaurant: { include: { users: { select: { userId: true } } } }, delivery: { include: { rider: { include: { user: true } } } }, payment: { select: { status: true } } } })
     if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
     if (request.user.role === 'CUSTOMER' && order.customerId !== request.user.id) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
     if (request.user.role === 'RIDER' && order.delivery?.riderId !== request.user.rider?.id) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
     const activeDelivery = order.delivery && ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'].includes(order.delivery.status)
     if (!['CUSTOMER', 'RIDER', 'ADMIN'].includes(request.user.role) || (request.user.role === 'ADMIN' && !activeDelivery)) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
     const snapshot = order.delivery ? await getDeliveryTrackingSnapshot(order.delivery.id, request.user) : null
-    return response.json({ order: { id: order.id, orderNumber: order.orderNumber, restaurant: order.restaurant.name, status: order.status, delivery: order.delivery ? { id: order.delivery.id, status: order.delivery.status, location: snapshot?.delivery.location || null, rider: activeDelivery && order.delivery.rider ? { name: `${order.delivery.rider.user.firstName} ${order.delivery.rider.user.lastName}`, phone: order.delivery.rider.user.phone, callAllowed: Boolean(order.delivery.rider.user.phone) } : null } : null } })
+    const orderDetails = {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      restaurant: order.restaurant.name,
+      status: order.status,
+      delivery: order.delivery ? { id: order.delivery.id, status: order.delivery.status, location: snapshot?.delivery.location || null, rider: activeDelivery && order.delivery.rider ? { name: `${order.delivery.rider.user.firstName} ${order.delivery.rider.user.lastName}`, phone: order.delivery.rider.user.phone, callAllowed: Boolean(order.delivery.rider.user.phone) } : null } : null,
+    }
+    if (request.user.role === 'CUSTOMER') {
+      orderDetails.totalMinor = order.totalMinor
+      orderDetails.payment = order.payment ? { status: order.payment.status } : null
+    }
+    return response.json({ order: orderDetails })
   } catch (error) {
     return response.status(error.status || 503).json({ error: error.code || 'TRACKING_SERVICE_UNAVAILABLE' })
   }
@@ -1171,6 +1241,7 @@ async function quoteOrder(input) {
   if (menuItems.length !== input.items.length) throw Object.assign(new Error('One or more menu items are unavailable.'), { status: 409, code: 'MENU_ITEM_UNAVAILABLE' })
   const items = input.items.map((inputItem) => { const menuItem = menuItems.find((item) => item.id === inputItem.menuItemId); return { menuItemId: menuItem.id, name: menuItem.name, unitPriceMinor: menuItem.priceMinor, quantity: inputItem.quantity, instructions: inputItem.instructions } })
   const subtotalMinor = items.reduce((sum, item) => sum + item.unitPriceMinor * item.quantity, 0)
+  if (subtotalMinor < restaurant.minimumOrderMinor) throw Object.assign(new Error('Order total is below this business’s minimum order.'), { status: 409, code: 'MINIMUM_ORDER_NOT_MET' })
   const deliveryFeeMinor = 80000
   const serviceFeeMinor = Math.round(subtotalMinor * 0.03)
   return { restaurantId: restaurant.id, address, serviceAreaCityId: activeServiceArea.cityId, items, subtotalMinor, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor }

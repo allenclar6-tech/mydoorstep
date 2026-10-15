@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import request from 'supertest'
 import { validateLocationUpdate } from '../server/deliveryService.js'
@@ -7,6 +11,28 @@ import { verificationFailure } from '../server/verificationService.js'
 
 process.env.NODE_ENV = 'test'
 const { app, storeApplicationDocuments } = await import('../server/index.js')
+
+test('deployment environment variables take precedence over .env values', () => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'doorstep-env-test-'))
+  try {
+    writeFileSync(join(temporaryDirectory, '.env'), 'PAYMENT_PROVIDER=dotenv-value\n')
+    const serverEntry = new URL('../server/index.js', import.meta.url).href
+    const result = spawnSync(
+      process.execPath,
+      ['--input-type=module', '--eval', `await import(${JSON.stringify(serverEntry)}); process.stdout.write(process.env.PAYMENT_PROVIDER)`],
+      {
+        cwd: temporaryDirectory,
+        encoding: 'utf8',
+        env: { ...process.env, NODE_ENV: 'test', PAYMENT_PROVIDER: 'deployment-value' },
+        timeout: 30000,
+      },
+    )
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout.trim().split(/\r?\n/).at(-1), 'deployment-value')
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true })
+  }
+})
 
 test('health endpoint reports API availability', async () => {
   const response = await request(app).get('/api/health')
@@ -129,6 +155,25 @@ test('partner application validates required core fields', async () => {
   const response = await request(app).post('/api/partner-applications').send({})
   assert.equal(response.status, 400)
   assert.equal(response.body.error, 'INVALID_PARTNER_APPLICATION')
+  assert.ok(response.body.details.fieldErrors.verificationId)
+})
+
+test('partner application cannot attach a private document from a client-supplied storage key', async () => {
+  const response = await request(app).post('/api/partner-applications').send({
+    restaurantName: 'Test Kitchen',
+    businessPhone: '+2348012345678',
+    businessEmail: 'owner@example.com',
+    address: '12 Test Street, Sapele',
+    ownerName: 'Test Owner',
+    verificationId: 'unverified-challenge',
+    password: 'secure-password',
+    confirmPassword: 'secure-password',
+    deliveryPreference: 'DOORSTEP_RIDERS',
+    termsAccepted: true,
+    documents: [{ type: 'IDENTITY', storageKey: 'private/applications/another-applicant/id.pdf' }],
+  })
+  assert.equal(response.status, 400)
+  assert.equal(response.body.error, 'INVALID_PARTNER_APPLICATION')
 })
 
 test('partner applications reject creation until an email verification challenge is supplied', async () => {
@@ -139,6 +184,9 @@ test('partner applications reject creation until an email verification challenge
     .field('address', '12 Test Street, Sapele')
     .field('ownerName', 'Test Owner')
     .field('password', 'secure-password')
+    .field('confirmPassword', 'secure-password')
+    .field('deliveryPreference', 'DOORSTEP_RIDERS')
+    .field('termsAccepted', 'on')
   assert.equal(response.status, 400)
   assert.equal(response.body.error, 'INVALID_PARTNER_APPLICATION')
 })
@@ -146,13 +194,18 @@ test('partner applications reject creation until an email verification challenge
 test('grocery applications reject creation until an email verification challenge is supplied', async () => {
   const response = await request(app).post('/api/grocery-applications/multipart')
     .field('groceryName', 'Test Grocer')
+    .field('restaurantName', 'Test Grocer')
     .field('businessPhone', '+2348012345678')
     .field('businessEmail', 'grocer@example.com')
     .field('address', '12 Test Street, Sapele')
     .field('ownerName', 'Test Owner')
     .field('password', 'secure-password')
+    .field('confirmPassword', 'secure-password')
+    .field('deliveryPreference', 'DOORSTEP_RIDERS')
+    .field('termsAccepted', 'on')
   assert.equal(response.status, 400)
   assert.equal(response.body.error, 'INVALID_GROCERY_APPLICATION')
+  assert.ok(response.body.details.fieldErrors.verificationId)
 })
 
 test('rider applications reject creation until an email verification challenge is supplied', async () => {
@@ -162,9 +215,48 @@ test('rider applications reject creation until an email verification challenge i
     .field('email', 'rider@example.com')
     .field('phone', '+2348012345678')
     .field('address', '12 Test Street, Sapele')
+    .field('preferredArea', 'Amukpe, Sapele')
+    .field('vehicleType', 'motorcycle')
+    .field('vehicleOwnership', 'OWNED')
+    .field('typicalAvailability', 'Weekdays, evenings')
     .field('password', 'secure-password')
+    .field('confirmPassword', 'secure-password')
+    .field('termsAccepted', 'on')
   assert.equal(response.status, 400)
   assert.equal(response.body.error, 'INVALID_RIDER_APPLICATION')
+})
+
+test('partner application passwords must match before verification or persistence', async () => {
+  const response = await request(app).post('/api/partner-applications/multipart')
+    .field('restaurantName', 'Test Kitchen')
+    .field('businessPhone', '+2348012345678')
+    .field('businessEmail', 'owner@example.com')
+    .field('address', '12 Test Street, Sapele')
+    .field('ownerName', 'Test Owner')
+    .field('deliveryPreference', 'DOORSTEP_RIDERS')
+    .field('verificationId', 'unverified-challenge')
+    .field('password', 'secure-password')
+    .field('confirmPassword', 'different-password')
+    .field('termsAccepted', 'on')
+  assert.equal(response.status, 400)
+  assert.equal(response.body.error, 'PASSWORD_CONFIRMATION_MISMATCH')
+})
+
+test('grocery application requires applicant agreement before verification or persistence', async () => {
+  const response = await request(app).post('/api/grocery-applications/multipart')
+    .field('restaurantName', 'Test Grocer')
+    .field('groceryName', 'Test Grocer')
+    .field('businessPhone', '+2348012345678')
+    .field('businessEmail', 'grocer@example.com')
+    .field('address', '12 Test Street, Sapele')
+    .field('ownerName', 'Test Owner')
+    .field('verificationId', 'unverified-challenge')
+    .field('password', 'secure-password')
+    .field('confirmPassword', 'secure-password')
+    .field('deliveryPreference', 'DOORSTEP_RIDERS')
+  assert.equal(response.status, 400)
+  assert.equal(response.body.error, 'INVALID_GROCERY_APPLICATION')
+  assert.ok(response.body.details.fieldErrors.termsAccepted)
 })
 
 test('application document handling safely accepts no uploads', async () => {
@@ -189,6 +281,15 @@ test('admin summary requires authentication', async () => {
   const response = await request(app).get('/api/admin/summary')
   assert.equal(response.status, 401)
   assert.equal(response.body.error, 'AUTHENTICATION_REQUIRED')
+})
+
+test('customer order history and order tracking require authentication', async () => {
+  const historyResponse = await request(app).get('/api/orders')
+  const trackingResponse = await request(app).get('/api/orders/example-order/tracking')
+  assert.equal(historyResponse.status, 401)
+  assert.equal(historyResponse.body.error, 'AUTHENTICATION_REQUIRED')
+  assert.equal(trackingResponse.status, 401)
+  assert.equal(trackingResponse.body.error, 'AUTHENTICATION_REQUIRED')
 })
 
 test('payment webhook reconciliation requires the stored amount and NGN currency', () => {

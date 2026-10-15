@@ -17,7 +17,7 @@ async function runPrisma(args) {
 }
 
 async function isBaselineRecorded() {
-  const tables = await prisma.$queryRaw`SELECT to_regclass('public."_prisma_migrations"') AS migration_table`
+  const tables = await prisma.$queryRaw`SELECT to_regclass('public."_prisma_migrations"')::text AS migration_table`
   if (!tables[0]?.migration_table) return false
   const migrations = await prisma.$queryRaw`SELECT 1 FROM "_prisma_migrations" WHERE migration_name = ${baselineMigration} LIMIT 1`
   return migrations.length === 1

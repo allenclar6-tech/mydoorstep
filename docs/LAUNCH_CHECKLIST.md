@@ -3,10 +3,12 @@
 ## Foundation
 - [ ] PostgreSQL database is provisioned and reachable
 - [ ] Prisma schema is reviewed and migration strategy is approved
-- [ ] Existing database is baselined or an initial reviewed Prisma migration is committed
+- [ ] Existing database schema and migration baseline are verified against the tracked migration history
 - [ ] `.env` is configured for all required production variables
 - [ ] Secrets are stored in environment management, not source control
 - [ ] `.gitignore` blocks `.env` and local secret files
+- [ ] Host-injected environment variables take precedence over local dotenv files
+- [ ] Tracked Prisma migrations are reviewed and verified against a staging database
 
 ## Security
 - [ ] Password hashing and auth are verified in production
@@ -16,6 +18,11 @@
 - [ ] Headers, rate limiting, and API validation are confirmed
 - [ ] Verification and password-reset endpoints have provider-backed delivery and abuse monitoring
 - [ ] Private-document uploads are restricted to approved operational roles and stored outside the public web root
+
+## Build and verification
+- [ ] `npm.cmd test` passes from a clean dependency installation
+- [ ] `npm.cmd run build` passes and the large JavaScript chunk warning has been addressed or accepted with evidence
+- [ ] `npm.cmd run db:validate` passes
 
 ## Commerce
 - [ ] Restaurant and rider application approval workflow is tested

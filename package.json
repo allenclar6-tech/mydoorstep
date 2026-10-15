@@ -17,6 +17,7 @@
     "db:format": "prisma format",
     "db:seed": "node prisma/seed.js",
     "admin:create": "node server/createAdmin.js",
+    "pretest": "prisma generate",
     "test": "node --test tests/api.test.js"
   },
   "dependencies": {

@@ -114,6 +114,7 @@ model User {
   lastName          String
   preferredName     String?
   dateOfBirth       DateTime?
+  preferredLanguage String?
   dietaryPreference String?
   deliveryNotes     String?
   emailVerifiedAt   DateTime?
@@ -173,7 +174,10 @@ model Restaurant {
   name              String
   slug              String                   @unique
   description       String?
+  cuisineCategory   String?
   coverImageUrl     String?
+  prepTimeMinutes   Int?
+  minimumOrderMinor Int                     @default(0)
   storeType         StoreType                @default(RESTAURANT)
   phone             String?
   email             String?
@@ -214,8 +218,12 @@ model RestaurantApplication {
   reviewedById   String?
   status         ApplicationStatus    @default(PENDING_APPROVAL)
   reviewNote     String?
+  businessCategory   String?
+  registrationNumber String?
+  whatsApp           String?
   identityType   String?
   identityNumber String?
+  deliveryPreference String?
   documents      RestaurantDocument[]
 }
 
@@ -278,6 +286,9 @@ model RiderApplication {
   identityNumber    String?
   emergencyName     String?
   emergencyPhone    String?
+  preferredArea     String?
+  typicalAvailability String?
+  vehicleOwnership String?
   identityDocuments RiderIdentityDocument[]
 }
 

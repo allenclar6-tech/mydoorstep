@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, ArrowRight, BarChart3, Bell, Check, ClipboardList, DollarSign, FileText, LayoutDashboard, MapPin, Menu, Settings, Shield, Store, Truck, Users } from 'lucide-react'
 import { formatNaira } from './data'
 import { PasswordField } from './PasswordField'
+import { ApplicationManagement } from './ApplicationManagement'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
@@ -92,4 +93,18 @@ function ActiveDeliveries() {
 }
 
 function AdminComingSoon({ title, detail }) { return <><AdminIntro eyebrow="ADMIN CONTROL CENTER" title={title} /><section className="admin-panel finance-note"><Settings size={22} /><div><h3>Operational workspace ready</h3><p>{detail}</p><button className="admin-primary" onClick={() => navigate('/admin/dashboard')}>Return to overview <ArrowRight size={15} /></button></div></section></> }
-export function AdminPortal({ path, onLogout }) { let content = <LiveDashboard />; if (path === '/admin/deliveries') content = <ActiveDeliveries />; if (path === '/admin/restaurants') content = <Management kind="Restaurants" type="restaurant" />; if (path === '/admin/groceries') content = <Management kind="Groceries" type="grocery" />; if (path === '/admin/riders') content = <Management kind="Riders" type="rider" />; if (path === '/admin/customers') content = <Customers />; if (path === '/admin/orders') content = <LiveAdminOrders />; if (path === '/admin/reviews') content = <Reviews />; if (path === '/admin/payments' || path === '/admin/analytics') content = <Finance />; if (path === '/admin/audit-logs') content = <AuditLogs />; if (path === '/admin/settings') content = <SettingsPage />; if (path === '/admin/support') content = <SupportInbox />; return <AdminShell path={path}>{content}</AdminShell> }
+export function AdminPortal({ path, onLogout }) {
+  let content = <LiveDashboard />
+  if (path === '/admin/deliveries') content = <ActiveDeliveries />
+  if (path === '/admin/restaurants') content = <ApplicationManagement kind="Restaurants" type="restaurant" />
+  if (path === '/admin/groceries') content = <ApplicationManagement kind="Groceries" type="grocery" />
+  if (path === '/admin/riders') content = <ApplicationManagement kind="Riders" type="rider" />
+  if (path === '/admin/customers') content = <Customers />
+  if (path === '/admin/orders') content = <LiveAdminOrders />
+  if (path === '/admin/reviews') content = <Reviews />
+  if (path === '/admin/payments' || path === '/admin/analytics') content = <Finance />
+  if (path === '/admin/audit-logs') content = <AuditLogs />
+  if (path === '/admin/settings') content = <SettingsPage />
+  if (path === '/admin/support') content = <SupportInbox />
+  return <AdminShell path={path}>{content}</AdminShell>
+}

@@ -33,7 +33,7 @@ The repository already contains a usable foundation for a production food-delive
 - Private upload validation for document intake
 - API tests in `tests/api.test.js`
 
-## Existing features already working
+## Implemented foundation (verification varies by feature)
 
 - Health and metadata endpoints
 - Customer auth routes and public session checks
@@ -49,13 +49,12 @@ The repository already contains a usable foundation for a production food-delive
 
 ## Missing or incomplete production features
 
-- No reviewed Prisma migration history committed for production use
-- Migration history is not yet committed; the existing local database is unmanaged by Prisma Migrate
+- A Prisma migration history is committed (one baseline and four follow-up migrations); its compatibility with the production database and release process still needs a staging review
 - Provider-backed operations, monitoring, and load measurements remain incomplete
-- No production deployment config for Render, Railway, Vercel, Azure, or similar
+- Render API and web service configuration exists; production deployment and domain health have not been verified in this audit
 - No central logging, metrics, error-monitoring, or alerting setup
-- No managed object storage for private uploads
-- No full provider integrations for email, SMS, Firebase, or map services
+- Private uploads use local filesystem storage; durable private object storage and malware scanning are not implemented
+- Paystack payment initialization/webhook code, Resend email verification, Twilio SMS verification, and Google Places endpoints are implemented; provider credentials and live delivery have not been verified. Flutterwave payments, Firebase push, and managed object-storage integration remain unverified or missing.
 - No end-to-end test coverage for the full life cycles required by the prompt
 - No business-ready settings UI for commissions, delivery fees, and platform policy
 - No operating model for payout, review moderation, refund approval, or sponsor placements
@@ -63,13 +62,25 @@ The repository already contains a usable foundation for a production food-delive
 
 ## Problems found
 
-1. The project uses a mixed local-demo and real-backend pattern. Some screens look complete but still rely on in-memory or browser-only data.
-2. `.env` and `.env.example` exist, but the example file does not match the production variable names in the prompt exactly.
-3. The repo lacks some standard production files such as `.gitignore` and proper operational docs.
-4. Local development secrets are present in `.env`; they are not safe to commit and should be treated as local-only.
-5. Payment, maps, email, SMS, and notifications all need real provider configuration behind environment variables.
-6. The app needs a migration and release process before production approval.
+1. Server startup used `dotenv.config({ override: true })`, allowing a local `.env` value to replace a secret or setting injected by the host. This was changed to dotenv's default host-environment precedence and covered by an isolated regression test.
+2. Local environment files exist, but `.gitignore` excludes them and none of `.env`, `.env.local`, `.env.production`, or `.env.TXT` is tracked by Git. Their values were not printed or reviewed.
+3. Prisma migration SQL is tracked in Git, but a read-only status check against the configured local database (`localhost:5432`) found all five migrations unapplied. No migration was applied; staging and production database state are unknown.
+4. Initial API test execution failed before tests loaded because Prisma Client had not been generated. `pretest` now runs `prisma generate`; the regression suite now passes.
+5. The production frontend build succeeded but emitted a warning for a minified JavaScript chunk of approximately 2.34 MB (649 KB gzip), above Vite's 500 KB advisory threshold.
+6. Provider key presence alone does not prove credentials are valid or an integration works. Production credentials and end-to-end provider verification remain unconfirmed.
 7. Address-level service-area validation still needs a geocoding/provider adapter; restaurant city eligibility is enforced server-side.
+8. Legacy frontend code could create client-local orders with `PAID` status, and order pages used local storage as a fallback. That path and its unreachable confirmation panel have been removed; order history and tracking now rely on API-backed orders only. A payment-pending order no longer displays a confirmed-payment timeline.
+9. The order history previously rendered an empty result when its API request failed, and the tracking endpoint omitted the customer's total/payment status needed by the page. The frontend now presents explicit loading/error/retry states; the authenticated customer tracking response includes only that customer's order total and payment status, and focused unauthenticated access tests cover both routes.
+
+## Evidence collected in this audit
+
+- `npm.cmd run build`: passed before and after the order-history fix; Vite reported the large JavaScript chunk warning above.
+- `npm.cmd run db:validate`: passed.
+- `npm.cmd test`: passed, 29/29 tests, including deployment environment precedence; `pretest` generated Prisma Client.
+- `npm.cmd run db:migrate:status`: connected to local PostgreSQL at `localhost:5432` and exited nonzero because all five tracked migrations are pending; no migration was deployed or applied.
+- `prisma/migrations/` contains five tracked migrations, including `20261014114500_baseline_existing_schema`; production migration state remains unknown.
+- Git confirms local `.env*` files are ignored and not tracked. Only environment-variable names and whether they were populated were checked; values were not revealed.
+- Deployment readiness check: Wrangler is absent from `node_modules`, this session has no Cloudflare/Render credential environment variables, and there are no GitHub Actions workflows in the repository. A valid frontend `Dockerfile.web` is now present for the Render service, but no live deployment or credential-backed production release was attempted.
 
 ## Recommended architecture
 

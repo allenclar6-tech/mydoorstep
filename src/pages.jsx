@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowRight, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
 import { categories, formatNaira, groceryStores, restaurants, sapeleLocations } from './data'
-import { loadOrders } from './services/orderService'
 import { PasswordField } from './PasswordField'
 import { ProfileAvatar } from './ProfileAvatar'
 import { GroceryOwnerApplication } from './GroceryOwnerApplication'
+import { ApplicationReviewSummary, clearApplicationDraft, getApplicationReview, restoreApplicationDraft, saveApplicationDraft } from './ApplicationReview'
 import { LocationMap } from './LocationMap'
 import { DeliveryTrackingMap } from './DeliveryTrackingMap'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
+const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 function MobileStoreDock() {
   const path = window.location.pathname
@@ -89,7 +90,7 @@ function RegistrationPage() {
 
 const onboardingSteps = {
   customer: ['Your details', 'Verify email', 'Ready to order'],
-  restaurant: ['Set up store', 'Owner account', 'Documents', 'Verify email', 'Launch review'],
+  restaurant: ['Business', 'Details', 'Owner', 'Documents', 'Verify email', 'Review'],
   rider: ['Your profile', 'How you deliver', 'Documents', 'Verify email', 'Launch review'],
 }
 
@@ -98,8 +99,14 @@ function OnboardingProgress({ type, current }) {
 }
 
 function validateOnboardingStep(form, step) {
-  const fields = [...form.querySelectorAll(`[data-onboarding-step="${step}"] input, [data-onboarding-step="${step}"] select`)]
+  const fields = [...form.querySelectorAll(`[data-onboarding-step="${step}"] input, [data-onboarding-step="${step}"] select, [data-onboarding-step="${step}"] textarea`)]
   return fields.every((field) => field.checkValidity() || (field.reportValidity(), false))
+}
+
+const weekDays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
+
+function OpeningDaysField() {
+  return <fieldset className="opening-days-field"><legend>Opening days</legend><div>{weekDays.map((day) => <label key={day}><input type="checkbox" name="openingDays" value={day} defaultChecked />{day.charAt(0) + day.slice(1).toLowerCase()}</label>)}</div></fieldset>
 }
 
 function OnboardingCustomerRegistration() {
@@ -160,6 +167,10 @@ function OnboardingCustomerRegistration() {
 
 function OnboardingApplication({ type }) {
   const restaurant = type === 'restaurant'
+  const ownerStep = restaurant ? 2 : 1
+  const documentsStep = restaurant ? 3 : 2
+  const verificationStep = documentsStep + 1
+  const reviewStep = verificationStep + 1
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -167,7 +178,37 @@ function OnboardingApplication({ type }) {
   const [challenge, setChallenge] = useState(null)
   const [destination, setDestination] = useState('')
   const [verificationId, setVerificationId] = useState('')
+  const [reviewItems, setReviewItems] = useState([])
   const [verified, setVerified] = useState(false)
+  const [draftNotice, setDraftNotice] = useState('')
+  const formRef = useRef(null)
+  const draftKey = `doorstep-onboarding-${type}`
+  useEffect(() => {
+    try {
+      const draft = formRef.current && restoreApplicationDraft(formRef.current, draftKey)
+      if (draft) {
+        setStep(Math.max(0, Math.min(draft.step, documentsStep)))
+        setDraftNotice('Your saved details were restored. Re-select any documents and verify your email again to continue.')
+      }
+    } catch {
+      setError('We could not restore the saved application from this browser session.')
+    }
+  }, [draftKey, documentsStep])
+  const saveAndExit = () => {
+    try {
+      saveApplicationDraft(formRef.current, draftKey, step, documentsStep)
+      navigate('/partner/register')
+    } catch {
+      setError('We could not save this application in the current browser session.')
+    }
+  }
+  const editReviewStep = (reviewStep) => {
+    setError('')
+    setVerificationId('')
+    setChallenge(null)
+    setDestination('')
+    setStep(reviewStep)
+  }
   const advance = (event) => {
     const form = event.currentTarget.form
     if (!validateOnboardingStep(form, step)) return
@@ -177,49 +218,57 @@ function OnboardingApplication({ type }) {
   const submit = async (event) => {
     event.preventDefault()
     const form = event.currentTarget
-    if (!validateOnboardingStep(form, step)) return
+    if (!validateOnboardingStep(form, reviewStep)) return
     setBusy(true); setError('')
     try {
+      const formData = new FormData(form)
+      if (formData.get('password') !== formData.get('confirmPassword')) throw new Error('The passwords do not match.')
       const response = await fetch(`${apiBase}${restaurant ? '/api/partner-applications/multipart' : '/api/rider-applications/multipart'}`, { method: 'POST', body: new FormData(form) })
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || `Could not submit the ${restaurant ? 'restaurant' : 'rider'} application.`)
+      clearApplicationDraft(draftKey)
       setSubmitted(true)
     } catch (submissionError) { setError(submissionError.message) } finally { setBusy(false) }
   }
   const requestEmailCode = async (event) => {
     const form = event.currentTarget.form
-    if (!validateOnboardingStep(form, step)) return
+    if (!validateOnboardingStep(form, documentsStep)) return
     const email = restaurant ? new FormData(form).get('businessEmail') : new FormData(form).get('email')
     setBusy(true); setError('')
     try {
       const response = await fetch(`${apiBase}/api/auth/verification/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destination: email, channel: 'email' }) })
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || 'Could not send the verification code.')
-      setChallenge(body); setDestination(email); setStep(3)
+      setChallenge(body); setDestination(email); setStep(verificationStep)
     } catch (requestError) { setError(requestError.message) } finally { setBusy(false) }
   }
   const verifyEmailCode = async (event) => {
-    const code = new FormData(event.currentTarget.form).get('verificationCode')
+    const form = event.currentTarget.form
+    const code = new FormData(form).get('verificationCode')
     setBusy(true); setError('')
     try {
       const response = await fetch(`${apiBase}/api/auth/verification/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: challenge?.challengeId, destination, code }) })
       const body = await response.json()
       if (!response.ok || !body.verified) throw new Error('The verification code is invalid or expired.')
       setVerificationId(challenge.challengeId)
+      setReviewItems(getApplicationReview(form))
       setVerified(true)
-      window.setTimeout(() => { setVerified(false); setStep(4) }, 1_200)
+      window.setTimeout(() => { setVerified(false); setStep(reviewStep) }, 1_200)
     } catch (verificationError) { setError(verificationError.message) } finally { setBusy(false) }
   }
   const title = restaurant ? 'Bring your kitchen to more tables.' : 'Move good food through Sapele.'
-  const intro = restaurant ? 'Four quick steps capture the business details our team needs to review your restaurant.' : 'Four clear steps capture the information needed to review your rider application.'
-  if (submitted) return <PageFrame eyebrow={restaurant ? 'RESTAURANT PARTNER APPLICATION' : 'RIDER APPLICATION'} title="Application received." intro="We have everything needed to start the review."><div className="onboarding-card onboarding-success"><OnboardingProgress type={type} current={4} /><Check size={25} /><span className="section-kicker">REVIEW STARTED</span><h2>Thanks, we’re on it.</h2><p>{restaurant ? 'We will review any business and identity details you supplied before activating the partner workspace.' : 'We will review any identity, vehicle, and safety information you supplied before activating rider access.'}</p><button className="checkout-button" onClick={() => navigate('/')}>Back to home <ArrowRight size={17} /></button></div></PageFrame>
+  const intro = restaurant ? 'A guided application captures the business details our team needs to review your restaurant.' : 'A short, mobile-friendly application captures the details needed to review your rider application.'
+  if (submitted) return <PageFrame eyebrow={restaurant ? 'RESTAURANT PARTNER APPLICATION' : 'RIDER APPLICATION'} title="Application received." intro="We have everything needed to start the review."><div className="onboarding-card onboarding-success"><OnboardingProgress type={type} current={reviewStep} /><Check size={25} /><span className="section-kicker">REVIEW STARTED</span><h2>Thanks, we’re on it.</h2><p>{restaurant ? 'We will review any business and identity details you supplied before activating the partner workspace.' : 'We will review any identity, vehicle, and safety information you supplied before activating rider access.'}</p><button className="checkout-button" onClick={() => navigate(restaurant ? '/partner/application-status' : '/rider/application-status')}>Track application status <ArrowRight size={17} /></button></div></PageFrame>
   if (verified) return <PageFrame eyebrow={restaurant ? 'RESTAURANT PARTNER APPLICATION' : 'RIDER APPLICATION'} title="Email confirmed."><div className="onboarding-card onboarding-success verification-success-screen" aria-live="polite"><div className="verification-success-mark"><Check size={30} /></div><span className="section-kicker">VERIFICATION SUCCESSFUL</span><h2>Your email is confirmed.</h2><p>Taking you to the final application review step now.</p></div></PageFrame>
-  return <PageFrame eyebrow={restaurant ? 'RESTAURANT PARTNER APPLICATION' : 'RIDER APPLICATION'} title={title} intro={intro}><form className="application-form onboarding-card" onSubmit={submit}><input type="hidden" name="verificationId" value={verificationId} /><OnboardingProgress type={type} current={step} />
-    <section hidden={step !== 0} data-onboarding-step="0"><span className="section-kicker">STEP 1 OF 5</span><h2>{restaurant ? 'Tell us about the business.' : 'Start with your details.'}</h2>{restaurant ? <><div className="form-row"><label>Restaurant name<input required name="restaurantName" /></label><label>Business type<select name="businessType" defaultValue=""><option value="">Prefer not to say</option><option value="restaurant">Restaurant</option><option value="cafe">Cafe</option><option value="bakery">Bakery</option></select></label></div><label>Registration number (optional)<input name="registrationNumber" /></label><div className="form-row"><label>Business phone<input required name="businessPhone" inputMode="tel" /></label><label>Business email<input required name="businessEmail" type="email" /></label></div><label>Business address<input required name="address" /></label><input name="cityName" type="hidden" value="Sapele" /></> : <><div className="form-row"><label>First name<input required name="firstName" autoComplete="given-name" /></label><label>Last name<input required name="lastName" autoComplete="family-name" /></label></div><div className="form-row"><label>Email address<input required name="email" type="email" autoComplete="email" /></label><label>Phone number<input required name="phone" inputMode="tel" autoComplete="tel" /></label></div><label>Home address<input required name="address" autoComplete="street-address" /></label></>}<button className="checkout-button" type="button" onClick={advance}>Continue <ArrowRight size={17} /></button></section>
-    <section hidden={step !== 1} data-onboarding-step="1"><span className="section-kicker">STEP 2 OF 5</span><h2>{restaurant ? 'Who owns the business?' : 'Confirm identity and vehicle.'}</h2><p className="onboarding-copy">These review details are optional. You can provide them now or when our team requests them.</p>{restaurant ? <><label>Owner full name<input required name="ownerName" autoComplete="name" /></label><div className="form-row"><label>Identity type<select name="ownerIdentityType" defaultValue=""><option value="">Prefer not to say</option><option value="national-id">National ID</option><option value="drivers-license">Driver’s licence</option><option value="passport">Passport</option></select></label><label>Identity number<input name="ownerIdentityNumber" /></label></div></> : <><div className="form-row"><label>Identity type<select name="identityType" defaultValue=""><option value="">Prefer not to say</option><option value="national-id">National ID</option><option value="drivers-license">Driver’s licence</option><option value="passport">Passport</option></select></label><label>Identity number<input name="identityNumber" /></label></div><div className="form-row"><label>Vehicle type<select name="vehicleType" defaultValue=""><option value="">Prefer not to say</option><option value="motorcycle">Motorcycle</option><option value="bicycle">Bicycle</option><option value="car">Car</option></select></label><label>Vehicle registration<input name="vehicleRegistration" /></label></div><div className="form-row"><label>Emergency contact name<input name="emergencyName" /></label><label>Emergency contact phone<input name="emergencyPhone" inputMode="tel" /></label></div></>}<div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(0)}>Back</button><button className="checkout-button" type="button" onClick={advance}>Continue <ArrowRight size={17} /></button></div></section>
-    <section hidden={step !== 2} data-onboarding-step="2"><span className="section-kicker">STEP 3 OF 5</span><h2>Upload documents (optional).</h2><p className="onboarding-copy">Any documents you choose to provide are stored privately and used only for application review.</p><div className="form-row"><label>{restaurant ? 'Owner identity document' : 'Identity document'}<input name="documents" type="file" accept="image/jpeg,image/png,.pdf" /></label><label>{restaurant ? 'Business document' : 'Vehicle document'}<input name="documents" type="file" accept="image/jpeg,image/png,.pdf" /></label></div>{error && <div className="admin-login-error">{error}</div>}<div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(1)}>Back</button><button className="checkout-button" disabled={busy} type="button" onClick={requestEmailCode}>{busy ? 'Sending...' : 'Verify email'} <ArrowRight size={17} /></button></div></section>
-    <section hidden={step !== 3} data-onboarding-step="3"><span className="section-kicker">STEP 4 OF 5</span><h2>Verify your email.</h2><p className="onboarding-copy">We sent a 6-digit code to <strong>{destination}</strong>. Enter it before submitting your application.</p><label>Email verification code<input required name="verificationCode" inputMode="numeric" pattern="[0-9]{6}" maxLength="6" autoComplete="one-time-code" /></label>{error && <div className="admin-login-error">{error}</div>}<div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(2)}>Back</button><button className="checkout-button" disabled={busy} type="button" onClick={verifyEmailCode}>{busy ? 'Verifying...' : 'Confirm code'} <ArrowRight size={17} /></button></div></section>
-    <section hidden={step !== 4} data-onboarding-step="4"><span className="section-kicker">STEP 5 OF 5</span><h2>Review and submit.</h2><p className="onboarding-copy">Create a password for your workspace. You will be able to sign in after the DOORSTEP team approves this application.</p><PasswordField required label="Workspace password" name="password" minLength="8" autoComplete="new-password" /><label className="terms-check"><input required type="checkbox" /> I confirm that these details are accurate and agree to the applicable DOORSTEP terms.</label>{error && <div className="admin-login-error">{error}</div>}<div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(3)}>Back</button><button className="checkout-button" disabled={busy} type="submit">{busy ? 'Submitting...' : 'Submit application'} <ArrowRight size={17} /></button></div></section>
+  return <PageFrame eyebrow={restaurant ? 'RESTAURANT PARTNER APPLICATION' : 'RIDER APPLICATION'} title={title} intro={intro}><form ref={formRef} noValidate className="application-form onboarding-card" onSubmit={submit}><input type="hidden" name="verificationId" value={verificationId} /><OnboardingProgress type={type} current={step} />{draftNotice && <p className="onboarding-draft-notice" role="status">{draftNotice}</p>}<p className="onboarding-draft-notice">Save and exit keeps non-secret form details in this browser tab only. Passwords, verification codes, and selected files are never saved.</p>
+    <section hidden={step !== 0} data-onboarding-step="0"><span className="section-kicker">STEP 1 OF {onboardingSteps[type].length}</span><h2>{restaurant ? 'Tell us about the business.' : 'Start with your details.'}</h2>{restaurant ? <><div className="form-row"><label>Restaurant name<input required name="restaurantName" autoComplete="organization" /></label><label>Business category<select name="businessType" defaultValue="restaurant"><option value="restaurant">Restaurant</option><option value="cafe">Cafe</option><option value="bakery">Bakery</option><option value="fast-food">Fast food</option><option value="takeaway">Takeaway</option><option value="other">Other</option></select></label></div><label>Registration number (optional)<input name="registrationNumber" /></label><div className="form-row"><label>Business phone<input required name="businessPhone" type="tel" autoComplete="tel" /></label><label>Business email<input required name="businessEmail" type="email" autoComplete="email" /></label></div><label>Full business address<input required name="address" autoComplete="street-address" /></label><input name="cityName" type="hidden" value="Sapele" /></> : <><div className="form-row"><label>Full legal name<input required name="firstName" autoComplete="given-name" /></label><label>Surname<input required name="lastName" autoComplete="family-name" /></label></div><div className="form-row"><label>Email address<input required name="email" type="email" autoComplete="email" /></label><label>Phone number<input required name="phone" type="tel" autoComplete="tel" /></label></div><label>Residential address<input required name="address" autoComplete="street-address" /></label></>}<button className="checkout-button" type="button" onClick={advance}>Continue <ArrowRight size={17} /></button></section>
+    {restaurant && <section hidden={step !== 1} data-onboarding-step="1"><span className="section-kicker">STEP 2 OF 6 · BUSINESS DETAILS</span><h2>How does your restaurant operate?</h2><label>Business description<textarea name="businessDescription" maxLength="1000" rows="3" /></label><label>Cuisine or food category<input name="cuisineCategory" maxLength="100" placeholder="e.g. Nigerian, bakery, grilled food" /></label><div className="form-row"><label>Opening time<input name="openingTime" type="time" /></label><label>Closing time<input name="closingTime" type="time" /></label></div><OpeningDaysField /><div className="form-row"><label>Estimated preparation time (minutes)<input name="prepTimeMinutes" type="number" min="1" max="240" /></label><label>Minimum order (naira)<input name="minimumOrder" type="number" min="0" max="500000" step="0.01" /></label></div><label>Delivery method<select required name="deliveryPreference" defaultValue="DOORSTEP_RIDERS"><option value="DOORSTEP_RIDERS">DOORSTEP riders</option><option value="OWN_RIDERS">Our own business riders</option><option value="BOTH">Both options</option></select></label><div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(0)}>Back</button><button className="checkout-button" type="button" onClick={advance}>Continue <ArrowRight size={17} /></button></div></section>}
+    <section hidden={step !== ownerStep} data-onboarding-step={ownerStep}><span className="section-kicker">STEP {ownerStep + 1} OF {onboardingSteps[type].length}</span><h2>{restaurant ? 'Who owns the business?' : 'How will you deliver?'}</h2>{restaurant ? <><label>Contact person’s full name<input required name="ownerName" autoComplete="name" /></label><label>WhatsApp number (optional)<input name="whatsApp" type="tel" autoComplete="tel" /></label></> : <><p className="onboarding-copy">This application joins the independent DOORSTEP rider pool. Approved businesses can assign eligible riders to their own team.</p><label>Preferred operating area<input required name="preferredArea" maxLength="160" placeholder="Town, neighbourhood, or delivery zone" /></label><div className="form-row"><label>Vehicle type<select required name="vehicleType" defaultValue=""><option value="">Choose a vehicle</option><option value="bicycle">Bicycle</option><option value="motorcycle">Motorcycle</option><option value="car">Car</option><option value="other">Other approved vehicle</option></select></label><label>Vehicle registration (if applicable)<input name="vehicleRegistration" maxLength="100" /></label></div><label>Vehicle access<select required name="vehicleOwnership" defaultValue=""><option value="">Choose one</option><option value="OWNED">I own this vehicle</option><option value="PERMITTED">I have permission to use it</option></select></label><label>Typical availability<input required name="typicalAvailability" maxLength="120" placeholder="e.g. Weekdays, 4 pm–10 pm" /></label><label>Preferred language (optional)<input name="preferredLanguage" maxLength="60" /></label><div className="form-row"><label>Emergency contact name (optional)<input name="emergencyName" maxLength="120" /></label><label>Emergency contact phone (optional)<input name="emergencyPhone" type="tel" maxLength="30" /></label></div></>}<div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(0)}>Back</button><button className="checkout-button" type="button" onClick={advance}>Continue <ArrowRight size={17} /></button></div></section>
+    {restaurant && <section hidden={step !== 2} data-onboarding-step="2"><span className="section-kicker">STEP 3 OF 6 · OWNER DETAILS</span><h2>How can we verify the owner?</h2><p className="onboarding-copy">Provide identity details only if available; our review team may request documents later.</p><label>Identity type (optional)<select name="ownerIdentityType" defaultValue=""><option value="">Prefer not to say</option><option value="national-id">National ID</option><option value="drivers-license">Driver’s licence</option><option value="passport">Passport</option></select></label><label>Identity number (optional)<input name="ownerIdentityNumber" maxLength="120" /></label><div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(1)}>Back</button><button className="checkout-button" type="button" onClick={advance}>Continue <ArrowRight size={17} /></button></div></section>}
+    <section hidden={step !== documentsStep} data-onboarding-step={documentsStep}><span className="section-kicker">STEP {documentsStep + 1} OF {onboardingSteps[type].length} · DOCUMENTS</span><h2>Documents (optional).</h2><p className="onboarding-copy">{restaurant ? 'Share a logo, storefront photo, menu, or relevant business document. Only PDF, JPEG, or PNG files up to 5 MB are accepted.' : 'Identity documents help verify your account. A driving licence and vehicle documents may be needed for motorized vehicles; explain questions can be sent before approval.'} Files are private and reviewed by authorised staff.</p>{!restaurant && <><label>Identity type (optional)<select name="identityType" defaultValue=""><option value="">Prefer not to say</option><option value="national-id">National ID</option><option value="drivers-license">Driver’s licence</option><option value="passport">Passport</option></select></label><label>Identity number (optional)<input name="identityNumber" maxLength="120" /></label></>}<label>{restaurant ? 'Business documents and photos (optional)' : 'Identity, licence, and vehicle documents (optional)'}<input name="documents" type="file" accept="image/jpeg,image/png,application/pdf" multiple /></label><small>Up to five files, each no larger than 5 MB.</small>{error && <div className="admin-login-error">{error}</div>}<div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(documentsStep - 1)}>Back</button><button className="checkout-button" disabled={busy} type="button" onClick={requestEmailCode}>{busy ? 'Sending...' : 'Verify email'} <ArrowRight size={17} /></button></div></section>
+    <section hidden={step !== verificationStep} data-onboarding-step={verificationStep}><span className="section-kicker">STEP {verificationStep + 1} OF {onboardingSteps[type].length} · VERIFY EMAIL</span><h2>Verify your email.</h2><p className="onboarding-copy">We sent a 6-digit code to <strong>{destination}</strong>. Enter it before submitting the application.</p><label>Email verification code<input required name="verificationCode" inputMode="numeric" pattern="[0-9]{6}" maxLength="6" autoComplete="one-time-code" /></label>{error && <div className="admin-login-error">{error}</div>}<div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(documentsStep)}>Back</button><button className="checkout-button" disabled={busy} type="button" onClick={verifyEmailCode}>{busy ? 'Verifying...' : 'Confirm code'} <ArrowRight size={17} /></button></div></section>
+    <section hidden={step !== reviewStep} data-onboarding-step={reviewStep}><span className="section-kicker">STEP {reviewStep + 1} OF {onboardingSteps[type].length} · REVIEW</span><h2>Review and submit.</h2><p className="onboarding-copy">Check your application. Your workspace stays pending until DOORSTEP approves it.</p><ApplicationReviewSummary items={reviewItems} onEdit={editReviewStep} /><PasswordField required label="Workspace password" name="password" minLength="8" autoComplete="new-password" /><PasswordField required label="Confirm workspace password" name="confirmPassword" minLength="8" autoComplete="new-password" /><label className="terms-check"><input required name="termsAccepted" type="checkbox" /> I confirm these details are accurate and agree to the applicable DOORSTEP terms and privacy policy.</label>{error && <div className="admin-login-error">{error}</div>}<div className="onboarding-actions"><button className="quiet-button" type="button" onClick={() => setStep(verificationStep)}>Back</button><button className="checkout-button" disabled={busy} type="submit">{busy ? 'Submitting...' : 'Submit application'} <ArrowRight size={17} /></button></div></section>
+    <button className="quiet-button onboarding-save-exit" type="button" onClick={saveAndExit}>Save and exit</button>
   </form></PageFrame>
 }
 
@@ -255,7 +304,7 @@ function VerifiedCustomerRegistration() {
 
 function AccountDashboard() {
   const [user, setUser] = useState(null)
-  const [orders, setOrders] = useState(() => loadOrders())
+  const [orders, setOrders] = useState([])
   const recentOrders = orders.slice(0, 2)
   useEffect(() => { const token = localStorage.getItem('doorstep-token'); if (!token) return; const headers = { Authorization: `Bearer ${token}` }; fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/me`, { headers }).then((response) => response.json()).then((body) => setUser(body.user)).catch(() => undefined); fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/orders`, { headers }).then((response) => response.ok ? response.json() : null).then((body) => body?.orders && setOrders(body.orders)).catch(() => undefined) }, [])
   return <PageFrame eyebrow="YOUR DOORSTEP" title={user ? `Good to see you, ${user.firstName}.` : 'Your account dashboard.'} intro="Your orders, saved details, and support tools in one calm place."><section className="account-dashboard"><div className="account-profile-card"><ProfileAvatar className="account-profile-avatar" size={39} /><div><span className="section-kicker">CUSTOMER PROFILE</span><h2>{user ? `${user.firstName} ${user.lastName}` : 'Loading profile...'}</h2><p>{user?.email || 'Authenticated DOORSTEP customer'}</p></div><button className="quiet-button">Edit profile</button></div><div className="account-welcome-band"><div><span className="section-kicker">YOUR NEXT BITE</span><h2>Something lovely is close.</h2><p>Three local kitchens are open and ready around Amukpe.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Explore restaurants <ArrowRight size={16} /></button></div><div className="account-food-orbit"><span>🍚</span><span>🍗</span><span>🥤</span></div></div><div className="account-confidence-row"><div><span className="confidence-number">0</span><div><strong>Active deliveries</strong><small>Nothing to chase right now</small></div></div><div><span className="confidence-number">1</span><div><strong>Saved location</strong><small>Amukpe, Sapele</small></div></div><div><span className="confidence-number">∞</span><div><strong>Good choices</strong><small>Always worth discovering</small></div></div></div><div className="account-active-order"><div className="active-order-icon"><Clock3 size={22} /></div><div><span className="section-kicker">ORDER AT A GLANCE</span><h3>{recentOrders.length ? 'Your latest order is close at hand.' : 'Ready when you are'}</h3><p>{recentOrders.length ? `${recentOrders[0].restaurantName} · ${recentOrders[0].status.replaceAll('_', ' ')}` : 'No active delivery right now. Your next order will appear here with live kitchen and rider updates.'}</p></div><button className="text-link" onClick={() => navigate(recentOrders.length ? '/account/orders' : '/restaurants')}>{recentOrders.length ? 'View orders' : 'Find food'} <ArrowRight size={15} /></button></div>{recentOrders.length > 0 && <div className="account-recent"><div className="account-discover-row"><div><span className="section-kicker">RECENTLY ORDERED</span><h2>Good enough to repeat.</h2></div><button className="text-link" onClick={() => navigate('/account/orders')}>All orders <ArrowRight size={15} /></button></div>{recentOrders.map((recentOrder) => <div className="recent-order-row" key={recentOrder.id}><div className="recent-order-mark"><ShoppingBag size={17} /></div><div><strong>{recentOrder.restaurantName}</strong><small>{recentOrder.items.map((item) => `${item.quantity}× ${item.name}`).join(', ')}</small></div><button className="add-button" onClick={() => navigate('/restaurants')}>Order again</button></div>)}</div>}<div className="account-dashboard-grid"><button onClick={() => navigate('/account/orders')}><PackageIcon /><strong>Orders</strong><span>Track and reorder food</span></button><button><MapPin size={24} /><strong>Addresses</strong><span>Save delivery locations</span></button><button><HeartIcon /><strong>Favorites</strong><span>Your go-to kitchens</span></button><button onClick={() => navigate('/help')}><HelpCircle size={24} /><strong>Support</strong><span>Get help with an order</span></button></div><div className="account-discover-row"><div><span className="section-kicker">DISCOVER SAPELE</span><h2>Choose your mood.</h2></div><button className="text-link" onClick={() => navigate('/offers')}>See offers <ArrowRight size={15} /></button></div><div className="mood-grid"><button onClick={() => navigate('/restaurants')}><span>🍚</span><strong>Comfort food</strong><small>Warm, familiar, local</small></button><button onClick={() => navigate('/restaurants')}><span>🔥</span><strong>Something bold</strong><small>Grills, suya and spice</small></button><button onClick={() => navigate('/offers')}><span>✦</span><strong>Good deal</strong><small>Make tonight go further</small></button></div></section></PageFrame>
@@ -264,9 +313,7 @@ function AccountDashboard() {
 function PackageIcon() { return <ShoppingBag size={24} /> }
 function HeartIcon() { return <span className="account-heart">♡</span> }
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
-const verificationErrorMessage = (code) => ({
-  EMAIL_VERIFICATION_NOT_CONFIGURED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
+const verificationErrorMessage = (code) => ({  EMAIL_VERIFICATION_NOT_CONFIGURED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
   EMAIL_VERIFICATION_PROVIDER_UNSUPPORTED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
   EMAIL_VERIFICATION_RATE_LIMITED: 'Too many verification emails have been requested. Please wait a few minutes before trying again.',
   SMS_VERIFICATION_NOT_CONFIGURED: 'SMS verification is temporarily unavailable. Please choose email verification or try again later.',
@@ -525,10 +572,43 @@ function PaymentCallbackPage() {
 }
 
 function OrdersPage() {
-  const [orders, setOrders] = useState(() => loadOrders())
-  const [source, setSource] = useState('local')
-  useEffect(() => { const token = localStorage.getItem('doorstep-token'); if (!token) return; fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/orders`, { headers: { Authorization: `Bearer ${token}` } }).then(async (response) => { if (!response.ok) return; const body = await response.json(); setOrders(body.orders); setSource('api') }).catch(() => undefined) }, [])
-  return <PageFrame eyebrow="ACCOUNT ORDERS" title="Your order history." intro={source === 'api' ? 'These orders are stored in your DOORSTEP account and update from the server.' : 'Local development orders are shown here until you sign in with a database-backed customer account.'}>{orders.length === 0 ? <div className="submitted-card"><Clock3 size={24} /><h2>No orders yet</h2><p>Your completed orders will appear here with payment and delivery history.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Find food <ArrowRight size={16} /></button></div> : <div className="orders-list">{orders.map((order) => <button className="order-row" key={order.id} onClick={() => navigate(`/account/orders/${order.id}`)}><div><span className="section-kicker">{order.orderNumber}</span><h2>{order.restaurant?.name || order.restaurantName}</h2><p>{order.items?.length || 0} item(s) · {new Date(order.createdAt).toLocaleDateString('en-NG')}</p></div><div><strong>{formatNaira(order.total || (order.totalMinor ? Math.round(order.totalMinor / 100) : 0))}</strong><span className="order-status">{order.status}</span></div><ArrowRight size={16} /></button>)}</div>}</PageFrame>
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    const token = localStorage.getItem('doorstep-token')
+    if (!token) {
+      setError('Sign in to view orders linked to your DOORSTEP account.')
+      setLoading(false)
+      return undefined
+    }
+    let active = true
+    setLoading(true)
+    setError('')
+    fetch(`${apiBase}/api/orders`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (response) => {
+        const body = await response.json()
+        if (!response.ok) throw new Error(body.error || 'ORDER_SERVICE_UNAVAILABLE')
+        if (!Array.isArray(body.orders)) throw new Error('ORDER_SERVICE_UNAVAILABLE')
+        if (active) setOrders(body.orders)
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.message || 'ORDER_SERVICE_UNAVAILABLE')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [refreshKey])
+
+  return <PageFrame eyebrow="ACCOUNT ORDERS" title="Your order history." intro="Your orders and payment statuses come from your DOORSTEP account.">
+    {loading ? <div className="submitted-card"><Clock3 size={24} /><h2>Loading your orders</h2><p>Checking your secure order history.</p></div>
+      : error ? <div className="submitted-card"><Clock3 size={24} /><h2>Could not load orders</h2><p>{error}</p><div className="profile-form-actions"><button className="primary-button" onClick={() => setRefreshKey((key) => key + 1)}>Try again <ArrowRight size={16} /></button><button className="quiet-button" onClick={() => navigate('/help')}>Contact support</button></div></div>
+        : orders.length === 0 ? <div className="submitted-card"><Clock3 size={24} /><h2>No orders yet</h2><p>Your orders will appear here with their verified payment and delivery history.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Find food <ArrowRight size={16} /></button></div>
+          : <div className="orders-list">{orders.map((order) => <button className="order-row" key={order.id} onClick={() => navigate(`/account/orders/${order.id}`)}><div><span className="section-kicker">{order.orderNumber}</span><h2>{order.restaurant?.name || order.restaurantName}</h2><p>{order.items?.length || 0} item(s) · {new Date(order.createdAt).toLocaleDateString('en-NG')}</p></div><div><strong>{formatNaira(order.total || (order.totalMinor ? Math.round(order.totalMinor / 100) : 0))}</strong><span className="order-status">{order.status}</span></div><ArrowRight size={16} /></button>)}</div>}
+  </PageFrame>
 }
 
 function useCustomerDeliveryTracking(deliveryId) {
@@ -614,20 +694,71 @@ function useCustomerDeliveryTracking(deliveryId) {
 
 function OrderPage({ orderId }) {
   const [apiOrder, setApiOrder] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
   const [rating, setRating] = useState(5)
   const [reviewBody, setReviewBody] = useState('')
   const [reviewMessage, setReviewMessage] = useState('')
-  const [localOrder] = useState(() => loadOrders().find((item) => item.id === orderId) || loadOrders()[0])
-  useEffect(() => { const token = localStorage.getItem('doorstep-token'); if (!token || orderId.startsWith('local-')) return; let active = true; let timer; const load = () => { if (document.visibilityState !== 'visible') return; fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/orders/${orderId}/tracking`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.ok ? response.json() : null).then((body) => { if (active && body?.order) setApiOrder(body.order) }).catch(() => undefined) }; const start = () => { load(); window.clearInterval(timer); timer = window.setInterval(load, 15000) }; const stop = () => window.clearInterval(timer); start(); document.addEventListener('visibilitychange', start); return () => { active = false; stop(); document.removeEventListener('visibilitychange', start) } }, [orderId])
+  useEffect(() => {
+    const token = localStorage.getItem('doorstep-token')
+    if (!token) {
+      setError('Sign in to view an order linked to your DOORSTEP account.')
+      setLoading(false)
+      return undefined
+    }
+    let active = true
+    let timer
+    const load = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const response = await fetch(`${apiBase}/api/orders/${orderId}/tracking`, { headers: { Authorization: `Bearer ${token}` } })
+        const body = await response.json()
+        if (!response.ok) throw new Error(body.error || 'TRACKING_SERVICE_UNAVAILABLE')
+        if (!body.order) throw new Error('TRACKING_SERVICE_UNAVAILABLE')
+        if (active) {
+          setApiOrder(body.order)
+          setError('')
+        }
+      } catch (requestError) {
+        if (active) setError(requestError.message || 'TRACKING_SERVICE_UNAVAILABLE')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    const start = () => { load(); window.clearInterval(timer); timer = window.setInterval(load, 15000) }
+    const stop = () => window.clearInterval(timer)
+    start()
+    document.addEventListener('visibilitychange', start)
+    return () => { active = false; stop(); document.removeEventListener('visibilitychange', start) }
+  }, [orderId, refreshKey])
   const tracking = useCustomerDeliveryTracking(apiOrder?.delivery?.id)
-  const order = apiOrder || localOrder
-  if (!order) return <OrdersPage />
-  const stages = ['PAID', 'RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']
+  const order = apiOrder
+  if (!order) return <PageFrame eyebrow="ORDER TRACKING" title={loading ? 'Loading your order.' : 'Order details unavailable.'} intro={loading ? 'Checking the secure DOORSTEP order record.' : error}><section className="submitted-card"><Clock3 size={24} /><h2>{loading ? 'Retrieving order status' : 'This order is not available'}</h2><p>{error || 'Only orders stored in your DOORSTEP account can be tracked here.'}</p><div className="profile-form-actions">{!loading && <button className="primary-button" onClick={() => setRefreshKey((key) => key + 1)}>Try again <ArrowRight size={16} /></button>}<button className="quiet-button" onClick={() => navigate(localStorage.getItem('doorstep-token') ? '/account/orders' : '/login')}>{localStorage.getItem('doorstep-token') ? 'View my orders' : 'Sign in'}</button></div></section></PageFrame>
   const currentStatus = apiOrder?.status || order.status
+  const allStages = ['PAID', 'RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']
+  const stages = allStages.includes(currentStatus) ? allStages : []
   const currentApiStage = stages.indexOf(currentStatus)
   const total = order.total || (order.totalMinor ? Math.round(order.totalMinor / 100) : 0)
-  const submitReview = async (event) => { event.preventDefault(); setReviewMessage(''); const token = localStorage.getItem('doorstep-token'); const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/reviews`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, rating, body: reviewBody || undefined }) }); const body = await response.json(); setReviewMessage(response.ok ? 'Thanks. Your review helps the next customer choose well.' : body.error === 'ORDER_ALREADY_REVIEWED' ? 'You already reviewed this order.' : body.error || 'Could not save your review.') }
-  return <PageFrame eyebrow="ORDER TRACKING" title={order.orderNumber} intro={`${order.restaurant || order.restaurantName} · ${order.address || 'Delivery address on file'}`}><section className="order-page-layout"><div className="order-timeline">{stages.map((stage, index) => <div className={index <= Math.max(0, currentApiStage) ? 'timeline-step complete' : 'timeline-step'} key={stage}><span>{index <= Math.max(0, currentApiStage) ? '✓' : index + 1}</span><div><strong>{stage.replaceAll('_', ' ')}</strong><small>{index === 0 ? 'Payment confirmed' : 'This stage updates from the restaurant, rider, and DOORSTEP operations API.'}</small></div></div>)}</div><div className="cart-page-summary"><span className="section-kicker">ORDER SUMMARY</span><div><span>Restaurant</span><strong>{order.restaurant || order.restaurantName}</strong></div><div><span>Status</span><strong>{currentStatus}</strong></div><div><span>Payment</span><strong>{order.paymentStatus || 'SERVER TRACKED'}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(total)}</strong></div>{apiOrder?.delivery?.rider?.callAllowed ? <a className="call-rider-button" href={`tel:${apiOrder.delivery.rider.phone}`}>Call assigned rider</a> : <small className="call-rider-note">Rider contact appears only during an active assigned delivery.</small>}<button className="checkout-button" onClick={() => navigate('/help')}>Contact support <ArrowRight size={17} /></button></div></section>{tracking.snapshot && <section aria-label="Live delivery map"><DeliveryTrackingMap tracking={tracking.snapshot} connection={tracking.connection} /></section>}{currentStatus === 'DELIVERED' && apiOrder && <section className="review-card"><div><span className="section-kicker">TASTE NOTES</span><h2>How did {order.restaurant || order.restaurantName} do?</h2><p>Your review helps local customers find the right kitchen.</p></div><form onSubmit={submitReview}><div className="review-stars" aria-label="Choose a rating">{[1, 2, 3, 4, 5].map((value) => <button type="button" className={value <= rating ? 'is-selected' : ''} key={value} onClick={() => setRating(value)} aria-label={`${value} star${value === 1 ? '' : 's'}`}><Star size={25} fill="currentColor" /></button>)}</div><textarea value={reviewBody} onChange={(event) => setReviewBody(event.target.value)} maxLength={2000} rows="4" placeholder="What should another Sapele customer know?" />{reviewMessage && <div className="profile-message">{reviewMessage}</div>}<button className="checkout-button" type="submit">Publish review <Sparkles size={17} /></button></form></section>}</PageFrame>
+  const submitReview = async (event) => {
+    event.preventDefault()
+    setReviewMessage('')
+    const token = localStorage.getItem('doorstep-token')
+    try {
+      const response = await fetch(`${apiBase}/api/reviews`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, rating, body: reviewBody || undefined }) })
+      const body = await response.json()
+      setReviewMessage(response.ok ? 'Thanks. Your review helps the next customer choose well.' : body.error === 'ORDER_ALREADY_REVIEWED' ? 'You already reviewed this order.' : body.error || 'Could not save your review.')
+    } catch {
+      setReviewMessage('Could not reach DOORSTEP. Check your connection and try again.')
+    }
+  }
+  return <PageFrame eyebrow="ORDER TRACKING" title={order.orderNumber} intro={`${order.restaurant || order.restaurantName} · ${order.address || 'Delivery address on file'}`}>
+    {error && <div className="profile-message">Status refresh failed: {error}. Showing the last server-confirmed status.</div>}
+    {stages.length === 0 && <div className="submitted-card"><Clock3 size={24} /><h2>{currentStatus === 'PENDING_PAYMENT' ? 'Payment verification pending' : `Order status: ${currentStatus}`}</h2><p>{currentStatus === 'PENDING_PAYMENT' ? 'The restaurant will receive this order after the payment provider confirms your payment.' : 'Delivery tracking is not available for this order status.'}</p></div>}
+    {stages.length > 0 && <section className="order-page-layout"><div className="order-timeline">{stages.map((stage, index) => { const complete = currentApiStage >= 0 && index <= currentApiStage; return <div className={complete ? 'timeline-step complete' : 'timeline-step'} key={stage}><span>{complete ? '✓' : index + 1}</span><div><strong>{stage.replaceAll('_', ' ')}</strong><small>{index === 0 ? 'Payment confirmed by the server.' : 'This stage updates from the restaurant, rider, and DOORSTEP operations API.'}</small></div></div> })}</div><div className="cart-page-summary"><span className="section-kicker">ORDER SUMMARY</span><div><span>Restaurant</span><strong>{order.restaurant || order.restaurantName}</strong></div><div><span>Status</span><strong>{currentStatus}</strong></div><div><span>Payment</span><strong>{order.payment?.status || 'Unknown'}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(total)}</strong></div>{apiOrder?.delivery?.rider?.callAllowed ? <a className="call-rider-button" href={`tel:${apiOrder.delivery.rider.phone}`}>Call assigned rider</a> : <small className="call-rider-note">Rider contact appears only during an active assigned delivery.</small>}<button className="checkout-button" onClick={() => navigate('/help')}>Contact support <ArrowRight size={17} /></button></div></section>}
+    {tracking.snapshot && <section aria-label="Live delivery map"><DeliveryTrackingMap tracking={tracking.snapshot} connection={tracking.connection} /></section>}
+    {currentStatus === 'DELIVERED' && apiOrder && <section className="review-card"><div><span className="section-kicker">TASTE NOTES</span><h2>How did {order.restaurant || order.restaurantName} do?</h2><p>Your review helps local customers find the right kitchen.</p></div><form onSubmit={submitReview}><div className="review-stars" aria-label="Choose a rating">{[1, 2, 3, 4, 5].map((value) => <button type="button" className={value <= rating ? 'is-selected' : ''} key={value} onClick={() => setRating(value)} aria-label={`${value} star${value === 1 ? '' : 's'}`}><Star size={25} fill="currentColor" /></button>)}</div><textarea value={reviewBody} onChange={(event) => setReviewBody(event.target.value)} maxLength={2000} rows="4" placeholder="What should another Sapele customer know?" />{reviewMessage && <div className="profile-message">{reviewMessage}</div>}<button className="checkout-button" type="submit">Publish review <Sparkles size={17} /></button></form></section>}
+  </PageFrame>
 }
 
 function ApplicationStatusPage({ rider = false }) {
@@ -650,8 +781,8 @@ function ApplicationStatusPage({ rider = false }) {
       setBusy(false)
     }
   }
-  const copy = application?.status === 'APPROVED' ? 'Your application has been approved. You can now sign in to your DOORSTEP workspace.' : application?.status === 'REJECTED' ? 'Your application was not approved. Review the note below, then contact support if you need help.' : application?.status === 'SUSPENDED' ? 'Your application is currently suspended. Contact DOORSTEP support for help.' : 'Your application is in review. We will contact you through the details you provided if anything else is needed.'
-  return <PageFrame eyebrow={rider ? 'RIDER APPLICATION' : 'PARTNER APPLICATION'} title="Check your application status." intro="Enter the account details used for your application. This secure check does not provide access to operational tools until approval."><section className="application-status-card">{application ? <><span className={`application-status-badge ${application.status.toLowerCase()}`}>{application.status.replaceAll('_', ' ')}</span><h2>{application.type === 'RIDER' ? 'Rider application' : 'Partner application'}</h2><p>{copy}</p>{application.reviewNote && <p className="application-review-note"><strong>Review note:</strong> {application.reviewNote}</p>}<small>Submitted {new Date(application.submittedAt).toLocaleDateString('en-NG')}</small><button className="checkout-button" onClick={() => navigate(application.status === 'APPROVED' ? (rider ? '/rider/login' : '/partner/login') : '/')}>{application.status === 'APPROVED' ? 'Sign in to your workspace' : 'Return to DOORSTEP'} <ArrowRight size={17} /></button></> : <form className="auth-form" onSubmit={checkStatus}><label>Email address<input required name="email" type="email" autoComplete="username" /></label><PasswordField required label="Password" name="password" autoComplete="current-password" />{error && <div className="admin-login-error">{error}</div>}<button className="checkout-button" disabled={busy} type="submit">{busy ? 'Checking status...' : 'Check application status'} <ArrowRight size={17} /></button></form>}</section></PageFrame>
+  const copy = application?.status === 'APPROVED' ? 'Your application has been approved. You can now sign in to your DOORSTEP workspace.' : application?.status === 'REJECTED' ? 'Your application was not approved. Review the note below, then contact support if you need help.' : application?.status === 'SUSPENDED' ? 'Your application is currently suspended. Contact DOORSTEP support for help.' : application?.status === 'NEEDS_INFORMATION' ? 'DOORSTEP needs more information before completing the review. Follow the review note below, then contact support to submit the requested details.' : 'Your application is in review. Check back here for status changes or a review note requesting more information.'
+  return <PageFrame eyebrow={rider ? 'RIDER APPLICATION' : 'PARTNER APPLICATION'} title="Check your application status." intro="Enter the account details used for your application. This secure check does not provide access to operational tools until approval."><section className="application-status-card">{application ? <><span className={`application-status-badge ${application.status.toLowerCase()}`}>{application.status.replaceAll('_', ' ')}</span><h2>{application.type === 'RIDER' ? 'Rider application' : 'Partner application'}</h2><p>{copy}</p>{application.reviewNote && <p className="application-review-note"><strong>Review note:</strong> {application.reviewNote}</p>}<small>Submitted {new Date(application.submittedAt).toLocaleDateString('en-NG')}</small>{application.history?.length > 0 && <section className="application-status-history" aria-label="Application status history"><h3>Status history</h3><ol>{application.history.map((entry, index) => <li key={`${entry.createdAt}-${index}`}><strong>{entry.status.replaceAll('_', ' ')}</strong><small>{new Date(entry.createdAt).toLocaleString('en-NG')}</small>{entry.note && <p>{entry.note}</p>}</li>)}</ol></section>}<button className="checkout-button" onClick={() => navigate(application.status === 'APPROVED' ? (rider ? '/rider/login' : '/partner/login') : '/')}>{application.status === 'APPROVED' ? 'Sign in to your workspace' : 'Return to DOORSTEP'} <ArrowRight size={17} /></button></> : <form className="auth-form" onSubmit={checkStatus}><label>Email address<input required name="email" type="email" autoComplete="username" /></label><PasswordField required label="Password" name="password" autoComplete="current-password" />{error && <div className="admin-login-error">{error}</div>}<button className="checkout-button" disabled={busy} type="submit">{busy ? 'Checking status...' : 'Check application status'} <ArrowRight size={17} /></button></form>}</section></PageFrame>
 }
 
 function PartnerRegistrationLanding() {
@@ -660,7 +791,7 @@ function PartnerRegistrationLanding() {
     { icon: <Store size={25} />, title: 'Grocery & supermarket', detail: 'For supermarkets, grocery stores, fruit shops, convenience stores, and approved local retail.', action: 'Register your store', path: '/partner/register/store' },
     { icon: <MapPin size={25} />, title: 'Delivery rider', detail: 'For independent riders who want to deliver eligible DOORSTEP orders.', action: 'Become a rider', path: '/rider/register' },
   ]
-  return <PageFrame eyebrow="PARTNER SETUP" title="Grow your business with DOORSTEP." intro="Reach more customers, receive online orders, and grow your business with a short, guided application."><section className="partner-registration-grid">{choices.map((choice) => <article className="partner-registration-choice" key={choice.path}><span className="partner-registration-icon">{choice.icon}</span><h2>{choice.title}</h2><p>{choice.detail}</p><button className="checkout-button" onClick={() => navigate(choice.path)}>{choice.action} <ArrowRight size={17} /></button></article>)}</section><p className="partner-registration-login">Already registered? <button type="button" onClick={() => navigate('/partner/login')}>Partner sign in</button> or <button type="button" onClick={() => navigate('/rider/login')}>rider sign in</button>.</p></PageFrame>
+  return <PageFrame eyebrow="PARTNER SETUP" title="Grow your business with DOORSTEP." intro="Reach more customers, receive online orders, and grow your business with a short, guided application."><section className="partner-registration-grid">{choices.map((choice) => <article className="partner-registration-choice" key={choice.path}><span className="partner-registration-icon">{choice.icon}</span><h2>{choice.title}</h2><p>{choice.detail}</p><button className="checkout-button" onClick={() => navigate(choice.path)}>{choice.action} <ArrowRight size={17} /></button></article>)}</section><p className="partner-registration-login">Already registered? <button type="button" onClick={() => navigate('/partner/login')}>Partner sign in</button> or <button type="button" onClick={() => navigate('/rider/login')}>rider sign in</button>. <button type="button" onClick={() => navigate('/partner/application-status')}>Check an application</button>.</p></PageFrame>
 }
 
 export function RoutePage({ path, cart = [], checkoutError = '', onAddToCart = () => {}, onChangeQuantity = () => {}, onCheckout = () => {}, onComplete = () => {} }) {
