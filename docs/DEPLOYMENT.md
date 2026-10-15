@@ -90,8 +90,8 @@ Use `npm.cmd run db:push` only for disposable local development databases.
 
 ## Production release status (2026-10-15)
 
-- Promoted `9c625ee` to `main`; Render auto-deployed the API successfully. The follow-up documentation commit `a38024e` also deployed successfully as deploy `dep-db8fmgk9v7es73dgqg00` (51.4 seconds).
-- The active Render deployment is `a38024e` on `main`; the guarded migration runner had already completed successfully on the preceding application release (`migrations_ready`).
+- Promoted `9c625ee` to `main`; Render auto-deployed the API successfully. Documentation-only commits `a38024e` and `423f6c5` also deployed successfully as `dep-db8fmgk9v7es73dgqg00` and `dep-db8g123bc2fs739ounc0`; both were marked live.
+- The latest runtime release remains `9c625ee`; the guarded migration runner completed successfully on that application release (`migrations_ready`). The later commits only updated documentation.
 - Production checks returned `{"service":"doorstep-api","status":"ok","environment":"production"}` from `/api/health` and `{"service":"doorstep-api","status":"ready","database":"ok"}` from `/api/ready`. The same-origin `/api/ready` route through `https://mydoorstep.com.co` also returned ready.
 - The public storefront loads at `https://mydoorstep.com.co`; Cloudflare Worker `mydoorstep-site-20260922` forwards `/api/*` to the Render API.
 - Staging migration validation succeeded before release. The staging recovery database contains production-derived data and remains suspended; keep it suspended unless needed for recovery.
