@@ -1,0 +1,25 @@
+services:
+  - type: worker
+    name: mydoorstep-onboarding-staging-check
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    branch: staging/onboarding-2026-10-15
+    region: oregon
+    plan: starter
+    autoDeploy: false
+    startCommand: >-
+      node scripts/verify-staging-database.js &&
+      npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/baseline.prisma --exit-code &&
+      node server/migrate.js &&
+      node --input-type=module -e 'await import("./server/index.js"); await new Promise((resolve) => setTimeout(resolve, 1500)); const port = process.env.PORT || process.env.API_PORT || 4000; const response = await fetch(`http://127.0.0.1:${port}/api/ready`); const body = await response.text(); console.info(`[staging] readiness_status=${response.status} body=${body}`); if (!response.ok) process.exit(1); setInterval(() => {}, 2147483647)'
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_HOST
+        value: 127.0.0.1
+      - key: API_PORT
+        value: "4000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mydoorstep-db-staging
+          property: connectionString
