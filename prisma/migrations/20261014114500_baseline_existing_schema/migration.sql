@@ -11,8 +11,6 @@ CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'SUSPENDED', 'DEACTIVATED');
 CREATE TYPE "ApplicationStatus" AS ENUM ('PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'SUSPENDED', 'DEACTIVATED');
 
 -- CreateEnum
-CREATE TYPE "StoreType" AS ENUM ('RESTAURANT', 'GROCERY');
-
 -- CreateEnum
 CREATE TYPE "RiderAvailability" AS ENUM ('OFFLINE', 'ONLINE');
 
@@ -94,8 +92,6 @@ CREATE TABLE "Restaurant" (
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
     "description" TEXT,
-    "coverImageUrl" TEXT,
-    "storeType" "StoreType" NOT NULL DEFAULT 'RESTAURANT',
     "phone" TEXT,
     "email" TEXT,
     "address" TEXT NOT NULL,
@@ -870,4 +866,3 @@ ALTER TABLE "Referral" ADD CONSTRAINT "Referral_referredId_fkey" FOREIGN KEY ("r
 
 -- AddForeignKey
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
