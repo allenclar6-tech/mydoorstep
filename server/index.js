@@ -603,11 +603,11 @@ app.post('/api/support/tickets/:ticketId/messages', requireUser, async (request,
 })
 
 app.get('/api/admin/applications/:type', requireUser, requireAdmin, async (request, response) => {
-  if (!['restaurant', 'rider'].includes(request.params.type)) return response.status(400).json({ error: 'INVALID_APPLICATION_TYPE' })
+  if (!['restaurant', 'grocery', 'rider'].includes(request.params.type)) return response.status(400).json({ error: 'INVALID_APPLICATION_TYPE' })
   try {
-    const applications = request.params.type === 'restaurant'
-      ? await prisma.restaurantApplication.findMany({ where: { status: 'PENDING_APPROVAL' }, include: { restaurant: true, documents: { select: { id: true, type: true, verifiedAt: true } } }, orderBy: { submittedAt: 'asc' } })
-      : await prisma.riderApplication.findMany({ where: { status: 'PENDING_APPROVAL' }, include: { rider: { include: { user: true } }, identityDocuments: { select: { id: true, type: true, verifiedAt: true } } }, orderBy: { submittedAt: 'asc' } })
+    const applications = request.params.type === 'rider'
+      ? await prisma.riderApplication.findMany({ where: { status: 'PENDING_APPROVAL' }, include: { rider: { include: { user: true } }, identityDocuments: { select: { id: true, type: true, verifiedAt: true } } }, orderBy: { submittedAt: 'asc' } })
+      : await prisma.restaurantApplication.findMany({ where: { status: 'PENDING_APPROVAL', restaurant: { storeType: request.params.type === 'grocery' ? 'GROCERY' : 'RESTAURANT' } }, include: { restaurant: true, documents: { select: { id: true, type: true, verifiedAt: true } } }, orderBy: { submittedAt: 'asc' } })
     return response.json({ applications })
   } catch { return response.status(503).json({ error: 'APPLICATION_SERVICE_UNAVAILABLE' }) }
 })
@@ -616,17 +616,19 @@ app.get('/api/admin/summary', requireUser, requireAdmin, async (_request, respon
   const startOfDay = new Date()
   startOfDay.setHours(0, 0, 0, 0)
   try {
-    const [customers, restaurants, riders, ordersToday, activeDeliveries, pendingRestaurants, pendingRiders, sales] = await Promise.all([
+    const [customers, restaurants, groceries, riders, ordersToday, activeDeliveries, pendingRestaurants, pendingGroceries, pendingRiders, sales] = await Promise.all([
       prisma.user.count({ where: { role: 'CUSTOMER' } }),
-      prisma.restaurant.count({ where: { status: 'APPROVED' } }),
+      prisma.restaurant.count({ where: { status: 'APPROVED', storeType: 'RESTAURANT' } }),
+      prisma.restaurant.count({ where: { status: 'APPROVED', storeType: 'GROCERY' } }),
       prisma.rider.count({ where: { status: 'APPROVED' } }),
       prisma.order.count({ where: { createdAt: { gte: startOfDay } } }),
       prisma.delivery.count({ where: { status: { in: ['AVAILABLE', 'REQUESTED', 'ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } } }),
-      prisma.restaurantApplication.count({ where: { status: 'PENDING_APPROVAL' } }),
+      prisma.restaurantApplication.count({ where: { status: 'PENDING_APPROVAL', restaurant: { storeType: 'RESTAURANT' } } }),
+      prisma.restaurantApplication.count({ where: { status: 'PENDING_APPROVAL', restaurant: { storeType: 'GROCERY' } } }),
       prisma.riderApplication.count({ where: { status: 'PENDING_APPROVAL' } }),
       prisma.order.aggregate({ where: { createdAt: { gte: startOfDay } }, _sum: { totalMinor: true } }),
     ])
-    return response.json({ customers, restaurants, riders, ordersToday, activeDeliveries, pendingApprovals: pendingRestaurants + pendingRiders, grossSalesMinor: sales._sum.totalMinor || 0 })
+    return response.json({ customers, restaurants, groceries, riders, ordersToday, activeDeliveries, pendingApprovals: pendingRestaurants + pendingGroceries + pendingRiders, grossSalesMinor: sales._sum.totalMinor || 0 })
   } catch { return response.status(503).json({ error: 'ADMIN_SUMMARY_SERVICE_UNAVAILABLE' }) }
 })
 
@@ -741,7 +743,7 @@ app.patch('/api/admin/customers/:customerId/status', requireUser, requireAdmin, 
 
 app.post('/api/admin/applications/:type/:applicationId/review', requireUser, requireAdmin, async (request, response) => {
   const result = z.object({ status: z.enum(['NEEDS_INFORMATION', 'APPROVED', 'REJECTED', 'SUSPENDED']), note: z.string().max(1000).optional() }).safeParse(request.body)
-  if (!result.success || !['restaurant', 'rider'].includes(request.params.type)) return response.status(400).json({ error: 'INVALID_APPLICATION_REVIEW' })
+  if (!result.success || !['restaurant', 'grocery', 'rider'].includes(request.params.type)) return response.status(400).json({ error: 'INVALID_APPLICATION_REVIEW' })
   try {
     const application = await reviewApplication({ type: request.params.type, id: request.params.applicationId, status: result.data.status, note: result.data.note, actorId: request.user.id })
     return response.json({ application })

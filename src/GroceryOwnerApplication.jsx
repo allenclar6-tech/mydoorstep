@@ -22,11 +22,16 @@ export function GroceryOwnerApplication() {
   const [submitted, setSubmitted] = useState(false)
   const [challenge, setChallenge] = useState(null)
   const [verificationId, setVerificationId] = useState('')
+  const [verified, setVerified] = useState(false)
+
+  const validateStep = (form, currentStep) => {
+    const fields = [...form.querySelectorAll(`[data-grocery-step="${currentStep}"] input, [data-grocery-step="${currentStep}"] select`)]
+    return fields.every((field) => field.checkValidity() || (field.reportValidity(), false))
+  }
 
   const advance = (event) => {
     const form = event.currentTarget.form
-    const fields = [...form.querySelectorAll(`[data-grocery-step="${step}"] input, [data-grocery-step="${step}"] select`)]
-    if (!fields.every((field) => field.checkValidity() || (field.reportValidity(), false))) return
+    if (!validateStep(form, step)) return
     setError('')
     setStep((current) => current + 1)
   }
@@ -49,9 +54,11 @@ export function GroceryOwnerApplication() {
     } finally {
       setBusy(false)
     }
-    const requestEmailCode = async (event) => {
+  }
+
+  const requestEmailCode = async (event) => {
       const form = event.currentTarget.form
-      if (!validateOnboardingStep(form, 2)) return
+      if (!validateStep(form, 2)) return
       const destination = new FormData(form).get('businessEmail')
       setBusy(true); setError('')
       try {
@@ -68,12 +75,14 @@ export function GroceryOwnerApplication() {
         const response = await fetch(`${apiBase}/api/auth/verification/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challengeId: challenge?.challengeId, destination: challenge?.destination, code }) })
         const body = await response.json()
         if (!response.ok || !body.verified) throw new Error('The verification code is invalid or expired.')
-        setVerificationId(challenge.challengeId); setStep(4)
+        setVerificationId(challenge.challengeId)
+        setVerified(true)
+        window.setTimeout(() => { setVerified(false); setStep(4) }, 1_200)
       } catch (verificationError) { setError(verificationError.message) } finally { setBusy(false) }
-    }
   }
 
   if (submitted) return <main className="route-page"><div className="route-hero"><span className="section-kicker">GROCERY OWNER APPLICATION</span><h1>Your store is in review.</h1><p>We received your verified application. Your grocery dashboard opens after DOORSTEP approves the store.</p></div><section className="onboarding-card onboarding-success grocery-success"><Check size={27} /><span className="section-kicker">APPLICATION RECEIVED</span><h2>We will keep you updated.</h2><p>Approval protects customers and lets your store appear in the live grocery marketplace only when it is ready.</p><button className="checkout-button" onClick={() => navigate('/groceries')}>Explore groceries <ArrowRight size={17} /></button></section></main>
+  if (verified) return <main className="route-page"><div className="route-hero"><span className="section-kicker">GROCERY OWNER SETUP</span><h1>Email confirmed.</h1><p>Your verification was successful. Taking you to the final application review step now.</p></div><section className="onboarding-card onboarding-success grocery-success verification-success-screen" aria-live="polite"><div className="verification-success-mark"><Check size={30} /></div><span className="section-kicker">VERIFICATION SUCCESSFUL</span><h2>Your email is ready.</h2></section></main>
 
   return <main className="route-page"><div className="route-hero grocery-owner-hero"><span className="section-kicker">GROCERY OWNER SETUP</span><h1>Put your store on every doorstep.</h1><p>A short, guided setup for Sapele grocery businesses. Tell us about your store, confirm who manages it, then verify it securely.</p><div className="setup-promises"><span><Check size={15} /> Five simple steps</span><span><Check size={15} /> Optional private documents</span><span><Check size={15} /> No charge to apply</span></div></div><form className="application-form onboarding-card grocery-owner-application" onSubmit={submit}><input type="hidden" name="verificationId" value={verificationId} /><StepIndicator step={step} />
     <section hidden={step !== 0} data-grocery-step="0"><span className="section-kicker">STEP 1 OF 5 · STORE SETUP</span><h2>Tell us about your store.</h2><p>Use the name and address customers will recognize. You can refine your catalogue after approval.</p><label>Store name<input required name="groceryName" autoComplete="organization" placeholder="e.g. Amukpe Fresh Market" /></label><label>Store type (optional)<select name="businessType" defaultValue=""><option value="">Prefer not to say</option><option value="supermarket">Supermarket</option><option value="mini_market">Mini market</option><option value="produce_market">Produce market</option><option value="pharmacy">Pharmacy</option><option value="specialty_store">Specialty store</option></select></label><label>Business registration number (optional)<input name="registrationNumber" /></label><label>Store address<input required name="address" autoComplete="street-address" placeholder="Street, area, and closest landmark" /></label><input name="cityName" type="hidden" value="Sapele" /><p className="setup-tip">Tip: a clear address helps the approval team confirm your service area faster.</p><button className="checkout-button" type="button" onClick={advance}>Continue to owner details <ArrowRight size={17} /></button></section>

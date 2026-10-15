@@ -15,6 +15,7 @@ export function ForgotPasswordPage({ loginPath = '/login' }) {
   const [email, setEmail] = useState('')
   const [challenge, setChallenge] = useState(null)
   const [code, setCode] = useState('')
+  const [completed, setCompleted] = useState(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async (event) => {
@@ -43,13 +44,14 @@ export function ForgotPasswordPage({ loginPath = '/login' }) {
       const response = await fetch(`${apiBase}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, challengeId: challenge.challengeId, code, password: values.password }), signal: AbortSignal.timeout(20_000) })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.error)
-      setMessage('Password reset successfully. Returning you to sign in...')
-      window.setTimeout(() => navigate(loginPath), 700)
+      setCompleted(true)
+      window.setTimeout(() => navigate(loginPath), 1_200)
     } catch (error) {
       setMessage(error.name === 'TimeoutError' ? 'The recovery service did not respond. Please try again.' : recoveryMessage(error.message))
     } finally {
       setBusy(false)
     }
   }
+  if (completed) return <main className="account-recovery-page"><section className="recovery-card verification-success-screen" aria-live="polite"><div className="verification-success-mark"><Check size={30} /></div><span className="section-kicker">VERIFICATION SUCCESSFUL</span><h1>Password updated.</h1><p>Your account is secured with the new password. Taking you back to sign in now.</p></section></main>
   return <main className="account-recovery-page"><section className="recovery-card"><div className="recovery-icon"><KeyRound size={24} /></div><span className="section-kicker">ACCOUNT RECOVERY</span><h1>Reset your password.</h1><p>Enter the email on your DOORSTEP account and we’ll send a short-lived verification code.</p>{!challenge ? <form onSubmit={submit}><label>Email address<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>{message && <div className="profile-message">{message}</div>}<button className="checkout-button" disabled={busy} type="submit">{busy ? 'Sending...' : 'Send reset code'} <Mail size={17} /></button></form> : <form onSubmit={resetPassword}><label>6-digit reset code<input required name="code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength="6" /></label><PasswordField required label="New password" name="password" minLength="8" autoComplete="new-password" />{message && <div className="profile-message">{message}</div>}<button className="checkout-button" disabled={busy} type="submit">{busy ? 'Resetting...' : 'Reset password'} <Check size={17} /></button></form>}<button className="recovery-back" onClick={() => navigate(loginPath)}><ArrowRight size={15} /> Back to login</button></section></main>
 }

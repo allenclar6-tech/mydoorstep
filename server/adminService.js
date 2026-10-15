@@ -7,9 +7,9 @@ export function requireAdmin(request, response, next) {
 
 export async function reviewApplication({ type, id, status, note, actorId }) {
   return prisma.$transaction(async (transaction) => {
-    if (type === 'restaurant') {
+    if (type === 'restaurant' || type === 'grocery') {
       const application = await transaction.restaurantApplication.findUnique({ where: { id }, include: { restaurant: true, documents: true } })
-      if (!application) throw serviceError('APPLICATION_NOT_FOUND', 'Restaurant application was not found.', 404)
+      if (!application || application.restaurant.storeType !== (type === 'grocery' ? 'GROCERY' : 'RESTAURANT')) throw serviceError('APPLICATION_NOT_FOUND', 'Business application was not found.', 404)
       const updated = await transaction.restaurantApplication.update({ where: { id }, data: { status, reviewNote: note, reviewedAt: new Date(), reviewedById: actorId } })
       await transaction.applicationReview.create({ data: { applicationType: 'RESTAURANT', applicationId: id, previousStatus: application.status, status, note, actorId } })
       await transaction.restaurant.update({ where: { id: application.restaurantId }, data: { status } })
