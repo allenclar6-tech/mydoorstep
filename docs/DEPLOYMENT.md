@@ -88,20 +88,17 @@ The repository contains seven tracked Prisma migrations: the existing-schema bas
 
 Use `npm.cmd run db:push` only for disposable local development databases.
 
-## Deployment blockers found during the 2026-10-15 release check
+## Production release status (2026-10-15)
 
-- Cloudflare serves the storefront through `mydoorstep-site-20260922`; its Worker forwards `/api/*` to the Render API at `https://mydoorstep-api.onrender.com`.
-- The Render production project contains `mydoorstep-api` and `mydoorstep-db`. The API's latest deploy, from commit `d39a6a8`, failed during startup; the prior API remains healthy.
-- The failed deploy log identifies the migration guard's `to_regclass(...)` result as an unsupported `regclass` type for Prisma `$queryRaw`. `server/migrate.js` now casts the result to `text`; tests and the frontend build pass locally.
-- The production Recovery page lists a logical export as `.dir.tar.gz`; the file has not been downloaded. A separate point-in-time recovery copy named `mydoorstep-db-staging` is available and has been successfully restored.
-- The isolated copy initially differed from the baseline by `StoreType`, `Restaurant.coverImageUrl`, and `Restaurant.storeType`; the baseline now matches the recovered schema, and a follow-up migration adds those fields.
-- A staging-only, loopback-bound worker verified the baseline, applied migrations on the recovery copy, and received API readiness `200`. The temporary worker and Blueprint were removed after verification; no production migration or deployment has been performed.
-- `npm audit --omit=dev` reports three high advisories in `deepmerge-ts` through Prisma configuration. The suggested forced Prisma change would be a breaking toolchain change and was not applied.
-- Wrangler is not installed in the local project. Dashboard access is available, but no CLI credentials are configured in the local environment.
-- No GitHub Actions deployment workflow is configured.
-- `render.yaml` now points to a valid `Dockerfile.web` in the repository; the Render web service definition is ready for a Blueprint deployment once credentials and staging migration checks are completed.
-- The existing API `Dockerfile` runs `server/migrate.js` before starting the API. That script checks the baseline schema and then applies pending migrations, so verify a staging backup and migration state before releasing the API. The repository also includes a valid frontend `Dockerfile.web` for the Render web service.
-- The existing production API remains ready at `/api/ready`; the failed latest deployment has not been retried. No production migration, deploy, DNS change, or service configuration change has been performed.
+- Promoted `9c625ee` to `main`; Render auto-deployed the API successfully as deploy `dep-db8fhn5bedkc73bqdcd0`.
+- Startup completed the guarded Prisma migration runner (`migrations_ready`) and the API is live at `https://mydoorstep-api.onrender.com`.
+- Production smoke checks returned `{"service":"doorstep-api","status":"ok","environment":"production"}` from `/api/health` and `{"service":"doorstep-api","status":"ready","database":"ok"}` from `/api/ready`. The same-origin `/api/ready` route through `https://mydoorstep.com.co` also returned ready.
+- The public storefront loads at `https://mydoorstep.com.co`; Cloudflare Worker `mydoorstep-site-20260922` forwards `/api/*` to the Render API.
+- Staging migration validation succeeded before release. The staging recovery database contains production-derived data and has been suspended after the production health checks; Render confirms suspended services are not billed.
+- The production Recovery page lists a `.dir.tar.gz` logical export, retained by Render for at least seven days. It was not downloaded; confirm a separately retained backup before the Render export expires.
+- `npm audit --omit=dev` still reports three high advisories in `deepmerge-ts` through Prisma configuration. Do not apply the suggested forced Prisma downgrade; address this separately with a compatible, tested upgrade.
+- The separate `api.mydoorstep.com.co` hostname is not required for current API traffic, which uses the same-origin Cloudflare proxy. Treat custom API DNS as follow-up configuration.
+- The API `Dockerfile` runs the guarded migration runner before starting the service. Keep using the verified staging/backup process for future schema changes; never use `prisma db push` against production.
 
 ## Rollback
 

@@ -28,7 +28,7 @@ Legend: `[ ]` not started, `[~]` in progress, `[x]` complete, `[!]` blocked.
 - [~] Phase 22: SEO/accessibility; semantic routes exist, formal audit remains
 - [ ] Phase 23: PWA readiness
 - [x] Phase 24: Mobile API readiness; backend is independently exposed through documented APIs
-- [~] Phase 25: Deployment preparation; frontend is live on Cloudflare and API is live on Render, staging migrations are verified, and production release/provider setup remain
+- [x] Phase 25: Deployment; frontend is live on Cloudflare, API and production migrations are live on Render, and public readiness checks pass
 - [~] Phase 26: Store preparation; checklists exist, no app submission is planned
 
 ## Current session: 2026-10-15
@@ -40,18 +40,19 @@ Legend: `[ ]` not started, `[~]` in progress, `[x]` complete, `[!]` blocked.
 - Improved order history/tracking loading, retry, and error states; customer tracking data now returns the owning customer's total and payment status without exposing those fields to rider/admin sessions.
 - Added unauthenticated-access regression coverage for order history and tracking.
 - Added application review summaries and password confirmation to restaurant, grocery, and rider onboarding; the API now requires accepted terms and matching passwords before processing applications.
-- Completed partner, grocery, and rider application details, with browser-tab draft resume that excludes passwords, verification codes, and files. Added the additive onboarding migration; it has not been applied.
+- Completed partner, grocery, and rider application details, with browser-tab draft resume that excludes passwords, verification codes, and files. The additive onboarding migration was applied during the production release.
 - Wired the admin restaurant, grocery, and rider application queues to status/date/location/search filters, private document downloads, review notes, and approve/request-information/reject actions.
 - Added application status tracking and a regression test rejecting client-supplied private document storage keys.
 - Located the live Render production API and database. The latest API deploy failed because Prisma could not deserialize `to_regclass(...)` as a `regclass`; changed the baseline-existence query to cast the result to text.
 - A production logical export is listed in Render as `.dir.tar.gz` but has not been downloaded. The separate point-in-time recovery copy `mydoorstep-db-staging` is available and has been migration-tested.
 - The initial read-only staging comparison found the production schema lacked `StoreType`, `Restaurant.coverImageUrl`, and `Restaurant.storeType`. Corrected the baseline to match the restored schema and added an additive follow-up migration for those fields.
-- A private, loopback-only staging worker verified the corrected baseline, applied all pending migrations on the isolated copy, and returned API readiness `200`. The temporary worker and Blueprint were removed after verification; production has not been migrated or deployed.
+- A private, loopback-only staging worker verified the corrected baseline and all pending migrations on the isolated copy. The temporary worker and Blueprint were removed after verification.
 - Updated `source-map-js` to a patched release. `npm audit --omit=dev` still reports three high advisories in `deepmerge-ts` via Prisma configuration; the suggested forced Prisma change is not a safe compatible update.
 - Confirmed the Cloudflare production Worker forwards `/api/*` to the Render API, rather than hosting the API itself.
 - Corrected audit/deployment documentation to match the tracked migration history, Render configuration, and existing `.gitignore`.
-- No migration was applied to production; the configured local database reports all seven migrations pending. The staging recovery copy has the corrected baseline recorded and all tracked follow-up migrations applied.
-- No production API or database changes were deployed. The Render API's prior deployment remains healthy and `/api/ready` currently reports ready; its latest deployment is failed and has not been retried. The Render frontend service has a valid `Dockerfile.web`; Wrangler is not installed locally, and no GitHub Actions deployment workflow is configured.
+- Promoted `9c625ee` to `main`. Render's production API deploy succeeded; startup logged `migrations_ready`, `/api/health` returned `ok`, and `/api/ready` returned `ready` with database `ok`. The same-origin `/api/ready` route through `mydoorstep.com.co` also returned ready.
+- Confirmed the public storefront loads at `https://mydoorstep.com.co`. The Render logical export remains available in Recovery but was not downloaded. Suspended `mydoorstep-db-staging` after production readiness passed; Render confirms suspended services are not billed.
+- The configured local database still reports all seven tracked migrations pending; this does not reflect production, where the release startup migration completed successfully.
 
 ## Verified checks
 
@@ -65,13 +66,13 @@ Legend: `[ ]` not started, `[~]` in progress, `[x]` complete, `[!]` blocked.
 ## Current blockers
 
 - Business-owned provider credentials and delivery integrations
-- Production Prisma migration state is not independently inspected; the local database has all seven tracked migrations pending. The isolated recovery copy now matches the corrected baseline, has all migrations applied, and passed readiness.
+- The local development database has all seven tracked migrations pending; do not mistake its status for production. The isolated recovery copy and production release both passed readiness.
 - Address geocoding and out-of-area coordinate validation
 - Final legal/business information
 - Managed storage, monitoring, backups, and deployment accounts
-- Deployment access, provider credential validation, and a verified frontend/API deployment configuration
+- Payment, email/SMS, maps, and storage provider credentials and configuration
 - Frontend JavaScript bundle exceeds the Vite advisory threshold
 
 ## Next safe work
 
-Before production release, confirm the current Render export remains available, then deploy the reviewed branch to `main` only with the existing production auto-deploy behavior understood. Monitor the API readiness endpoint and startup migration logs; keep the point-in-time recovery copy until production is healthy, then remove temporary staging resources to limit cost and data exposure.
+After release, keep the production export available for recovery and leave the production-derived staging database suspended unless needed. Address remaining provider setup and dependency advisories, and continue monitoring API readiness.

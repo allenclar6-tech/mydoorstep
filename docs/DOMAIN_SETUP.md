@@ -1,17 +1,21 @@
 # DOORSTEP Domain Setup
 
-The purchased domain for this deployment is `mydoorstep.com.co`.
+The purchased domain for this deployment is `mydoorstep.com.co`, and the public storefront is live.
 
-When approved by the owner:
+## Current production routing
 
-1. In Cloudflare, keep `mydoorstep.com.co` active in the account that owns the domain.
-2. Deploy the Vite frontend as the Cloudflare asset Worker `mydoorstep-site-20260922` and attach `mydoorstep.com.co` as the custom domain.
-3. Point the API to a separate Node-capable host. The Cloudflare Worker proxies `/api/*` from `mydoorstep.com.co` to that API so mobile and desktop browsers use a same-origin request path.
-4. The Cloudflare Worker enforces HTTPS redirects and HSTS for the storefront. Keep Cloudflare SSL/TLS enabled and use Full (strict) mode when the configured origin supports a valid certificate.
-5. Set `WEB_ORIGIN=https://mydoorstep.com.co`, `NEXT_PUBLIC_APP_URL=https://mydoorstep.com.co`, `VITE_API_BASE_URL=https://mydoorstep.com.co`, and `PAYMENT_CALLBACK_URL=https://mydoorstep.com.co/payment/callback`.
-5. Configure business email sender domains with SPF, DKIM, and DMARC.
-6. Verify payment webhooks and health/readiness checks after DNS cutover.
+- Cloudflare Worker `mydoorstep-site-20260922` serves `https://mydoorstep.com.co` and proxies `/api/*` to `https://mydoorstep-api.onrender.com`.
+- The Render API health and readiness endpoints pass, including the same-origin `https://mydoorstep.com.co/api/ready` route.
+- `api.mydoorstep.com.co` is not required by current traffic; it remains an optional custom hostname and should not replace the working same-origin proxy until DNS and health checks are confirmed.
 
-The frontend is already deployed to Cloudflare. The API must be deployed separately before public authentication, checkout, admin data, and payments can work. A Render/Docker blueprint is included in `render.yaml`.
+For future domain changes:
+
+1. Keep `mydoorstep.com.co` active in the Cloudflare account that owns the domain.
+2. Keep HTTPS redirects and HSTS enabled, and use Full (strict) mode when the configured origin supports a valid certificate.
+3. Set `WEB_ORIGIN=https://mydoorstep.com.co`, `NEXT_PUBLIC_APP_URL=https://mydoorstep.com.co`, `VITE_API_BASE_URL=https://mydoorstep.com.co`, and `PAYMENT_CALLBACK_URL=https://mydoorstep.com.co/payment/callback` where applicable.
+4. Configure business email sender domains with SPF, DKIM, and DMARC.
+5. Verify payment webhooks and health/readiness checks after any DNS or routing change.
+
+A Render/Docker blueprint is included in `render.yaml`.
 
 Do not enable live payments or production traffic until API health, readiness, database migration, webhook, and private storage checks pass.
