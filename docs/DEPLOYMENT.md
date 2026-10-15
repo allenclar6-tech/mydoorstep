@@ -90,13 +90,13 @@ Use `npm.cmd run db:push` only for disposable local development databases.
 
 ## Production release status (2026-10-15)
 
-- Promoted `9c625ee` to `main`; Render auto-deployed the API successfully as deploy `dep-db8fhn5bedkc73bqdcd0`.
-- Startup completed the guarded Prisma migration runner (`migrations_ready`) and the API is live at `https://mydoorstep-api.onrender.com`.
-- Production smoke checks returned `{"service":"doorstep-api","status":"ok","environment":"production"}` from `/api/health` and `{"service":"doorstep-api","status":"ready","database":"ok"}` from `/api/ready`. The same-origin `/api/ready` route through `https://mydoorstep.com.co` also returned ready.
+- Promoted `9c625ee` to `main`; Render auto-deployed the API successfully. The follow-up documentation commit `a38024e` also deployed successfully as deploy `dep-db8fmgk9v7es73dgqg00` (51.4 seconds).
+- The active Render deployment is `a38024e` on `main`; the guarded migration runner had already completed successfully on the preceding application release (`migrations_ready`).
+- Production checks returned `{"service":"doorstep-api","status":"ok","environment":"production"}` from `/api/health` and `{"service":"doorstep-api","status":"ready","database":"ok"}` from `/api/ready`. The same-origin `/api/ready` route through `https://mydoorstep.com.co` also returned ready.
 - The public storefront loads at `https://mydoorstep.com.co`; Cloudflare Worker `mydoorstep-site-20260922` forwards `/api/*` to the Render API.
-- Staging migration validation succeeded before release. The staging recovery database contains production-derived data and has been suspended after the production health checks; Render confirms suspended services are not billed.
-- The production Recovery page lists a `.dir.tar.gz` logical export, retained by Render for at least seven days. It was not downloaded; confirm a separately retained backup before the Render export expires.
-- `npm audit --omit=dev` still reports three high advisories in `deepmerge-ts` through Prisma configuration. Do not apply the suggested forced Prisma downgrade; address this separately with a compatible, tested upgrade.
+- Staging migration validation succeeded before release. The staging recovery database contains production-derived data and remains suspended; keep it suspended unless needed for recovery.
+- A fresh production logical export created at `2026-10-15T16:27Z` was downloaded to the local Downloads folder and verified as a readable gzip-compressed tar archive. SHA-256: `B1A6488AF9AE989AC8B1972EC956628950C8C0758A08FFF00437A622B45A1C46`. This backup contains production data: keep it private, out of source control, and in a secure location. Render retains export files for at least seven days; keep an independent copy beyond that window.
+- The 33 API tests pass. `npm audit --omit=dev` still reports three high advisories in `deepmerge-ts` through Prisma configuration. Do not apply the suggested forced Prisma downgrade; address this separately with a compatible, tested upgrade.
 - The separate `api.mydoorstep.com.co` hostname is not required for current API traffic, which uses the same-origin Cloudflare proxy. Treat custom API DNS as follow-up configuration.
 - The API `Dockerfile` runs the guarded migration runner before starting the service. Keep using the verified staging/backup process for future schema changes; never use `prisma db push` against production.
 
