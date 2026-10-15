@@ -78,14 +78,13 @@ The frontend also uses the public configuration variables `VITE_API_BASE_URL`, `
 
 ## Migration workflow
 
-The repository contains six tracked Prisma migrations: the existing-schema baseline and five subsequent changes. A read-only check of the configured local database at `localhost:5432` found all six pending; the command exited nonzero and did not change the database. The live Render database is a separate production database. Do not use `prisma db push` against production or apply migrations until the migration history and a restorable backup are verified. Before deploying:
+The repository contains seven tracked Prisma migrations: the existing-schema baseline and six subsequent changes. A read-only check of the configured local database at `localhost:5432` found all seven pending; the command exited nonzero and did not change the database. Do not use `prisma db push` against production. The staging recovery copy was compared against the baseline, migrated, and passed API readiness before considering a production release.
 
-1. Back up the staging database and verify the restore procedure. For production, confirm a current Render logical export is complete and downloadable before release.
-2. Review the baseline migration against the actual staging schema; do not mark an existing production database as baselined without verifying its schema and migration history.
-3. Run `npm.cmd run db:migrate:status` against staging and resolve any drift without deleting real data.
-4. Determine whether staging already contains the baseline schema or production data. Have the database owner approve a non-destructive baseline/reconciliation plan before applying or baselining migrations.
-5. Apply pending migrations in staging and run the API regression suite.
-6. Run `npm.cmd run db:migrate:deploy` during production release only after the staging and backup checks have passed.
+1. Confirm a current Render logical export is available and retain the isolated point-in-time recovery copy until production health is verified.
+2. Compare the restored schema with `prisma/baseline.prisma`. The initial diff found three absent restaurant objects; the baseline was corrected and an additive migration now creates them.
+3. The staging database had no migration history. The guarded migration runner verified the corrected baseline, applied the baseline record and all follow-up migrations, then passed `/api/ready`.
+4. Re-run tests/build/schema checks after any release change. Never run `prisma db push` against production.
+5. Deploy to `main` only after confirming Render's auto-deploy branch remains `main`; monitor the startup migration logs and `/api/ready` until healthy.
 
 Use `npm.cmd run db:push` only for disposable local development databases.
 
@@ -94,14 +93,15 @@ Use `npm.cmd run db:push` only for disposable local development databases.
 - Cloudflare serves the storefront through `mydoorstep-site-20260922`; its Worker forwards `/api/*` to the Render API at `https://mydoorstep-api.onrender.com`.
 - The Render production project contains `mydoorstep-api` and `mydoorstep-db`. The API's latest deploy, from commit `d39a6a8`, failed during startup; the prior API remains healthy.
 - The failed deploy log identifies the migration guard's `to_regclass(...)` result as an unsupported `regclass` type for Prisma `$queryRaw`. `server/migrate.js` now casts the result to `text`; tests and the frontend build pass locally.
-- The production Recovery page now lists a logical export as `.dir.tar.gz`; it has not yet been downloaded or independently restore-tested.
-- A point-in-time recovery copy named `mydoorstep-db-staging` is being created from production. Render still reports `Recovery In Progress`, so credentials are unavailable and no staging database command can run yet.
-- Production and staging migration history have not been inspected. Do not deploy the migration runner until the staging copy is available, the schema baseline is verified, pending migrations succeed on staging, and the API is smoke-tested.
+- The production Recovery page lists a logical export as `.dir.tar.gz`; the file has not been downloaded. A separate point-in-time recovery copy named `mydoorstep-db-staging` is available and has been successfully restored.
+- The isolated copy initially differed from the baseline by `StoreType`, `Restaurant.coverImageUrl`, and `Restaurant.storeType`; the baseline now matches the recovered schema, and a follow-up migration adds those fields.
+- A staging-only, loopback-bound worker verified the baseline, applied migrations on the recovery copy, and received API readiness `200`. The temporary worker and Blueprint were removed after verification; no production migration or deployment has been performed.
+- `npm audit --omit=dev` reports three high advisories in `deepmerge-ts` through Prisma configuration. The suggested forced Prisma change would be a breaking toolchain change and was not applied.
 - Wrangler is not installed in the local project. Dashboard access is available, but no CLI credentials are configured in the local environment.
 - No GitHub Actions deployment workflow is configured.
 - `render.yaml` now points to a valid `Dockerfile.web` in the repository; the Render web service definition is ready for a Blueprint deployment once credentials and staging migration checks are completed.
 - The existing API `Dockerfile` runs `server/migrate.js` before starting the API. That script checks the baseline schema and then applies pending migrations, so verify a staging backup and migration state before releasing the API. The repository also includes a valid frontend `Dockerfile.web` for the Render web service.
-- The existing production API remains ready at `/api/ready`; the failed latest deployment has not been retried. No migration, production deploy, DNS change, or production service configuration change has been performed.
+- The existing production API remains ready at `/api/ready`; the failed latest deployment has not been retried. No production migration, deploy, DNS change, or service configuration change has been performed.
 
 ## Rollback
 

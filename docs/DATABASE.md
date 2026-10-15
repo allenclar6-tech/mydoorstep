@@ -47,10 +47,11 @@ The application uses PostgreSQL with Prisma as the object-relational mapper.
 
 ## Production migration baseline
 
-The existing production database predates committed Prisma migrations. The baseline
-migration in `prisma/migrations/20261014114500_baseline_existing_schema` describes
-that existing schema and must be marked as applied only after an operator verifies
-that the target database matches it.
+The existing production database predates committed Prisma migrations. Its restored
+staging copy was compared with the baseline: the database did not contain the
+`StoreType` enum or the `Restaurant.coverImageUrl` and `Restaurant.storeType`
+columns. The baseline now matches the existing database, and
+`20261014115000_add_restaurant_store_type` adds those fields as a follow-up.
 
 Do not run the baseline SQL against an existing database. From a secure deployment
 environment with the production `DATABASE_URL` available:
@@ -62,6 +63,11 @@ environment with the production `DATABASE_URL` available:
 4. Run `npx prisma migrate deploy` to apply later reviewed migrations, including
    `20261014115500_add_rider_network`.
 5. Verify `/api/ready`, rider delivery claims, and the application logs.
+
+The staging recovery copy had no migration history. Its corrected baseline comparison
+returned no difference; the guarded migration runner marked the baseline, applied
+all follow-up migrations, and the loopback-only API readiness check returned `200`.
+Production has not yet been migrated.
 
 The rider-network migration is additive: current riders remain in the
 `DOORSTEP_POOL`, while future `BUSINESS_OWNED` riders can be linked to one

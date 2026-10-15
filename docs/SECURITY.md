@@ -22,10 +22,10 @@
 - Add CSRF strategy if browser authentication moves to cookies
 - Add lifecycle tests for password reset, payment replay, authorization, and uploads
 - Review data retention for addresses, rider locations, documents, and support attachments
-- Resolve the current Prisma transitive `deepmerge-ts@7.1.5` audit finding through a tested Prisma upgrade; do not use `npm audit fix --force` without reviewing the resulting Prisma version change
+- Resolve the three remaining high Prisma transitive `deepmerge-ts` audit findings through a tested Prisma upgrade; do not use `npm audit fix --force` without reviewing the resulting Prisma version change. The separate `source-map-js` advisory was patched.
 
 Never expose `PAYSTACK_SECRET_KEY`, database credentials, raw payment data, or private document URLs to the frontend.
 
 ## Audit scope and current evidence
 
-The 2026-10-15 review was a first-pass repository and configuration audit, not a complete penetration test. Git tracking and ignore rules were checked without printing local environment values. A production frontend build and Prisma schema validation passed. After adding automatic Prisma Client generation, all 29 API tests passed. Provider credentials, deployment secrets, production access controls, and live integrations were not verified. See `PROJECT_AUDIT.md` and `BUILD_PROGRESS.md` for the current findings and test status.
+The 2026-10-15 review was a first-pass repository and configuration audit, not a complete penetration test. Git tracking and ignore rules were checked without printing local environment values. The production frontend build, both Prisma schemas, and all 33 API tests passed. A private staging recovery copy passed baseline, migration, and API readiness checks; production has not been migrated or redeployed. Provider credentials, deployment secrets, production access controls, and live integrations were not independently verified. See `PROJECT_AUDIT.md` and `BUILD_PROGRESS.md` for the current findings and test status.

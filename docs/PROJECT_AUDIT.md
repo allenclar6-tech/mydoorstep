@@ -49,7 +49,7 @@ The repository already contains a usable foundation for a production food-delive
 
 ## Missing or incomplete production features
 
-- A Prisma migration history is committed (one baseline and four follow-up migrations); its compatibility with the production database and release process still needs a staging review
+- A Prisma migration history is committed (one baseline and six follow-up migrations); the restored staging schema now matches the corrected baseline and passed the migration/readiness check
 - Provider-backed operations, monitoring, and load measurements remain incomplete
 - Render API and web service configuration exists; production deployment and domain health have not been verified in this audit
 - No central logging, metrics, error-monitoring, or alerting setup
