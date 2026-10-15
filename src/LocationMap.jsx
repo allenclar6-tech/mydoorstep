@@ -186,6 +186,12 @@ export function LocationMap({ onSelect, onCancel }) {
     }
   }, [])
 
+  useEffect(() => {
+    if (!mapRef.current) return undefined
+    const frame = window.requestAnimationFrame(() => mapRef.current?.resize())
+    return () => window.cancelAnimationFrame(frame)
+  }, [selectedPoint, results.length, googleResults.length])
+
   const useDeviceLocation = () => {
     const map = mapRef.current
     const geolocateControl = geolocateControlRef.current
