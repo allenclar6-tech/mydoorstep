@@ -267,10 +267,11 @@ function App() {
     } catch (error) { setCheckoutError(error.message); window.alert(error.message) }
   }
 
+  const isPublicRiderRoute = path === '/rider/register' || path === '/rider/application-status'
   if (path.startsWith('/restaurant/') && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
-  if (path.startsWith('/rider/') && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
+  if (path.startsWith('/rider/') && !isPublicRiderRoute && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
   if (path.startsWith('/restaurant/')) return <PortalAccessGate role="RESTAURANT"><RestaurantPortal path={path} /></PortalAccessGate>
-  if (path.startsWith('/rider/')) return <PortalAccessGate role="RIDER"><RiderPortal path={path} /></PortalAccessGate>
+  if (path.startsWith('/rider/') && !isPublicRiderRoute) return <PortalAccessGate role="RIDER"><RiderPortal path={path} /></PortalAccessGate>
   if (path === '/admin/login') return <AdminLogin onLogin={() => { window.history.pushState({}, '', '/admin/dashboard'); setPath('/admin/dashboard') }} />
   if (path === '/forgot-password' || path === '/reset-password') return <ForgotPasswordPage />
   if (path === '/admin/forgot-password') return <ForgotPasswordPage loginPath="/admin/login" />
