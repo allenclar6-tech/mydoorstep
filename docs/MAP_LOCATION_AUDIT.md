@@ -18,7 +18,7 @@ Audit date: 2026-10-15
 4. Explicit confirmation writes the label, coordinates, selection source, and available GPS accuracy to browser `localStorage`. The picker displays the selected latitude/longitude to seven decimal places and restores the point when reopened.
 5. Selecting a named Sapele area changes the label and clears any previously stored exact coordinates.
 
-The saved-address form now links to the map picker and submits the confirmed coordinates to the authenticated address API. Checkout links to the same picker, submits the pin coordinates with order creation, and the API persists those coordinates on both its checkout address and order destination snapshot. The existing delivery-tracking map already reads order destination coordinates. These code changes are implemented locally and still require deployment and production verification.
+The saved-address form links to the map picker and submits confirmed coordinates to the authenticated address API. Checkout submits the pin coordinates with order creation, and the API persists them on the checkout address and order destination snapshot. The existing delivery-tracking map reads order destination coordinates. These changes are deployed. Production smoke tests verified map search, pin selection, displayed coordinates, mobile layout, and API readiness; a real production address or order was not created, so end-to-end persistence in a live customer workflow remains to be verified.
 
 ## Routing and coverage limits
 
@@ -36,4 +36,4 @@ The saved-address form now links to the map picker and submits the confirmed coo
 
 ## Release boundary
 
-The pin-to-address and pin-to-order integrations are implemented in the current worktree but are not yet deployed. Store-specific coverage validation, operational distance pricing, and admin map tools require separate backend behavior and policy decisions and are not claimed as complete.
+The pin-to-address and pin-to-order integrations are deployed, but live customer-workflow persistence has not been exercised with a production account. Store-specific coverage validation, operational distance pricing, and admin map tools require separate backend behavior and policy decisions and are not claimed as complete. Real-device GPS accuracy also remains unverified.
