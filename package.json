@@ -41,5 +41,8 @@
   },
   "overrides": {
     "deepmerge-ts": "8.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.151.0"
   }
 }

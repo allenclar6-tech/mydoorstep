@@ -1,5 +1,4 @@
 const apiOrigin = 'https://mydoorstep-api.onrender.com'
-const webOrigin = 'https://mydoorstep-web.onrender.com'
 
 export default {
   async fetch(request, env) {
@@ -21,8 +20,7 @@ export default {
       return response
     }
 
-    const upstreamUrl = new URL(`${url.pathname}${url.search}`, webOrigin)
-    const webResponse = await fetch(new Request(upstreamUrl, request))
+    const webResponse = await env.ASSETS.fetch(request)
     const headers = new Headers(webResponse.headers)
     headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     headers.set('Permissions-Policy', 'geolocation=(self)')

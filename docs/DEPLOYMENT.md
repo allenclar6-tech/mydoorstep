@@ -22,14 +22,11 @@
 - Public website: `https://mydoorstep.com.co`
 - Admin: `https://mydoorstep.com.co/admin/login`
 - API: `https://api.mydoorstep.com.co`
-- Cloudflare Pages build command: `npm run build`
-- Cloudflare Pages output directory: `dist`
+- Cloudflare Worker asset directory: `dist`
 - SPA fallback: `wrangler.jsonc` with `assets.not_found_handling="single-page-application"`
 - Cloudflare redeploy command: `npm.cmd run cloudflare:deploy`
 
-Cloudflare Pages hosts the Vite frontend. The Express/Prisma API must run on a Node-capable service with managed PostgreSQL; it should not be deployed as static Pages output.
-
-If the Cloudflare Worker asset bundle is behind the Render frontend deployment, the Worker forwards public web requests to `https://mydoorstep-web.onrender.com` while continuing to proxy `/api/*` requests to the API service. This keeps the custom domain current until the next Wrangler asset deployment.
+Cloudflare Workers serves the Vite build from its bound static assets and proxies `/api/*` to the Render API. The Express/Prisma API must run on a Node-capable service with managed PostgreSQL; it should not be deployed as static assets. Build the frontend with `npm.cmd run build` before deploying the Worker.
 
 ## API deployment blueprint
 
@@ -90,10 +87,9 @@ Use `npm.cmd run db:push` only for disposable local development databases.
 
 ## Production release status (2026-10-15)
 
-- Promoted `9c625ee` to `main`; Render auto-deployed the API successfully. Documentation-only commits `a38024e` and `423f6c5` also deployed successfully as `dep-db8fmgk9v7es73dgqg00` and `dep-db8g123bc2fs739ounc0`; both were marked live.
-- The latest runtime release remains `9c625ee`; the guarded migration runner completed successfully on that application release (`migrations_ready`). The later commits only updated documentation.
+- Promoted `9c625ee` to `main`; Render auto-deployed the API and the guarded migration runner completed successfully (`migrations_ready`). The Prisma security fix is live in API deployment `dep-db8gbte0tbcc738btihg`, commit `15c2263`.
 - Production checks returned `{"service":"doorstep-api","status":"ok","environment":"production"}` from `/api/health` and `{"service":"doorstep-api","status":"ready","database":"ok"}` from `/api/ready`. The same-origin `/api/ready` route through `https://mydoorstep.com.co` also returned ready.
-- The public storefront loads at `https://mydoorstep.com.co`; Cloudflare Worker `mydoorstep-site-20260922` forwards `/api/*` to the Render API.
+- Cloudflare Worker `mydoorstep-site-20260922` serves the built frontend assets and forwards `/api/*` to the Render API. The public storefront and `/admin/login` both returned HTTP 200 after the current frontend bundle was deployed. The verified JavaScript asset is `index-CGldDkHY.js`; `/api/ready` continues to return database `ok`.
 - Staging migration validation succeeded before release. After production health and the fresh export were verified, the temporary staging database containing production-derived data was deleted to reduce retained data and avoid accidental exposure.
 - A fresh production logical export created at `2026-10-15T16:27Z` was downloaded to the local Downloads folder and verified as a readable gzip-compressed tar archive. SHA-256: `B1A6488AF9AE989AC8B1972EC956628950C8C0758A08FFF00437A622B45A1C46`. This backup contains production data: keep it private, out of source control, and in a secure location. Render retains export files for at least seven days; keep an independent copy beyond that window.
 - The 33 API tests pass. The Prisma 6.19.3 dependency tree is pinned to patched `deepmerge-ts` 8.0.0 through the root npm override; both `npm audit` and `npm audit --omit=dev` report zero vulnerabilities. Schema validation and the production build pass with Prisma unchanged.
