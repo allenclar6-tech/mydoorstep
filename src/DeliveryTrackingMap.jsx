@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
-const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
+const token = import.meta.env.VITE_MAP_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
 
 function marker(className, label) {
   const element = document.createElement('div')

@@ -256,7 +256,12 @@ const customerRegistrationSchema = credentialsSchema.extend({
   termsAccepted: z.literal(true),
   password: z.string().min(10).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/),
 })
-const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional() })
+export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional() }).superRefine((value, context) => {
+  if ((value.latitude == null) !== (value.longitude == null)) context.addIssue({ code: 'custom', path: [value.latitude == null ? 'latitude' : 'longitude'], message: 'Both destination coordinates are required.' })
+})
+export const addressSchema = z.object({ label: z.string().min(1).max(40), addressLine: z.string().min(5).max(240), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), cityId: z.string().min(1).optional() }).superRefine((value, context) => {
+  if ((value.latitude == null) !== (value.longitude == null)) context.addIssue({ code: 'custom', path: [value.latitude == null ? 'latitude' : 'longitude'], message: 'Both address coordinates are required.' })
+})
 const privateDocumentSchema = z.object({ type: z.string().min(2).max(80), storageKey: z.string().startsWith('private/applications/').max(500) })
 const optionalText = (max) => z.string().trim().max(max).optional().transform((value) => value || null)
 const optionalNumber = ({ min = 0, max }) => z.preprocess((value) => value === '' || value === undefined ? undefined : Number(value), z.number().finite().min(min).max(max).optional())
@@ -524,7 +529,7 @@ app.get('/api/addresses', requireUser, async (request, response) => {
   try { return response.json({ addresses: await prisma.address.findMany({ where: { userId: request.user.id }, orderBy: { createdAt: 'desc' } }) }) } catch { return response.status(503).json({ error: 'ADDRESS_SERVICE_UNAVAILABLE' }) }
 })
 app.post('/api/addresses', requireUser, async (request, response) => {
-  const result = z.object({ label: z.string().min(1).max(40), addressLine: z.string().min(5).max(240), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), cityId: z.string().min(1).optional() }).safeParse(request.body)
+  const result = addressSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_ADDRESS', details: result.error.flatten() })
   try {
     const activeServiceArea = await prisma.serviceArea.findFirst({ where: { enabled: true }, orderBy: { createdAt: 'asc' } })
@@ -534,7 +539,7 @@ app.post('/api/addresses', requireUser, async (request, response) => {
   } catch { return response.status(503).json({ error: 'ADDRESS_SERVICE_UNAVAILABLE' }) }
 })
 app.patch('/api/addresses/:addressId', requireUser, async (request, response) => {
-  const result = z.object({ label: z.string().min(1).max(40), addressLine: z.string().min(5).max(240), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), cityId: z.string().min(1).optional() }).safeParse(request.body)
+  const result = addressSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_ADDRESS' })
   try {
     if (result.data.cityId && !(await prisma.serviceArea.findFirst({ where: { cityId: result.data.cityId, enabled: true } }))) return response.status(400).json({ error: 'CITY_OUTSIDE_SERVICE_AREA' })
@@ -847,8 +852,8 @@ app.post('/api/orders', requireUser, async (request, response) => {
     const quote = await quoteOrder({ ...result.data, customerId: request.user.id })
     const order = await prisma.$transaction(async (transaction) => {
       const orderNumber = `DSP-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 6).toUpperCase()}`
-      const address = quote.address || await transaction.address.create({ data: { userId: request.user.id, cityId: quote.serviceAreaCityId, label: 'Checkout address', addressLine: result.data.addressLine, landmark: result.data.landmark } })
-      const created = await transaction.order.create({ data: { orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: process.env.PAYMENT_PROVIDER || process.env.PAYMENTS_PROVIDER || 'paystack', reference: `pending_${randomUUID()}`, amountMinor: quote.totalMinor } } }, include: { items: true, payment: true } })
+      const address = quote.address || await transaction.address.create({ data: { userId: request.user.id, cityId: quote.serviceAreaCityId, label: 'Checkout address', addressLine: result.data.addressLine, landmark: result.data.landmark, latitude: result.data.latitude, longitude: result.data.longitude } })
+      const created = await transaction.order.create({ data: { orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: process.env.PAYMENT_PROVIDER || process.env.PAYMENTS_PROVIDER || 'paystack', reference: `pending_${randomUUID()}`, amountMinor: quote.totalMinor } } }, include: { items: true, payment: true } })
       return created
     })
     return response.status(201).json({ order })

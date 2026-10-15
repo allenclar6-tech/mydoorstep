@@ -10,7 +10,7 @@ import { isOrderPayable, matchesPaystackPayment, verifyWebhookSignature } from '
 import { verificationFailure } from '../server/verificationService.js'
 
 process.env.NODE_ENV = 'test'
-const { app, storeApplicationDocuments } = await import('../server/index.js')
+const { app, addressSchema, orderSchema, storeApplicationDocuments } = await import('../server/index.js')
 
 test('deployment environment variables take precedence over .env values', () => {
   const temporaryDirectory = mkdtempSync(join(tmpdir(), 'doorstep-env-test-'))
@@ -290,6 +290,18 @@ test('customer order history and order tracking require authentication', async (
   assert.equal(historyResponse.body.error, 'AUTHENTICATION_REQUIRED')
   assert.equal(trackingResponse.status, 401)
   assert.equal(trackingResponse.body.error, 'AUTHENTICATION_REQUIRED')
+})
+
+test('saved addresses and orders accept complete map coordinates but reject partial or invalid points', () => {
+  const address = { label: 'Home', addressLine: '12 Example Road, Sapele' }
+  const order = { restaurantId: 'restaurant-1', items: [{ menuItemId: 'meal-1', quantity: 1 }], addressLine: address.addressLine }
+  for (const schema of [addressSchema, orderSchema]) {
+    const base = schema === addressSchema ? address : order
+    assert.equal(schema.safeParse(base).success, true)
+    assert.equal(schema.safeParse({ ...base, latitude: 5.8916123, longitude: 5.6846234 }).success, true)
+    assert.equal(schema.safeParse({ ...base, latitude: 5.8916123 }).success, false)
+    assert.equal(schema.safeParse({ ...base, latitude: 95, longitude: 5.6846234 }).success, false)
+  }
 })
 
 test('payment webhook reconciliation requires the stored amount and NGN currency', () => {

@@ -8,6 +8,7 @@ import { RiderPortal } from './riderPages'
 import { AdminLogin, AdminPortal } from './adminPages'
 import { ForgotPasswordPage } from './accountPages'
 import { ProfileAvatar } from './ProfileAvatar'
+import { readConfirmedLocation } from './location'
 
 const currentPath = () => window.location.pathname.replace(/\/$/, '') || '/'
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
@@ -187,7 +188,7 @@ function App() {
   useEffect(() => { const syncLocation = () => setDeliveryLocation(localStorage.getItem('doorstep-location') || 'Amukpe, Sapele'); window.addEventListener('storage', syncLocation); window.addEventListener('doorstep-location-change', syncLocation); return () => { window.removeEventListener('storage', syncLocation); window.removeEventListener('doorstep-location-change', syncLocation) } }, [])
 
   const chooseLocation = (location) => { localStorage.setItem('doorstep-location', `${location}, Sapele`); window.dispatchEvent(new Event('doorstep-location-change')); setLocationOpen(false) }
-  const useCurrentLocation = () => navigator.geolocation?.getCurrentPosition((position) => chooseLocation(`Current device · ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`), () => setLocationOpen(false))
+  const useCurrentLocation = () => { window.history.pushState({}, '', '/location'); setPath('/location') }
 
   const goTo = (event, destination) => {
     if (!destination.startsWith('#')) {
@@ -255,7 +256,19 @@ function App() {
     setCheckoutError('')
     try {
       const checkoutApiBase = apiBase
-      const orderResponse = await fetch(`${apiBase}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': checkoutIdempotencyKey, Authorization: `Bearer ${token}` }, body: JSON.stringify({ restaurantId: String(cart[0].restaurantId), items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })), addressLine: form.get('address'), landmark: form.get('landmark'), phone: form.get('phone') }) })
+      const storedLocation = readConfirmedLocation()
+      const hasCoordinateFields = form.has('latitude') && form.has('longitude')
+      const latitude = hasCoordinateFields ? form.get('latitude') : storedLocation?.latitude
+      const longitude = hasCoordinateFields ? form.get('longitude') : storedLocation?.longitude
+      const orderRequest = {
+        restaurantId: String(cart[0].restaurantId),
+        items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
+        addressLine: form.get('address'),
+        landmark: form.get('landmark'),
+        phone: form.get('phone'),
+        ...(latitude !== '' && longitude !== '' && latitude != null && longitude != null ? { latitude: Number(latitude), longitude: Number(longitude) } : {}),
+      }
+      const orderResponse = await fetch(`${apiBase}/api/orders`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': checkoutIdempotencyKey, Authorization: `Bearer ${token}` }, body: JSON.stringify(orderRequest) })
       const orderBody = await orderResponse.json()
       if (!orderResponse.ok) throw new Error(orderBody.message || orderBody.error || 'Could not create your order.')
       const paymentResponse = await fetch(`${checkoutApiBase}/api/payments/initialize`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ orderId: orderBody.order.id }) })
