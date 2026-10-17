@@ -385,8 +385,10 @@ test('verification failures expose only stable, safe provider states', () => {
 test('operational restaurant and rider APIs require their roles', async () => {
   const restaurantResponse = await request(app).get('/api/restaurant/orders')
   const riderResponse = await request(app).get('/api/rider/deliveries')
+  const riderProfileResponse = await request(app).get('/api/rider/profile')
   assert.equal(restaurantResponse.status, 401)
   assert.equal(riderResponse.status, 401)
+  assert.equal(riderProfileResponse.status, 401)
 })
 
 test('application status checks require valid account credentials', async () => {

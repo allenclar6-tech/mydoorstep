@@ -1234,6 +1234,20 @@ app.get('/api/rider/deliveries', requireUser, async (request, response) => {
   } catch { return response.status(503).json({ error: 'RIDER_DELIVERY_SERVICE_UNAVAILABLE' }) }
 })
 
+app.get('/api/rider/profile', requireUser, async (request, response) => {
+  if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
+  try {
+    const rider = await prisma.rider.findUnique({
+      where: { id: request.user.rider.id },
+      select: { id: true, status: true, availability: true, vehicleType: true, vehicleDetails: true, network: true, ratingAverage: true, ratingCount: true, restaurant: { select: { name: true } } },
+    })
+    if (!rider) return response.status(404).json({ error: 'RIDER_PROFILE_NOT_FOUND' })
+    return response.json({ rider })
+  } catch {
+    return response.status(503).json({ error: 'RIDER_PROFILE_SERVICE_UNAVAILABLE' })
+  }
+})
+
 app.patch('/api/rider/availability', requireUser, async (request, response) => {
   const result = z.object({ availability: z.enum(['ONLINE', 'OFFLINE']) }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_AVAILABILITY' })

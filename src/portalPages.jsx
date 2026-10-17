@@ -14,20 +14,21 @@ const seededOrders = [
   { id: 'DSP-20260916-000099', customer: 'T. Efe', items: 'Plantain & egg sauce x 1', total: 3884, status: 'DELIVERED', time: 'Yesterday' },
 ]
 
-const navItems = [
-  ['Overview', '/restaurant/dashboard', LayoutDashboard],
-  ['Orders', '/restaurant/orders', Package],
-  ['Menu', '/restaurant/menu', Utensils],
-  ['Partner account', '/restaurant/profile', Store],
-  ['Sales & earnings', '/restaurant/earnings', BarChart3],
-]
-
 function PortalShell({ path, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [user, setUser] = useState(null)
-  useEffect(() => { fetch(`${apiBase}/api/auth/me`, { headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` } }).then((response) => response.ok ? response.json() : null).then((body) => body?.user && setUser(body.user)).catch(() => undefined) }, [])
+  const [business, setBusiness] = useState(null)
+  useEffect(() => {
+    const headers = { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` }
+    Promise.all([fetch(`${apiBase}/api/auth/me`, { headers }), fetch(`${apiBase}/api/restaurant/profile`, { headers })])
+      .then(async ([accountResponse, profileResponse]) => [accountResponse.ok ? await accountResponse.json() : null, profileResponse.ok ? await profileResponse.json() : null])
+      .then(([account, profile]) => { if (account?.user) setUser(account.user); if (profile?.restaurant) setBusiness(profile.restaurant) })
+      .catch(() => undefined)
+  }, [])
   const name = user ? `${user.firstName} ${user.lastName}` : 'Restaurant partner'
-  return <div className="portal-shell"><aside className={mobileOpen ? 'portal-sidebar is-open' : 'portal-sidebar'}><div className="portal-logo"><span className="brand-mark">✦</span><span>doorstep<span>partner</span></span></div><div className="portal-restaurant"><div className="portal-avatar">{name.charAt(0)}</div><div><strong>{name}</strong><small>Authenticated partner</small></div></div><nav>{navItems.map(([label, href, Icon]) => <button className={path === href ? 'portal-nav active' : 'portal-nav'} key={href} onClick={() => { navigate(href); setMobileOpen(false) }}><Icon size={17} />{label}</button>)}</nav><div className="portal-sidebar-bottom"><button className="portal-nav" onClick={() => { navigate('/restaurant/notifications'); setMobileOpen(false) }}><Bell size={17} />Notifications</button><button className="portal-nav" onClick={() => { navigate('/restaurant/settings'); setMobileOpen(false) }}><Settings size={17} />Settings</button><SessionSignOutButton className="portal-nav" /></div></aside><main className="portal-main"><header className="portal-header"><button className="portal-menu-toggle" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Open partner menu"><Menu size={21} /></button><div><span className="section-kicker">BUSINESS PARTNER</span><h1>{name}</h1></div><button className="portal-bell" aria-label="Partner account" onClick={() => navigate('/restaurant/profile')}><Store size={18} /></button></header>{children}</main></div>
+  const grocery = business?.storeType === 'GROCERY'
+  const navItems = [['Overview', '/restaurant/dashboard', LayoutDashboard], ['Orders', '/restaurant/orders', Package], [grocery ? 'Products' : 'Menu', '/restaurant/menu', Utensils], ['Partner account', '/restaurant/profile', Store], [grocery ? 'Store earnings' : 'Sales & earnings', '/restaurant/earnings', BarChart3]]
+  return <div className="portal-shell"><aside className={mobileOpen ? 'portal-sidebar is-open' : 'portal-sidebar'}><div className="portal-logo"><span className="brand-mark">✦</span><span>doorstep<span>{grocery ? 'grocery partner' : 'partner'}</span></span></div><div className="portal-restaurant"><div className="portal-avatar">{name.charAt(0)}</div><div><strong>{business?.name || name}</strong><small>{grocery ? 'Grocery partner' : 'Restaurant partner'}</small></div></div><nav>{navItems.map(([label, href, Icon]) => <button className={path === href ? 'portal-nav active' : 'portal-nav'} key={href} onClick={() => { navigate(href); setMobileOpen(false) }}><Icon size={17} />{label}</button>)}</nav><div className="portal-sidebar-bottom"><button className="portal-nav" onClick={() => { navigate('/restaurant/notifications'); setMobileOpen(false) }}><Bell size={17} />Notifications</button><button className="portal-nav" onClick={() => { navigate('/restaurant/settings'); setMobileOpen(false) }}><Settings size={17} />Settings</button><SessionSignOutButton className="portal-nav" /></div></aside><main className="portal-main"><header className="portal-header"><button className="portal-menu-toggle" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Open partner menu"><Menu size={21} /></button><div><span className="section-kicker">{grocery ? 'GROCERY PARTNER' : 'BUSINESS PARTNER'}</span><h1>{business?.name || name}</h1></div><button className="portal-bell" aria-label="Partner account" onClick={() => navigate('/restaurant/profile')}><Store size={18} /></button></header>{children}</main></div>
 }
 
 function PortalIntro({ eyebrow, title, action }) { return <div className="portal-intro"><div><span className="section-kicker">{eyebrow}</span><h2>{title}</h2></div>{action}</div> }
