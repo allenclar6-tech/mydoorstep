@@ -2,6 +2,10 @@
 
 ## Partner media API release
 
+The public restaurant feed includes available uncategorized menu items as well
+as category-linked items. Partner item creation does not require a category, so
+excluding these records would hide newly created items and their photos.
+
 Deploy the API before publishing the partner media frontend. This release adds
 authenticated `POST /api/restaurant/logo` and
 `POST /api/restaurant/menu/:itemId/image`, with an owner-only image preview on

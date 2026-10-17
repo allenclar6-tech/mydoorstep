@@ -6,6 +6,20 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 const menuPrefix = 'private/restaurant-media/'
 export const menuMediaUrl = item => item.imageUrl?.startsWith(menuPrefix) ? `/api/media/menu/${encodeURIComponent(item.id)}` : item.imageUrl
 
+export function publicMenuItems(restaurant) {
+  return [
+    ...restaurant.categories.flatMap(category => category.items.map(item => ({ ...item, categoryName: category.name }))),
+    ...(restaurant.menuItems || []).map(item => ({ ...item, categoryName: 'Menu' })),
+  ].map(item => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    price: Math.round(item.priceMinor / 100),
+    image: menuMediaUrl(item) || null,
+    category: item.categoryName,
+  }))
+}
+
 export async function preparePartnerImage(file) {
   if (!file) throw Object.assign(new Error('Select an image to upload.'), { status: 400, code: 'IMAGE_REQUIRED' })
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) throw Object.assign(new Error('Choose a JPEG, PNG or WebP image.'), { status: 400, code: 'UNSUPPORTED_IMAGE_TYPE' })

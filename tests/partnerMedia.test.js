@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import express from 'express'
 import request from 'supertest'
 import sharp from 'sharp'
-import { preparePartnerImage, registerPartnerMedia, menuMediaUrl } from '../server/partnerMedia.js'
+import { preparePartnerImage, registerPartnerMedia, menuMediaUrl, publicMenuItems } from '../server/partnerMedia.js'
 import { readPrivateDocument, removePrivateDocument } from '../server/uploadService.js'
 
 test('partner images reject invalid media and decode real raster images', async () => {
@@ -21,6 +21,17 @@ test('partner images reject invalid media and decode real raster images', async 
 test('menu media URLs never expose private file keys', () => {
   assert.equal(menuMediaUrl({ id: 'item', imageUrl: 'private/restaurant-media/store/test.png' }), '/api/media/menu/item')
   assert.equal(menuMediaUrl({ id: 'item', imageUrl: 'https://example.com/photo.jpg' }), 'https://example.com/photo.jpg')
+})
+
+test('public menus include uncategorized partner items and their uploaded photo', () => {
+  const items = publicMenuItems({
+    categories: [{ name: 'Meals', items: [{ id: 'categorized', name: 'Rice', priceMinor: 150000 }] }],
+    menuItems: [{ id: 'new-item', name: 'Pepper turkey', priceMinor: 520000, imageUrl: 'private/restaurant-media/store/photo.png' }],
+  })
+  assert.deepEqual(items.map(item => item.id), ['categorized', 'new-item'])
+  assert.equal(items[1].image, '/api/media/menu/new-item')
+  assert.equal(items[1].price, 5200)
+  assert.equal(items[1].category, 'Menu')
 })
 
 test('partner uploads enforce role, ownership, persistence and public visibility', async () => {
