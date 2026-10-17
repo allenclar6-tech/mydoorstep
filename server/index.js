@@ -14,6 +14,7 @@ import { advanceDelivery, claimDelivery, getDeliveryTrackingSnapshot, recordLoca
 import { deliveryRealtime } from './realtime.js'
 import { requireAdmin, reviewApplication } from './adminService.js'
 import { readPrivateDocument, storePrivateDocument, uploadError } from './uploadService.js'
+import { menuMediaUrl, registerPartnerMedia } from './partnerMedia.js'
 import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
 import { buildAiReply } from './aiBrain.js'
 
@@ -171,7 +172,7 @@ function publicRestaurant(restaurant) {
     name: item.name,
     description: item.description,
     price: Math.round(item.priceMinor / 100),
-    image: item.imageUrl || null,
+    image: menuMediaUrl(item) || null,
     category: category.name,
   })))
   return {
@@ -1016,11 +1017,13 @@ app.patch('/api/restaurant/profile', requireUser, async (request, response) => {
   try { return response.json({ restaurant: await prisma.restaurant.update({ where: { id: membership.restaurantId }, data: result.data }) }) } catch { return response.status(503).json({ error: 'RESTAURANT_PROFILE_SERVICE_UNAVAILABLE' }) }
 })
 
+registerPartnerMedia(app, { prisma, requireUser })
+
 app.get('/api/restaurant/menu', requireUser, async (request, response) => {
   if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
   const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
   if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
-  try { return response.json({ items: await prisma.menuItem.findMany({ where: { restaurantId: membership.restaurantId }, orderBy: { name: 'asc' } }) }) } catch { return response.status(503).json({ error: 'RESTAURANT_MENU_SERVICE_UNAVAILABLE' }) }
+  try { const items = await prisma.menuItem.findMany({ where: { restaurantId: membership.restaurantId }, orderBy: { name: 'asc' } }); return response.json({ items: items.map(item => ({ ...item, imageUrl: menuMediaUrl(item) })) }) } catch { return response.status(503).json({ error: 'RESTAURANT_MENU_SERVICE_UNAVAILABLE' }) }
 })
 
 app.post('/api/restaurant/menu', requireUser, async (request, response) => {

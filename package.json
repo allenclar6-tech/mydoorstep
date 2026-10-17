@@ -18,7 +18,7 @@
     "db:seed": "node prisma/seed.js",
     "admin:create": "node server/createAdmin.js",
     "pretest": "prisma generate",
-    "test": "node --test tests/api.test.js"
+    "test": "node --test tests/api.test.js tests/partnerMedia.test.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
@@ -34,6 +34,7 @@
     "prisma": "^6.19.0",
     "react": "latest",
     "react-dom": "latest",
+    "sharp": "^0.35.5",
     "supertest": "latest",
     "vite": "latest",
     "ws": "^8.18.3",

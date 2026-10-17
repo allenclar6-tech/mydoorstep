@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const allowedTypes = new Map([
@@ -52,3 +52,10 @@ function hasImageSignature(buffer, mimeType) {
 }
 
 export function uploadError(code, message, status) { return Object.assign(new Error(message), { code, status }) }
+
+export async function removePrivateDocument(storageKey) {
+  if (typeof storageKey !== 'string' || !storageKey.startsWith('private/')) throw uploadError('INVALID_STORAGE_KEY', 'Invalid storage key.', 400)
+  const target = path.resolve(privateRoot, storageKey.slice('private/'.length))
+  if (!target.startsWith(`${privateRoot}${path.sep}`)) throw uploadError('INVALID_STORAGE_KEY', 'Invalid storage key.', 400)
+  try { await unlink(target) } catch (error) { if (error.code !== 'ENOENT') throw error }
+}

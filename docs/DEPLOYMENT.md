@@ -1,5 +1,20 @@
 # DOORSTEP Deployment Guide
 
+## Partner media API release
+
+Deploy the API before publishing the partner media frontend. This release adds
+authenticated `POST /api/restaurant/logo` and
+`POST /api/restaurant/menu/:itemId/image`, with an owner-only image preview on
+`GET /api/restaurant/menu/:itemId/image`. Approved, available menu items expose
+their image through `GET /api/media/menu/:itemId`.
+
+The logo uses the existing owner's profile-photo field and private photo route.
+Menu images use the existing menu image field; no migration is needed.
+JPEG, PNG and WebP inputs are limited to 5 MB and 25 megapixels. Sharp decodes,
+auto-orients, resizes to at most 1600 pixels and strips original metadata.
+Keep `PRIVATE_UPLOAD_DIR` on the persistent Render disk mounted at `/var/data`.
+Run `npm ci` to install Sharp and `node --test tests/partnerMedia.test.js`.
+
 ## Production requirements
 
 - Managed PostgreSQL instance
