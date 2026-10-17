@@ -11,7 +11,14 @@ import { verificationFailure } from '../server/verificationService.js'
 import { applicationSubmissionError, validateOpeningHours } from '../src/applicationValidation.js'
 
 process.env.NODE_ENV = 'test'
-const { app, addressSchema, orderSchema, storeApplicationDocuments } = await import('../server/index.js')
+const { app, addressSchema, orderSchema, restaurantProfileSchema, storeApplicationDocuments } = await import('../server/index.js')
+
+test('partner profile validation requires paired operating hours and a bounded fulfillment time', () => {
+  const base = { name: 'Corner Shop', description: '', phone: '', address: '10 Market Road' }
+  assert.equal(restaurantProfileSchema.safeParse({ ...base, openingTime: '08:00', closingTime: '', prepTimeMinutes: '' }).success, false)
+  assert.equal(restaurantProfileSchema.safeParse({ ...base, openingTime: '08:00', closingTime: '18:00', prepTimeMinutes: '30' }).success, true)
+  assert.equal(restaurantProfileSchema.safeParse({ ...base, openingTime: '', closingTime: '', prepTimeMinutes: '241' }).success, false)
+})
 
 test('deployment environment variables take precedence over .env values', () => {
   const temporaryDirectory = mkdtempSync(join(tmpdir(), 'doorstep-env-test-'))

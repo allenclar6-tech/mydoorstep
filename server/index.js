@@ -1184,9 +1184,21 @@ app.get('/api/restaurant/profile', requireUser, async (request, response) => {
   return response.json({ restaurant: membership.restaurant })
 })
 
+export const restaurantProfileSchema = z.object({
+  name: z.string().min(2).max(120),
+  description: z.string().max(500).optional(),
+  phone: z.string().max(30).optional(),
+  address: z.string().min(5).max(240),
+  openingTime: z.union([z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), z.literal('')]).transform(value => value || null),
+  closingTime: z.union([z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), z.literal('')]).transform(value => value || null),
+  prepTimeMinutes: z.preprocess(value => value === '' || value === undefined ? null : Number(value), z.number().int().min(1).max(240).nullable()),
+}).superRefine((value, context) => {
+  if (Boolean(value.openingTime) !== Boolean(value.closingTime)) context.addIssue({ code: 'custom', path: ['openingTime'], message: 'Provide both opening and closing times.' })
+})
+
 app.patch('/api/restaurant/profile', requireUser, async (request, response) => {
   if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
-  const result = z.object({ name: z.string().min(2).max(120), description: z.string().max(500).optional(), phone: z.string().max(30).optional(), address: z.string().min(5).max(240) }).safeParse(request.body)
+  const result = restaurantProfileSchema.safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_RESTAURANT_PROFILE' })
   const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
   if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
