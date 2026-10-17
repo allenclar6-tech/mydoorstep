@@ -337,7 +337,8 @@ app.post('/api/uploads/private-document', requireUser, upload.single('document')
   if (!request.file) return response.status(400).json({ error: 'DOCUMENT_REQUIRED' })
   if (!['CUSTOMER', 'RESTAURANT', 'RIDER', 'ADMIN'].includes(request.user.role) || (request.user.role === 'CUSTOMER' && !request.file.mimetype.startsWith('image/'))) return response.status(403).json({ error: 'UPLOAD_FORBIDDEN' })
   try {
-    const stored = await storePrivateDocument({ buffer: request.file.buffer, mimeType: request.file.mimetype, originalName: request.file.originalname, keyPrefix: request.user.role === 'CUSTOMER' ? `private/users/${request.user.id}` : 'private/documents' })
+    const keyPrefix = request.file.mimetype.startsWith('image/') ? `private/users/${request.user.id}` : 'private/documents'
+    const stored = await storePrivateDocument({ buffer: request.file.buffer, mimeType: request.file.mimetype, originalName: request.file.originalname, keyPrefix })
     return response.status(201).json({ storageKey: stored.storageKey, checksum: stored.checksum, mimeType: stored.mimeType, size: stored.size })
   } catch (error) {
     return response.status(error.status || 503).json({ error: error.code || 'UPLOAD_SERVICE_UNAVAILABLE', message: error.message })
