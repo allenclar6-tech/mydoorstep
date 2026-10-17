@@ -14,8 +14,10 @@ import { advanceDelivery, claimDelivery, getDeliveryTrackingSnapshot, recordLoca
 import { deliveryRealtime } from './realtime.js'
 import { requireAdmin, reviewApplication } from './adminService.js'
 import { readPrivateDocument, storePrivateDocument, uploadError } from './uploadService.js'
+import { menuMediaUrl, publicMenuItems, publicRestaurantImage, registerPartnerMedia } from './partnerMedia.js'
 import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
 import { buildAiReply } from './aiBrain.js'
+import { createNavigationRouter } from './navigation.js'
 
 const app = express()
 const port = Number(process.env.PORT || process.env.API_PORT || 4000)
@@ -56,6 +58,7 @@ app.use(cors({ origin: (origin, callback) => {
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }))
 app.use(express.json({ limit: '1mb', verify: (request, _response, buffer) => { request.rawBody = buffer } }))
 app.use('/api', (request, response, next) => { if (request.method !== 'GET' || request.headers.authorization) response.set('Cache-Control', 'no-store'); next() })
+app.use('/api/navigation', createNavigationRouter())
 
 app.get('/api/health', (_request, response) => {
   response.json({ service: 'doorstep-api', status: 'ok', environment: process.env.NODE_ENV || 'development' })
@@ -166,21 +169,14 @@ app.get('/api/locations/google/:placeId', locationSearchLimiter, async (request,
 })
 
 function publicRestaurant(restaurant) {
-  const items = restaurant.categories.flatMap((category) => category.items.map((item) => ({
-    id: item.id,
-    name: item.name,
-    description: item.description,
-    price: Math.round(item.priceMinor / 100),
-    image: item.imageUrl || null,
-    category: category.name,
-  })))
+  const items = publicMenuItems(restaurant)
   return {
     id: restaurant.id,
     name: restaurant.name,
     slug: restaurant.slug,
     description: restaurant.description,
     cuisine: restaurant.cuisineCategory,
-    image: restaurant.coverImageUrl,
+    image: publicRestaurantImage(restaurant),
     type: restaurant.storeType,
     address: restaurant.address,
     city: restaurant.city?.name || null,
@@ -201,7 +197,7 @@ app.get('/api/restaurants', async (request, response) => {
   const result = z.object({ search: z.string().max(100).optional(), type: z.enum(['RESTAURANT', 'GROCERY']).optional(), limit: z.coerce.number().int().min(1).max(50).default(24) }).safeParse(request.query)
   if (!result.success) return response.status(400).json({ error: 'INVALID_RESTAURANT_QUERY' })
   try {
-    const restaurants = await prisma.restaurant.findMany({ where: { status: 'APPROVED', ...(result.data.type ? { storeType: result.data.type } : {}), ...(result.data.search ? { OR: [{ name: { contains: result.data.search, mode: 'insensitive' } }, { description: { contains: result.data.search, mode: 'insensitive' } }] } : {}) }, include: { city: true, categories: { include: { items: { where: { available: true }, take: 6 } } } }, orderBy: { ratingAverage: 'desc' }, take: result.data.limit })
+    const restaurants = await prisma.restaurant.findMany({ where: { status: 'APPROVED', ...(result.data.type ? { storeType: result.data.type } : {}), ...(result.data.search ? { OR: [{ name: { contains: result.data.search, mode: 'insensitive' } }, { description: { contains: result.data.search, mode: 'insensitive' } }] } : {}) }, include: { city: true, users: { where: { role: 'OWNER' }, orderBy: { createdAt: 'asc' }, select: { userId: true, user: { select: { profileImageKey: true } } } }, menuItems: { where: { categoryId: null, available: true } }, categories: { include: { items: { where: { available: true }, take: 6 } } } }, orderBy: { ratingAverage: 'desc' }, take: result.data.limit })
     response.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
     return response.json({ restaurants: restaurants.map(publicRestaurant) })
   } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }
@@ -223,9 +219,107 @@ app.patch('/api/admin/service-areas/:serviceAreaId', requireUser, requireAdmin, 
   } catch { return response.status(503).json({ error: 'SERVICE_AREA_SERVICE_UNAVAILABLE' }) }
 })
 
-app.get('/api/payments/config', (_request, response) => {
-  const provider = process.env.PAYMENT_PROVIDER || process.env.PAYMENTS_PROVIDER || 'paystack'
-  response.json({ provider, configured: Boolean(process.env.PAYSTACK_SECRET_KEY), publicKey: process.env.PAYSTACK_PUBLIC_KEY || null })
+const defaultPaymentSettings = {
+  bankTransfer: {
+    enabled: false,
+    bankName: '',
+    accountName: '',
+    accountNumber: '',
+    currency: 'NGN',
+    instructions: '',
+    expiryMinutes: null,
+    verificationMethod: 'MANUAL',
+    automaticVerification: false,
+  },
+  cashOnDelivery: { enabled: false },
+}
+
+function hasValidBankTransferConfig(bankTransfer) {
+  return Boolean(
+    bankTransfer?.bankName?.trim()
+    && bankTransfer?.accountName?.trim()
+    && /^\d{6,24}$/.test((bankTransfer?.accountNumber || '').replace(/\s/g, ''))
+    && bankTransfer?.currency === 'NGN'
+    && bankTransfer?.verificationMethod === 'MANUAL',
+  )
+}
+
+async function getPaymentSettings() {
+  const record = await prisma.platformSetting.findUnique({ where: { key: 'payment_settings' } })
+  return {
+    ...defaultPaymentSettings,
+    ...(record?.value && typeof record.value === 'object' ? record.value : {}),
+    bankTransfer: { ...defaultPaymentSettings.bankTransfer, ...(record?.value?.bankTransfer || {}) },
+    cashOnDelivery: { ...defaultPaymentSettings.cashOnDelivery, ...(record?.value?.cashOnDelivery || {}) },
+  }
+}
+
+function publicPaymentConfiguration(settings) {
+  const paystackConfigured = Boolean(process.env.PAYSTACK_SECRET_KEY)
+  return {
+    provider: process.env.PAYMENT_PROVIDER || process.env.PAYMENTS_PROVIDER || 'paystack',
+    configured: paystackConfigured,
+    methods: {
+      paystack: { enabled: paystackConfigured },
+      bankTransfer: { enabled: Boolean(settings.bankTransfer.enabled && hasValidBankTransferConfig(settings.bankTransfer)) },
+      cashOnDelivery: { enabled: false },
+    },
+  }
+}
+
+const paymentSettingsSchema = z.object({
+  bankTransfer: z.object({
+    enabled: z.boolean(),
+    bankName: z.string().trim().max(120),
+    accountName: z.string().trim().max(160),
+    accountNumber: z.string().trim().max(24),
+    currency: z.literal('NGN'),
+    instructions: z.string().trim().max(1000),
+    expiryMinutes: z.number().int().min(5).max(10080).nullable(),
+    verificationMethod: z.literal('MANUAL'),
+    automaticVerification: z.literal(false),
+  }),
+  cashOnDelivery: z.object({ enabled: z.boolean() }),
+})
+
+app.get('/api/payments/config', async (_request, response) => {
+  try {
+    return response.json(publicPaymentConfiguration(await getPaymentSettings()))
+  } catch {
+    return response.status(503).json({ error: 'PAYMENT_CONFIGURATION_UNAVAILABLE' })
+  }
+})
+
+app.get('/api/admin/payment-settings', requireUser, requireAdmin, async (_request, response) => {
+  try {
+    const settings = await getPaymentSettings()
+    return response.json({
+      settings,
+      paystack: {
+        configured: Boolean(process.env.PAYSTACK_SECRET_KEY),
+        mode: process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_live_') ? 'live' : process.env.PAYSTACK_SECRET_KEY ? 'test' : 'not_configured',
+      },
+    })
+  } catch {
+    return response.status(503).json({ error: 'PAYMENT_CONFIGURATION_UNAVAILABLE' })
+  }
+})
+
+app.patch('/api/admin/payment-settings', requireUser, requireAdmin, async (request, response) => {
+  const result = paymentSettingsSchema.safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_PAYMENT_SETTINGS', details: result.error.flatten() })
+  const { bankTransfer } = result.data
+  if (bankTransfer.enabled && !hasValidBankTransferConfig(bankTransfer)) return response.status(409).json({ error: 'BANK_TRANSFER_CONFIGURATION_REQUIRED', message: 'Bank name, account name, account number, NGN currency, and manual verification are required before enabling bank transfer.' })
+  try {
+    const settings = await prisma.$transaction(async (transaction) => {
+      const saved = await transaction.platformSetting.upsert({ where: { key: 'payment_settings' }, update: { value: result.data }, create: { key: 'payment_settings', value: result.data } })
+      await transaction.auditLog.create({ data: { actorId: request.user.id, action: 'UPDATE_PAYMENT_SETTINGS', entityType: 'PlatformSetting', entityId: saved.id, metadata: { bankTransferEnabled: bankTransfer.enabled, automaticVerification: false, cashOnDeliveryEnabled: result.data.cashOnDelivery.enabled } } })
+      return saved.value
+    })
+    return response.json({ settings })
+  } catch {
+    return response.status(503).json({ error: 'PAYMENT_CONFIGURATION_UNAVAILABLE' })
+  }
 })
 
 app.get('/api/restaurants/:restaurantId/reviews', async (request, response) => {
@@ -256,7 +350,7 @@ const customerRegistrationSchema = credentialsSchema.extend({
   termsAccepted: z.literal(true),
   password: z.string().min(10).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/),
 })
-export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional() }).superRefine((value, context) => {
+export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), paymentMethod: z.enum(['PAYSTACK', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']).default('PAYSTACK'), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional() }).superRefine((value, context) => {
   if ((value.latitude == null) !== (value.longitude == null)) context.addIssue({ code: 'custom', path: [value.latitude == null ? 'latitude' : 'longitude'], message: 'Both destination coordinates are required.' })
 })
 export const addressSchema = z.object({ label: z.string().min(1).max(40), addressLine: z.string().min(5).max(240), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), cityId: z.string().min(1).optional() }).superRefine((value, context) => {
@@ -273,6 +367,13 @@ const partnerApplicationFieldsSchema = z.object({ restaurantName: z.string().min
 const requireCompleteOpeningHours = (schema) => schema.superRefine((data, context) => {
   if (Boolean(data.openingTime) !== Boolean(data.closingTime)) context.addIssue({ code: 'custom', path: ['openingTime'], message: 'Provide both opening and closing times.' })
 })
+function logApplicationValidationFailure(applicationType, error) {
+  const details = error.flatten()
+  console.warn(`[${applicationType}-application] validation_rejected`, JSON.stringify({
+    fields: Object.keys(details.fieldErrors),
+    formErrorCount: details.formErrors.length,
+  }))
+}
 const groceryApplicationFieldsSchema = partnerApplicationFieldsSchema.extend({ groceryName: z.string().min(2).max(120), businessType: z.preprocess((value) => value === '' ? undefined : value, z.enum(['supermarket', 'mini_market', 'produce_market', 'pharmacy', 'specialty_store']).optional().transform((value) => value || null)), cuisineCategory: optionalText(100).optional(), prepTimeMinutes: optionalNumber({ min: 1, max: 240 }).optional(), minimumOrder: optionalNumber({ min: 0, max: 500000 }).optional() })
 const partnerApplicationMultipartSchema = requireCompleteOpeningHours(partnerApplicationFieldsSchema.omit({ documents: true }))
 const groceryApplicationMultipartSchema = requireCompleteOpeningHours(groceryApplicationFieldsSchema.omit({ documents: true }))
@@ -343,7 +444,10 @@ app.post('/api/auth/reset-password', authFlowLimiter, async (request, response) 
 
 app.post('/api/partner-applications', async (request, response) => {
   const result = partnerApplicationJsonSchema.safeParse(request.body)
-  if (!result.success) return response.status(400).json({ error: 'INVALID_PARTNER_APPLICATION', details: result.error.flatten() })
+  if (!result.success) {
+    logApplicationValidationFailure('partner', result.error)
+    return response.status(400).json({ error: 'INVALID_PARTNER_APPLICATION', details: result.error.flatten() })
+  }
   if (!passwordsMatch(result.data, response)) return
   try {
     const data = result.data
@@ -367,7 +471,10 @@ app.post('/api/partner-applications', async (request, response) => {
 app.post('/api/partner-applications/multipart', onboardingLimiter, upload.array('documents', 5), async (request, response) => {
   try {
     const fields = partnerApplicationMultipartSchema.safeParse(request.body)
-    if (!fields.success) return response.status(400).json({ error: 'INVALID_PARTNER_APPLICATION', details: fields.error.flatten() })
+    if (!fields.success) {
+      logApplicationValidationFailure('partner', fields.error)
+      return response.status(400).json({ error: 'INVALID_PARTNER_APPLICATION', details: fields.error.flatten() })
+    }
     if (!passwordsMatch(fields.data, response)) return
     const data = fields.data
     await requireVerifiedApplicationEmail(data.verificationId, data.businessEmail)
@@ -391,7 +498,10 @@ app.post('/api/partner-applications/multipart', onboardingLimiter, upload.array(
 app.post('/api/grocery-applications/multipart', onboardingLimiter, upload.array('documents', 5), async (request, response) => {
   try {
     const fields = groceryApplicationMultipartSchema.safeParse(request.body)
-    if (!fields.success) return response.status(400).json({ error: 'INVALID_GROCERY_APPLICATION', details: fields.error.flatten() })
+    if (!fields.success) {
+      logApplicationValidationFailure('grocery', fields.error)
+      return response.status(400).json({ error: 'INVALID_GROCERY_APPLICATION', details: fields.error.flatten() })
+    }
     if (!passwordsMatch(fields.data, response)) return
     const data = fields.data
     await requireVerifiedApplicationEmail(data.verificationId, data.businessEmail)
@@ -436,7 +546,10 @@ app.post('/api/rider-applications', async (request, response) => {
 app.post('/api/rider-applications/multipart', onboardingLimiter, upload.array('documents', 5), async (request, response) => {
   try {
     const fields = riderApplicationSchema.omit({ documents: true }).safeParse(request.body)
-    if (!fields.success) return response.status(400).json({ error: 'INVALID_RIDER_APPLICATION', details: fields.error.flatten() })
+    if (!fields.success) {
+      logApplicationValidationFailure('rider', fields.error)
+      return response.status(400).json({ error: 'INVALID_RIDER_APPLICATION', details: fields.error.flatten() })
+    }
     if (!passwordsMatch(fields.data, response)) return
     const data = fields.data
     await requireVerifiedApplicationEmail(data.verificationId, data.email)
@@ -850,10 +963,16 @@ app.post('/api/orders', requireUser, async (request, response) => {
       if (existing) return existing.customerId === request.user.id ? response.status(200).json({ order: existing, duplicate: true }) : response.status(409).json({ error: 'IDEMPOTENCY_KEY_CONFLICT' })
     }
     const quote = await quoteOrder({ ...result.data, customerId: request.user.id })
+    const paymentSettings = await getPaymentSettings()
+    if (result.data.paymentMethod === 'BANK_TRANSFER' && (!paymentSettings.bankTransfer.enabled || !hasValidBankTransferConfig(paymentSettings.bankTransfer))) return response.status(409).json({ error: 'BANK_TRANSFER_UNAVAILABLE' })
+    if (result.data.paymentMethod === 'CASH_ON_DELIVERY') return response.status(409).json({ error: 'CASH_ON_DELIVERY_UNSUPPORTED' })
+    if (result.data.paymentMethod === 'PAYSTACK' && !process.env.PAYSTACK_SECRET_KEY) return response.status(503).json({ error: 'PAYMENT_PROVIDER_NOT_CONFIGURED', message: 'Paystack is not configured. Choose another available payment method or contact support.' })
     const order = await prisma.$transaction(async (transaction) => {
       const orderNumber = `DSP-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 6).toUpperCase()}`
       const address = quote.address || await transaction.address.create({ data: { userId: request.user.id, cityId: quote.serviceAreaCityId, label: 'Checkout address', addressLine: result.data.addressLine, landmark: result.data.landmark, latitude: result.data.latitude, longitude: result.data.longitude } })
-      const created = await transaction.order.create({ data: { orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: process.env.PAYMENT_PROVIDER || process.env.PAYMENTS_PROVIDER || 'paystack', reference: `pending_${randomUUID()}`, amountMinor: quote.totalMinor } } }, include: { items: true, payment: true } })
+      const transferExpiry = result.data.paymentMethod === 'BANK_TRANSFER' && paymentSettings.bankTransfer.expiryMinutes ? new Date(Date.now() + paymentSettings.bankTransfer.expiryMinutes * 60_000) : null
+      const transferInstructions = result.data.paymentMethod === 'BANK_TRANSFER' ? { bankName: paymentSettings.bankTransfer.bankName, accountName: paymentSettings.bankTransfer.accountName, accountNumber: paymentSettings.bankTransfer.accountNumber, message: paymentSettings.bankTransfer.instructions } : null
+      const created = await transaction.order.create({ data: { orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
       return created
     })
     return response.status(201).json({ order })
@@ -888,12 +1007,69 @@ app.post('/api/payments/initialize', requireUser, async (request, response) => {
   try {
     const order = await prisma.order.findFirst({ where: { id: result.data.orderId, customerId: request.user.id }, include: { payment: true } })
     if (!order || !order.payment) return response.status(404).json({ error: 'ORDER_PAYMENT_NOT_FOUND' })
+    if (order.payment.method === 'BANK_TRANSFER') {
+      if (order.payment.status !== 'PENDING_VERIFICATION') return response.status(409).json({ error: 'PAYMENT_NOT_PENDING_VERIFICATION' })
+      if (order.payment.expiresAt && order.payment.expiresAt <= new Date()) {
+        await prisma.payment.update({ where: { id: order.payment.id }, data: { status: 'EXPIRED' } })
+        return response.status(409).json({ error: 'PAYMENT_EXPIRED' })
+      }
+      return response.json({ method: 'BANK_TRANSFER', orderId: order.id })
+    }
+    if (order.payment.method === 'CASH_ON_DELIVERY') return response.status(409).json({ error: 'CASH_ON_DELIVERY_NOT_SUPPORTED' })
     if (order.payment.status !== 'PENDING') return response.status(409).json({ error: 'PAYMENT_NOT_PENDING' })
     const payment = await initializePayment({ email: request.user.email, amountMinor: order.totalMinor, reference: order.payment.reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { orderId: order.id, orderNumber: order.orderNumber } })
     return response.json(payment)
   } catch (error) {
     const paymentError = error instanceof PaymentError ? error : new PaymentError('PAYMENT_SERVICE_UNAVAILABLE', 'Payment service is unavailable.', 503)
     return response.status(paymentError.status).json({ error: paymentError.code, message: paymentError.message })
+  }
+})
+
+app.get('/api/payments/orders/:orderId/bank-transfer', requireUser, async (request, response) => {
+  try {
+    const order = await prisma.order.findFirst({ where: { id: request.params.orderId, customerId: request.user.id }, include: { payment: true } })
+    if (!order?.payment || order.payment.method !== 'BANK_TRANSFER') return response.status(404).json({ error: 'BANK_TRANSFER_NOT_FOUND' })
+    if (order.payment.status === 'PENDING_VERIFICATION' && order.payment.expiresAt && order.payment.expiresAt <= new Date()) await prisma.payment.update({ where: { id: order.payment.id }, data: { status: 'EXPIRED' } })
+    const payment = await prisma.payment.findUnique({ where: { id: order.payment.id } })
+    return response.json({ orderNumber: order.orderNumber, amountMinor: order.totalMinor, currency: 'NGN', reference: payment.reference, status: payment.status, expiresAt: payment.expiresAt, instructions: payment.instructionsSnapshot })
+  } catch {
+    return response.status(503).json({ error: 'BANK_TRANSFER_SERVICE_UNAVAILABLE' })
+  }
+})
+
+app.get('/api/admin/bank-transfers', requireUser, requireAdmin, async (request, response) => {
+  const result = z.object({ status: z.enum(['PENDING_VERIFICATION', 'SUCCESSFUL', 'FAILED', 'EXPIRED', 'AMOUNT_MISMATCH']).optional() }).safeParse(request.query)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_BANK_TRANSFER_FILTER' })
+  try {
+    const payments = await prisma.payment.findMany({ where: { method: 'BANK_TRANSFER', ...(result.data.status ? { status: result.data.status } : {}) }, include: { order: { include: { customer: { select: { firstName: true, lastName: true, email: true } } } }, transactions: { orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' }, take: 100 })
+    return response.json({ payments })
+  } catch {
+    return response.status(503).json({ error: 'BANK_TRANSFER_SERVICE_UNAVAILABLE' })
+  }
+})
+
+app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdmin, async (request, response) => {
+  const result = z.object({ bankTransactionId: z.string().trim().min(3).max(160), note: z.string().trim().min(3).max(1000) }).safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_BANK_TRANSFER_CONFIRMATION', details: result.error.flatten() })
+  try {
+    const payment = await prisma.payment.findFirst({
+      where: { id: request.params.paymentId, method: 'BANK_TRANSFER' },
+      include: { order: true },
+    })
+    if (!payment) return response.status(404).json({ error: 'BANK_TRANSFER_NOT_FOUND' })
+    if (payment.status !== 'PENDING_VERIFICATION') return response.status(409).json({ error: 'BANK_TRANSFER_NOT_PENDING_VERIFICATION' })
+    await prisma.$transaction(async (transaction) => {
+      await transaction.payment.update({ where: { id: payment.id }, data: { status: 'SUCCESSFUL', verifiedAt: new Date(), providerTransactionId: result.data.bankTransactionId } })
+      await transaction.order.update({ where: { id: payment.orderId }, data: { status: 'PAID', paidAt: new Date() } })
+      await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
+      await transaction.transaction.create({ data: { paymentId: payment.id, type: 'BANK_TRANSFER_MANUALLY_CONFIRMED', amountMinor: payment.amountMinor, providerReference: result.data.bankTransactionId, metadata: { note: result.data.note, transferReference: payment.reference } } })
+      await transaction.auditLog.create({ data: { actorId: request.user.id, action: 'CONFIRM_BANK_TRANSFER', entityType: 'Payment', entityId: payment.id, metadata: { bankTransactionId: result.data.bankTransactionId, orderId: payment.orderId } } })
+      await transaction.notification.create({ data: { userId: payment.order.customerId, type: 'PAYMENT', title: 'Bank transfer confirmed', body: `Your payment for ${payment.order.orderNumber} was confirmed.` } })
+    })
+    return response.json({ confirmed: true })
+  } catch (error) {
+    if (error.code === 'P2002') return response.status(409).json({ error: 'BANK_TRANSACTION_ALREADY_RECORDED' })
+    return response.status(503).json({ error: 'BANK_TRANSFER_SERVICE_UNAVAILABLE' })
   }
 })
 
@@ -1016,11 +1192,13 @@ app.patch('/api/restaurant/profile', requireUser, async (request, response) => {
   try { return response.json({ restaurant: await prisma.restaurant.update({ where: { id: membership.restaurantId }, data: result.data }) }) } catch { return response.status(503).json({ error: 'RESTAURANT_PROFILE_SERVICE_UNAVAILABLE' }) }
 })
 
+registerPartnerMedia(app, { prisma, requireUser })
+
 app.get('/api/restaurant/menu', requireUser, async (request, response) => {
   if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
   const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
   if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
-  try { return response.json({ items: await prisma.menuItem.findMany({ where: { restaurantId: membership.restaurantId }, orderBy: { name: 'asc' } }) }) } catch { return response.status(503).json({ error: 'RESTAURANT_MENU_SERVICE_UNAVAILABLE' }) }
+  try { const items = await prisma.menuItem.findMany({ where: { restaurantId: membership.restaurantId }, orderBy: { name: 'asc' } }); return response.json({ items: items.map(item => ({ ...item, imageUrl: menuMediaUrl(item) })) }) } catch { return response.status(503).json({ error: 'RESTAURANT_MENU_SERVICE_UNAVAILABLE' }) }
 })
 
 app.post('/api/restaurant/menu', requireUser, async (request, response) => {

@@ -68,9 +68,12 @@ enum OrderStatus {
 
 enum PaymentStatus {
   PENDING
+  PENDING_VERIFICATION
   SUCCESSFUL
   FAILED
   ABANDONED
+  EXPIRED
+  AMOUNT_MISMATCH
   REFUNDED
 }
 
@@ -544,9 +547,14 @@ model Payment {
   orderId      String        @unique
   order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   provider     String
+  method       String        @default("PAYSTACK")
   reference    String        @unique
   amountMinor  Int
   status       PaymentStatus @default(PENDING)
+  expiresAt    DateTime?
+  verificationMethod String?
+  providerTransactionId String?
+  instructionsSnapshot Json?
   verifiedAt   DateTime?
   createdAt    DateTime      @default(now())
   transactions Transaction[]

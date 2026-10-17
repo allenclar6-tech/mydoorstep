@@ -8,6 +8,7 @@ import request from 'supertest'
 import { validateLocationUpdate } from '../server/deliveryService.js'
 import { isOrderPayable, matchesPaystackPayment, verifyWebhookSignature } from '../server/paymentService.js'
 import { verificationFailure } from '../server/verificationService.js'
+import { applicationSubmissionError, validateOpeningHours } from '../src/applicationValidation.js'
 
 process.env.NODE_ENV = 'test'
 const { app, addressSchema, orderSchema, storeApplicationDocuments } = await import('../server/index.js')
@@ -158,6 +159,52 @@ test('partner application validates required core fields', async () => {
   assert.ok(response.body.details.fieldErrors.verificationId)
 })
 
+test('partner application rejects one-sided opening hours with an actionable field error', async () => {
+  const response = await request(app).post('/api/partner-applications/multipart')
+    .field('restaurantName', 'Test Kitchen')
+    .field('businessPhone', '+2348012345678')
+    .field('businessEmail', 'owner@example.com')
+    .field('address', '12 Test Street, Sapele')
+    .field('cityName', 'Sapele')
+    .field('ownerName', 'Test Owner')
+    .field('deliveryPreference', 'DOORSTEP_RIDERS')
+    .field('openingTime', '09:00')
+    .field('verificationId', 'unverified-challenge')
+    .field('password', 'secure-password')
+    .field('confirmPassword', 'secure-password')
+    .field('termsAccepted', 'on')
+  assert.equal(response.status, 400)
+  assert.equal(response.body.error, 'INVALID_PARTNER_APPLICATION')
+  assert.deepEqual(response.body.details.fieldErrors.openingTime, ['Provide both opening and closing times.'])
+})
+
+test('onboarding blocks one-sided opening hours and clears the constraint when completed', () => {
+  const fields = {
+    openingTime: { value: '09:00', setCustomValidity(message) { this.validationMessage = message }, reportValidity() { this.reported = true } },
+    closingTime: { value: '', setCustomValidity(message) { this.validationMessage = message }, reportValidity() { this.reported = true } },
+  }
+  const form = { elements: { namedItem: (name) => fields[name] } }
+
+  assert.equal(validateOpeningHours(form), false)
+  assert.equal(fields.closingTime.validationMessage, 'Enter both opening and closing times.')
+  assert.equal(fields.closingTime.reported, true)
+
+  fields.closingTime.value = '17:00'
+  assert.equal(validateOpeningHours(form), true)
+  assert.equal(fields.openingTime.validationMessage, '')
+  assert.equal(fields.closingTime.validationMessage, '')
+})
+
+test('application errors show safe server validation details instead of machine codes', () => {
+  const form = { elements: { namedItem: (name) => name === 'openingTime' ? { labels: [{ textContent: 'Opening time' }] } : null } }
+  const message = applicationSubmissionError({
+    error: 'INVALID_PARTNER_APPLICATION',
+    details: { fieldErrors: { openingTime: ['Provide both opening and closing times.'] } },
+  }, form, 'Could not submit the application.')
+
+  assert.equal(message, 'Opening and closing times: Provide both opening and closing times.')
+})
+
 test('partner application cannot attach a private document from a client-supplied storage key', async () => {
   const response = await request(app).post('/api/partner-applications').send({
     restaurantName: 'Test Kitchen',
@@ -275,6 +322,9 @@ test('payment configuration uses the documented provider variable', async () => 
   const response = await request(app).get('/api/payments/config')
   assert.equal(response.status, 200)
   assert.equal(response.body.provider, process.env.PAYMENT_PROVIDER || process.env.PAYMENTS_PROVIDER || 'paystack')
+  assert.equal(response.body.publicKey, undefined)
+  assert.equal(typeof response.body.methods?.paystack?.enabled, 'boolean')
+  assert.equal(typeof response.body.methods?.bankTransfer?.enabled, 'boolean')
 })
 
 test('admin summary requires authentication', async () => {

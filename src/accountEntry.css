@@ -1,0 +1,56 @@
+.account-menu .profile-button { gap: 8px; font-weight: 850; }
+.profile-button[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+.account-menu .account-menu-popover {
+  background: linear-gradient(145deg, #fffef9, #edf7f1);
+  border: 1px solid #c2d9cd;
+  border-radius: 22px;
+  box-shadow: 0 24px 55px #102f2730, 0 6px 0 #b3cbbf, inset 0 2px 0 #fff;
+  min-width: 0;
+  width: min(340px, calc(100vw - 32px));
+  padding: 12px;
+  animation: account-menu-enter .18s ease-out;
+  transform-origin: top right;
+}
+.account-menu-heading { padding: 10px 10px 16px; }
+.account-menu-heading span { color: #396450; display: block; font-size: 10px; font-weight: 850; letter-spacing: .13em; }
+.account-menu-heading strong { color: #102f27; display: block; font-size: 16px; font-weight: 900; margin-top: 5px; }
+.account-menu-popover > button {
+  align-items: center;
+  background: linear-gradient(135deg, #fff, #f5faf6);
+  border: 1px solid #d5e5da;
+  border-radius: 14px;
+  box-shadow: 0 3px 0 #d4e2d9, inset 0 1px 0 #fff;
+  color: #143b2e;
+  display: flex;
+  gap: 11px;
+  margin-bottom: 8px;
+  min-height: 68px;
+  padding: 11px;
+  text-align: left;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+  width: 100%;
+}
+.account-menu-popover > button > span:nth-child(2) { flex: 1; min-width: 0; }
+.account-menu-popover strong { font-size: 14px; font-weight: 900; }
+.account-menu-popover small { color: #436254; display: block; font-size: 11px; font-weight: 700; line-height: 1.5; margin-top: 3px; }
+.account-menu-icon { align-items: center; background: linear-gradient(135deg, #238d66, #08583f); border: 1px solid #247e60; border-radius: 12px; box-shadow: 0 4px 0 #063d2c, inset 0 1px 0 #8cddbc; color: #fff; display: flex; flex-shrink: 0; height: 40px; justify-content: center; width: 40px; }
+.account-menu-popover > button:hover { background: #e6f5ec; box-shadow: 0 5px 0 #bcd6c8, 0 8px 16px #123d2d12; transform: translateY(-2px); }
+.account-menu-popover > button:active { box-shadow: 0 1px 0 #bcd6c8; transform: translateY(2px); }
+.account-menu-popover > button:focus-visible, .partner-registration-login a:focus-visible { outline: 3px solid #08775a; outline-offset: 3px; }
+.partner-registration-login a { color: #07664f; display: inline-block; font-weight: 850; padding: 10px 4px; text-underline-offset: 4px; }
+.auth-entry-page .auth-layout { gap: 28px; margin-top: 28px; }
+.auth-entry-page .partner-cta, .auth-entry-page .auth-form, .admin-login-card { background: linear-gradient(145deg, #fffefa, #eef7f0); border: 1px solid #c7dbce; border-radius: 26px; box-shadow: 0 22px 48px #123d2d18, 0 7px 0 #c5d9cc, inset 0 2px 0 #fff; }
+.auth-emblem { align-items: center; background: linear-gradient(135deg, #39b984, #086347); border: 1px solid #409e79; border-radius: 26px; box-shadow: 0 8px 0 #064b36, 0 18px 24px #0b57322b, inset 0 2px 0 #b0f3ce; color: #fff; display: flex; height: 104px; justify-content: center; margin-bottom: 26px; transform: rotate(-7deg); width: 104px; }
+.auth-entry-page h1, .auth-entry-page h2, .admin-login-card h1 { color: #123b2d; font-weight: 900; }
+.auth-entry-page p, .auth-entry-page label, .auth-entry-page input, .admin-login-card p, .admin-login-card label, .admin-login-card input, .onboarding-card label { font-weight: 750; }
+.auth-entry-page .checkout-button, .admin-login-card .admin-primary { box-shadow: 0 5px 0 #084b37, inset 0 1px 0 #ffffff50; font-weight: 900; min-height: 48px; transition: transform .15s ease; }
+.auth-entry-page .checkout-button:active, .admin-login-card .admin-primary:active { transform: translateY(3px); }
+@keyframes account-menu-enter { from { opacity: 0; transform: translateY(-7px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 600px) {
+  .account-menu .account-menu-popover { position: fixed; right: 16px; top: 72px; max-height: calc(100dvh - 96px); overflow-y: auto; }
+  .auth-entry-page .auth-layout { gap: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-menu .account-menu-popover { animation: none; }
+  .account-menu-popover > button, .auth-entry-page .checkout-button, .admin-login-card .admin-primary { transition: none; }
+}

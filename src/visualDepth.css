@@ -159,6 +159,11 @@ h1 { font-weight: 800; letter-spacing: -4px; }
 .route-hero p { color: var(--ink-soft); font-size: 15px; font-weight: 600; max-width: 46rem; }
 
 .primary-button, .checkout-button, .add-button, .portal-primary, .admin-primary { background: #007c63; border-radius: 12px; box-shadow: 0 7px 14px rgba(0, 124, 99, .2); font-weight: 800; }
+.add-button { color: #fff; min-height: 44px; min-width: 64px; justify-content: center; }
+.add-button:focus-visible { outline: 3px solid #173f35; outline-offset: 3px; }
+.storefront-cover[src*="/api/media/restaurants/"],
+.route-restaurant img[src*="/api/media/restaurants/"] { object-fit: contain; background: #f1f6f3; padding: 12px; filter: none; }
+.storefront-cover[src*="/api/media/restaurants/"] { display: block; height: clamp(190px, 28vw, 300px); aspect-ratio: auto; }
 .primary-button:hover, .checkout-button:hover, .add-button:hover, .portal-primary:hover, .admin-primary:hover { background: #006b56; box-shadow: 0 10px 19px rgba(0, 124, 99, .26); transform: translateY(-2px); }
 .quiet-button, .text-link { font-weight: 800; }
 
@@ -1870,3 +1875,5 @@ h1 { font-weight: 800; letter-spacing: -4px; }
   .delivery-sheet-copy h2 { font-size: .83rem; }
   .delivery-route-info { display: none; }
 }
+.delivery-navigation-link { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 42px; width: 42px; min-height: 42px; color: #007c63; background: #fff; border: 1px solid #d5e3da; border-radius: 13px; text-decoration: none; }
+.delivery-navigation-link:focus-visible { outline: 3px solid #4169e1; outline-offset: 2px; }

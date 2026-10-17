@@ -6,6 +6,12 @@ DOORSTEP currently operates only in Sapele City, Delta State, Nigeria. Country, 
 
 ## Active map services
 
+- `/navigate` now defaults to the existing Mapbox service for search, routing,
+  multi-stop planning and foreground GPS guidance. The optional Google adapter is
+  not enabled because Google requires billing setup. No paid Google service was
+  activated. Existing Mapbox quotas and pricing still apply. See
+  [NAVIGATION.md](./NAVIGATION.md) for setup, privacy and deployment.
+
 - The storefront map and delivery tracking use Mapbox GL JS for map tiles, geocoding, and driving-route previews.
 - Google Places autocomplete and place details are provided by the API using the server-side `GOOGLE_MAPS_API_KEY`. If Google Places is unavailable, Mapbox search remains available.
 - Configure the public Mapbox token as `VITE_MAP_PUBLIC_TOKEN` at frontend build time. The older `VITE_MAPBOX_ACCESS_TOKEN` name remains supported for existing local builds. This token is embedded in the public frontend; restrict it to the production website origins and only the required Mapbox APIs. Never use a secret-scope token in a `VITE_*` variable.

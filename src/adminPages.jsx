@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRight, BarChart3, Bell, Check, ClipboardList, Dolla
 import { formatNaira } from './data'
 import { PasswordField } from './PasswordField'
 import { ApplicationManagement } from './ApplicationManagement'
+import { SessionSignOutButton, SignOutNotice } from './authControls'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
@@ -24,7 +25,7 @@ export function AdminLogin({ onLogin }) {
 			onLogin()
 		} catch (loginError) { setError(loginError.name === 'TimeoutError' ? 'The sign-in service did not respond. Please try again.' : loginError.message || 'Unable to sign in. Please try again.') } finally { setBusy(false) }
 	}
-	return <main className="admin-login-page"><div className="admin-login-card"><div className="admin-brand"><span className="brand-mark">✦</span><span>doorstep<small>control center</small></span></div><span className="section-kicker">OWNER ACCESS</span><h1>Admin control center</h1><p>Sign in with the business owner account. Normal customer, partner, and rider accounts cannot enter this workspace.</p><form onSubmit={submit}><label>Email address<input required type="email" name="email" autoComplete="username" /></label><PasswordField required label="Password" name="password" autoComplete="current-password" />{error && <div className="admin-login-error">{error}</div>}<button className="admin-primary" disabled={busy} type="submit">{busy ? 'Signing in...' : 'Sign in to admin'} <ArrowRight size={16} /></button><button className="forgot-password-link" type="button" onClick={() => navigate('/admin/forgot-password')}>Forgot password?</button></form></div></main>
+	return <main className="admin-login-page"><div className="admin-login-card"><div className="admin-brand"><span className="brand-mark">✦</span><span>doorstep<small>control center</small></span></div><span className="section-kicker">OWNER ACCESS</span><h1>Admin control center</h1><p>Sign in with the business owner account. Normal customer, partner, and rider accounts cannot enter this workspace.</p><SignOutNotice /><form onSubmit={submit}><label>Email address<input required type="email" name="email" autoComplete="username" /></label><PasswordField required label="Password" name="password" autoComplete="current-password" />{error && <div className="admin-login-error" role="alert">{error}</div>}<button className="admin-primary" disabled={busy} type="submit">{busy ? 'Signing in...' : 'Sign in to admin'} <ArrowRight size={16} /></button><button className="forgot-password-link" type="button" onClick={() => navigate('/admin/forgot-password')}>Forgot password?</button></form></div></main>
 }
 
 function AdminShell({ path, children }) {
@@ -34,7 +35,7 @@ function AdminShell({ path, children }) {
 			<div className="admin-brand"><span className="brand-mark">✦</span><span>doorstep<small>control center</small></span></div>
 			<div className="admin-owner"><Shield size={18} /><div><strong>Owner access</strong><small>Admin workspace</small></div></div>
 			<nav aria-label="Admin navigation">{adminNav.map(([label, href, Icon]) => <button aria-current={path === href ? 'page' : undefined} className={path === href ? 'admin-nav active' : 'admin-nav'} key={href} onClick={() => { navigate(href); setOpen(false) }}><Icon size={16} />{label}</button>)}</nav>
-			<button className="admin-exit" onClick={() => { localStorage.removeItem('doorstep-admin-token'); navigate('/') }}><ArrowRight size={16} /> Exit admin</button>
+			<SessionSignOutButton className="admin-exit" admin>Sign out</SessionSignOutButton>
 		</aside>
 		<main className="admin-main">
 			<header className="admin-header">
@@ -64,6 +65,28 @@ function Customers() { const [customers, setCustomers] = useState([]); const [me
 function Reviews() { const [reviews, setReviews] = useState([]); const [message, setMessage] = useState('');  const token = localStorage.getItem('doorstep-admin-token'); const load = () => fetch(`${apiBase}/api/admin/reviews?pending=true`, { headers: { Authorization: `Bearer ${token}` } }).then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Could not load reviews.'); setReviews(body.reviews || []) }).catch((error) => setMessage(error.message)); useEffect(() => { load() }, []); const moderate = async (id, approved) => { const response = await fetch(`${apiBase}/api/admin/reviews/${id}/moderation`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ approved }) }); if (response.ok) load(); else { const body = await response.json(); setMessage(body.error || 'Could not moderate review.') } }; return <><AdminIntro eyebrow="REVIEW MODERATION" title="Keep public feedback useful." />{message && <div className="admin-login-error">{message}</div>}<section className="admin-table">{reviews.length === 0 && !message ? <div className="empty-state">No pending reviews.</div> : reviews.map((review) => <div className="admin-table-row" key={review.id}><div><strong>{review.restaurant.name}</strong><small>{review.user.firstName} {review.user.lastName} · {review.rating}/5 · {new Date(review.createdAt).toLocaleDateString('en-NG')}</small><p>{review.body || 'No written comment.'}</p></div><button className="admin-review" onClick={() => moderate(review.id, true)}><Check size={14} /> Approve</button><button className="row-more" onClick={() => moderate(review.id, false)}>Reject</button></div>)}</section></> }
 
 function SettingsPage() { const [settings, setSettings] = useState([]); const [message, setMessage] = useState('');  const token = localStorage.getItem('doorstep-admin-token'); const labels = { restaurant_commission_percentage: 'Restaurant commission (%)', service_fee_percentage: 'Customer service fee (%)', maximum_delivery_radius_km: 'Maximum delivery radius (km)', rider_base_earning_minor: 'Rider base earning (minor units)' }; const load = () => fetch(`${apiBase}/api/admin/settings`, { headers: { Authorization: `Bearer ${token}` } }).then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Could not load settings.'); setSettings(body.settings || []) }).catch((error) => setMessage(error.message)); useEffect(() => { load() }, []); const save = async (key, value) => { const response = await fetch(`${apiBase}/api/admin/settings`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ key, value: Number(value) }) }); if (response.ok) { setMessage('Setting saved and audited.'); load() } else { const body = await response.json(); setMessage(body.error || 'Could not save setting.') } }; return <><AdminIntro eyebrow="PLATFORM SETTINGS" title="Rules the marketplace follows." />{message && <div className="profile-message">{message}</div>}<section className="admin-table">{settings.length === 0 ? <div className="empty-state">Loading settings...</div> : settings.map((setting) => <form className="admin-table-row" key={setting.key} onSubmit={(event) => { event.preventDefault(); save(setting.key, new FormData(event.currentTarget).get('value')) }}><div><strong>{labels[setting.key] || setting.key}</strong><small>Server-owned setting · audited changes</small></div><input name="value" type="number" min="0" step="0.01" defaultValue={typeof setting.value === 'number' ? setting.value : ''} /><button className="admin-review" type="submit"><Check size={14} /> Save</button></form>)}</section></> }
+function PaymentSettings() {
+  const token = localStorage.getItem('doorstep-admin-token')
+  const [settings, setSettings] = useState(null)
+  const [paystack, setPaystack] = useState(null)
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { fetch(`${apiBase}/api/admin/payment-settings`, { headers: { Authorization: `Bearer ${token}` } }).then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Could not load payment settings.'); setSettings(body.settings); setPaystack(body.paystack) }).catch((error) => setMessage(error.message)) }, [])
+  const updateBank = (key, value) => setSettings((current) => ({ ...current, bankTransfer: { ...current.bankTransfer, [key]: value } }))
+  const save = async (event) => {
+    event.preventDefault()
+    setSaving(true)
+    setMessage('')
+    try {
+      const response = await fetch(`${apiBase}/api/admin/payment-settings`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(settings) })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.message || body.error || 'Could not save payment settings.')
+      setSettings(body.settings)
+      setMessage('Payment settings saved and audited.')
+    } catch (error) { setMessage(error.message) } finally { setSaving(false) }
+  }
+  return <><AdminIntro eyebrow="PAYMENT SETTINGS" title="Payment methods and verification." />{message && <div className="profile-message" role="status">{message}</div>}{!settings ? <div className="empty-state">Loading payment settings...</div> : <form className="admin-table" onSubmit={save}><section className="admin-panel"><h3>Paystack</h3><p>{paystack?.configured ? `Server credentials configured in ${paystack.mode} mode.` : 'PAYSTACK_SECRET_KEY is not configured on the API host.'}</p><small>The secret key is never displayed here. Configure it in the hosting environment, then redeploy.</small></section><section className="admin-panel"><h3>Doorstep Bank Transfer</h3><label><input type="checkbox" checked={settings.bankTransfer.enabled} onChange={(event) => updateBank('enabled', event.target.checked)} /> Enable Bank Transfer</label><label>Bank name<input required value={settings.bankTransfer.bankName} onChange={(event) => updateBank('bankName', event.target.value)} /></label><label>Account holder<input required value={settings.bankTransfer.accountName} onChange={(event) => updateBank('accountName', event.target.value)} /></label><label>Account number<input required inputMode="numeric" value={settings.bankTransfer.accountNumber} onChange={(event) => updateBank('accountNumber', event.target.value)} /></label><label>Instructions<textarea value={settings.bankTransfer.instructions} onChange={(event) => updateBank('instructions', event.target.value)} /></label><label>Expiry (minutes, optional)<input type="number" min="5" max="10080" value={settings.bankTransfer.expiryMinutes || ''} onChange={(event) => updateBank('expiryMinutes', event.target.value ? Number(event.target.value) : null)} /></label><p>Automatic verification is off because no supported transaction-specific bank integration is configured. Authorized administrators must verify reliable bank records before confirming payment.</p></section><button className="admin-primary" disabled={saving} type="submit">{saving ? 'Saving…' : 'Save payment settings'} <Check size={16} /></button></form>}</>
+}
 
 function ActiveDeliveries() {
   const [deliveries, setDeliveries] = useState([])
@@ -102,7 +125,8 @@ export function AdminPortal({ path, onLogout }) {
   if (path === '/admin/customers') content = <Customers />
   if (path === '/admin/orders') content = <LiveAdminOrders />
   if (path === '/admin/reviews') content = <Reviews />
-  if (path === '/admin/payments' || path === '/admin/analytics') content = <Finance />
+  if (path === '/admin/payments') content = <PaymentSettings />
+  if (path === '/admin/analytics') content = <Finance />
   if (path === '/admin/audit-logs') content = <AuditLogs />
   if (path === '/admin/settings') content = <SettingsPage />
   if (path === '/admin/support') content = <SupportInbox />

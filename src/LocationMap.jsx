@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { LocateFixed, X } from 'lucide-react'
+import { LocateFixed, Navigation, X } from 'lucide-react'
 import { sapeleDeliveryDirectory } from './data'
 import { readConfirmedLocation } from './location'
 
@@ -373,6 +373,7 @@ export function LocationMap({ onSelect, onCancel }) {
         <button type="submit" disabled={searching} aria-label={searching ? 'Searching addresses' : 'Find address'}>{searching ? '...' : 'Search'}</button>
       </form>
       <button className="map-locate-button" type="button" onClick={useDeviceLocation}><LocateFixed size={18} /><span>Use my location</span></button>
+      <a className="delivery-navigation-link" href="/navigate" aria-label="Open route planner and navigation" title="Plan a route"><Navigation size={18} /></a>
     </div>
     {(results.length > 0 || googleResults.length > 0 || unmappedQuery) && <div className="delivery-search-results" role="listbox" aria-label="Address search results">
       {results.map((feature) => <button key={feature.properties?.mapbox_id || feature.id || featureLabel(feature)} type="button" onClick={() => chooseResult(feature)}><strong>{feature.properties?.name || feature.text || 'Location'}</strong><span>{featureLabel(feature)}</span></button>)}

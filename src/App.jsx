@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, Bell, Bot, Camera, Check, ChevronDown, Clock3, Compass, Heart, LogOut, MapPin, Menu, MessageCircle, Minus, Plus, Search, ShoppingBag, Sparkles, Star, UserCircle, X } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowRight, Bell, Bot, Camera, Check, ChevronDown, Clock3, Compass, Heart, KeyRound, LogOut, MapPin, Menu, MessageCircle, Minus, Plus, Search, ShoppingBag, Sparkles, Star, UserCircle, X } from 'lucide-react'
 import { categories, formatNaira, groceryStores, restaurants, sapeleLocations } from './data'
 import { loadCart, saveCart } from './services/orderService'
 import { RoutePage } from './pages'
@@ -9,13 +9,34 @@ import { AdminLogin, AdminPortal } from './adminPages'
 import { ForgotPasswordPage } from './accountPages'
 import { ProfileAvatar } from './ProfileAvatar'
 import { readConfirmedLocation } from './location'
+import { accountPathFor, loginPathFor, signOut as endSession } from './services/authService'
+
+function AccountAccessGate({ children }) {
+  const [state, setState] = useState('loading')
+  useEffect(() => {
+    let active = true
+    fetch(`${apiBase}/api/auth/me`, { headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` }, signal: AbortSignal.timeout(15_000) })
+      .then(async response => {
+        if (response.status === 401) { window.location.replace('/login'); return }
+        if (!response.ok) throw new Error('Could not verify your account. Refresh to try again.')
+        const body = await response.json()
+        if (!body.user?.role) throw new Error('Your account could not be verified.')
+        if (!active) return
+        localStorage.setItem('doorstep-role', body.user.role)
+        if (body.user.role !== 'CUSTOMER') { window.location.replace(body.user.role === 'ADMIN' ? '/admin/login' : accountPathFor(body.user.role)); return }
+        setState('allowed')
+      }).catch(error => { if (active) setState(error.name === 'TimeoutError' ? 'Account verification timed out. Refresh to try again.' : error.message) })
+    return () => { active = false }
+  }, [])
+  return state === 'allowed' ? children : <main className="route-page"><section className="submitted-card"><h2>Checking account access</h2><p role={state === 'loading' ? 'status' : 'alert'}>{state === 'loading' ? 'Opening the correct workspace for your account...' : state}</p></section></main>
+}
 
 const currentPath = () => window.location.pathname.replace(/\/$/, '') || '/'
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
-function HeaderSignOut() { return <button className="header-signout" aria-label="Sign out" title="Sign out" onClick={async () => { await fetch(`${apiBase}/api/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` } }).catch(() => undefined); localStorage.removeItem('doorstep-token'); window.location.assign('/') }}><LogOut size={16} /></button> }
+function HeaderSignOut() { return <button className="header-signout" aria-label="Sign out" title="Sign out" onClick={() => endSession({ apiBase })}><LogOut size={16} /></button> }
 
-function PortalAccessGate({ role, children }) { const [state, setState] = useState('loading'); useEffect(() => { const token = localStorage.getItem('doorstep-token'); if (!token) { setState('missing'); return } fetch(`${apiBase}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => setState(body.user?.role === role ? 'allowed' : 'wrong-role')).catch(() => setState('missing')) }, [role]); if (state === 'loading') return <main className="route-page"><div className="submitted-card"><Clock3 size={24} /><h2>Checking secure access</h2><p>Verifying your DOORSTEP portal permissions.</p></div></main>; if (state === 'allowed') return children; return <div className="app-shell"><RoutePage path={state === 'wrong-role' ? '/account' : '/login'} /></div> }
+function PortalAccessGate({ role, children }) { const [state, setState] = useState('loading'); useEffect(() => { const token = localStorage.getItem('doorstep-token'); if (!token) { setState('missing'); return } fetch(`${apiBase}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => setState(body.user?.role === role ? 'allowed' : 'wrong-role')).catch(() => setState('missing')) }, [role]); if (state === 'loading') return <main className="route-page"><div className="submitted-card"><Clock3 size={24} /><h2>Checking secure access</h2><p>Verifying your DOORSTEP portal permissions.</p></div></main>; if (state === 'allowed') return children; return <div className="app-shell"><RoutePage path={state === 'wrong-role' ? '/account' : loginPathFor(window.location.pathname, role)} /></div> }
 
 
 function LegacyChatWidget({ open, onToggle }) {
@@ -67,6 +88,7 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false)
   const [hasScrolled, setHasScrolled] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [accountRole, setAccountRole] = useState(() => localStorage.getItem('doorstep-role'))
 
   useEffect(() => {
     const onPopState = () => setPath(currentPath())
@@ -89,11 +111,16 @@ function App() {
 
   useEffect(() => {
     if (!accountMenuOpen) return undefined
+    accountMenuRef.current?.querySelector('[role="menuitem"]')?.focus()
     const closeAccountMenu = (event) => {
       if (!accountMenuRef.current?.contains(event.target)) setAccountMenuOpen(false)
     }
+    const closeOnFocus = (event) => {
+      if (!accountMenuRef.current?.contains(event.target)) setAccountMenuOpen(false)
+    }
     document.addEventListener('pointerdown', closeAccountMenu)
-    return () => document.removeEventListener('pointerdown', closeAccountMenu)
+    document.addEventListener('focusin', closeOnFocus)
+    return () => { document.removeEventListener('pointerdown', closeAccountMenu); document.removeEventListener('focusin', closeOnFocus) }
   }, [accountMenuOpen])
 
   useEffect(() => {
@@ -150,7 +177,7 @@ function App() {
         confirm.textContent = 'Sign out'
         confirm.hidden = true
         button.onclick = () => { confirm.hidden = !confirm.hidden }
-        confirm.onclick = async () => { await fetch(`${apiBase}/api/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => undefined); localStorage.removeItem('doorstep-token'); window.location.assign('/') }
+        confirm.onclick = () => { confirm.disabled = true; confirm.textContent = 'Signing out...'; void endSession({ apiBase }) }
         wrapper.append(button, confirm)
         actions.insertBefore(wrapper, actions.querySelector('.cart-button'))
       } else if (existing) existing.closest('.header-signout-menu')?.remove()
@@ -158,6 +185,8 @@ function App() {
     const token = localStorage.getItem('doorstep-token')
     if (token) fetch(`${apiBase}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => {
       if (!body.user) return
+      localStorage.setItem('doorstep-role', body.user.role)
+      setAccountRole(body.user.role)
       document.querySelectorAll('.header-profile-preview').forEach((button) => {
         const initials = `${body.user.firstName?.[0] || ''}${body.user.lastName?.[0] || ''}`.toUpperCase()
         button.innerHTML = `<span class="profile-initials">${initials}</span><span class="profile-name">${body.user.firstName || 'Account'}</span>`
@@ -206,14 +235,25 @@ function App() {
   }
 
   const signOut = () => {
-    localStorage.removeItem('doorstep-token')
     setAccountMenuOpen(false)
-    window.history.pushState({}, '', '/')
-    setPath('/')
+    void endSession({ apiBase })
   }
 
   const isSignedIn = Boolean(localStorage.getItem('doorstep-token'))
-  const accountControl = <div className="account-menu" ref={accountMenuRef}><button className="profile-button" onClick={() => setAccountMenuOpen((open) => !open)} aria-label={isSignedIn ? 'Open My Account' : 'Open sign-in options'} aria-expanded={accountMenuOpen}>{isSignedIn ? <ProfileAvatar size={19} /> : <UserCircle size={19} />}<span>My Account</span></button>{accountMenuOpen && <div className="account-menu-popover" role="menu">{isSignedIn ? <><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/account')}>My Account</button><button type="button" role="menuitem" onClick={signOut}>Sign out</button></> : <><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/login')}>Log in</button><button type="button" role="menuitem" onClick={() => navigateFromAccountMenu('/register')}>Sign up</button></>}</div>}</div>
+  const accountItems = isSignedIn
+    ? [{ label: accountRole === 'RESTAURANT' ? 'Partner account' : 'My Account', detail: accountRole === 'RESTAURANT' ? 'Your business profile and settings' : 'Your profile and account settings', icon: UserCircle, path: accountPathFor(accountRole) }, { label: 'Sign out', detail: 'Securely end your session', icon: LogOut, action: signOut }]
+    : [{ label: 'Customer login', detail: 'Orders, favourites and deliveries', icon: ShoppingBag, path: '/login' }, { label: 'Partner sign in', detail: 'Restaurant and grocery workspace', icon: KeyRound, path: '/partner/login' }, { label: 'Rider sign in', detail: 'Your deliveries and earnings', icon: Compass, path: '/rider/login' }, { label: 'Create an account', detail: 'Find your place on DOORSTEP', icon: Plus, path: '/register' }]
+  const handleAccountKeys = (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); setAccountMenuOpen(false); accountMenuRef.current?.querySelector('.profile-button')?.focus(); return }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    if (!accountMenuOpen) { setAccountMenuOpen(true); return }
+    const items = [...accountMenuRef.current.querySelectorAll('[role="menuitem"]')]
+    const index = items.indexOf(document.activeElement)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+    items[next]?.focus()
+  }
+  const accountControl = <div className="account-menu" ref={accountMenuRef} onKeyDown={handleAccountKeys}><button className="profile-button" id="account-menu-trigger" onClick={() => setAccountMenuOpen((open) => !open)} aria-label={isSignedIn ? 'Open My Account' : 'Open sign-in options'} aria-haspopup="menu" aria-controls={accountMenuOpen ? 'account-menu-options' : undefined} aria-expanded={accountMenuOpen}>{isSignedIn ? <ProfileAvatar size={19} /> : <UserCircle size={19} />}<span>My Account</span><ChevronDown size={14} /></button>{accountMenuOpen && <div className="account-menu-popover" id="account-menu-options" role="menu" aria-labelledby="account-menu-trigger"><div className="account-menu-heading" role="presentation"><span>YOUR DOORSTEP</span><strong>{isSignedIn ? 'Welcome back.' : 'One place. Every possibility.'}</strong></div>{accountItems.map(({ label, detail, icon: Icon, path: destination, action }) => <button key={label} type="button" role="menuitem" onClick={action || (() => navigateFromAccountMenu(destination))}><span className="account-menu-icon"><Icon size={20} strokeWidth={2.5} /></span><span><strong>{label}</strong><small>{detail}</small></span><ArrowRight size={16} /></button>)}</div>}</div>
 
   const filteredRestaurants = useMemo(() => restaurants.filter((restaurant) => {
     const matchesCategory = activeCategory === 'All food' || restaurant.category === activeCategory
@@ -263,6 +303,7 @@ function App() {
       const orderRequest = {
         restaurantId: String(cart[0].restaurantId),
         items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity })),
+        paymentMethod: form.get('paymentMethod'),
         addressLine: form.get('address'),
         landmark: form.get('landmark'),
         phone: form.get('phone'),
@@ -276,13 +317,18 @@ function App() {
       if (!paymentResponse.ok) throw new Error(paymentBody.message || paymentBody.error || 'Could not start payment.')
       saveCart([])
       setCart([])
+      if (paymentBody.method === 'BANK_TRANSFER') {
+        window.history.pushState({}, '', `/payment/bank-transfer/${orderBody.order.id}`)
+        setPath(`/payment/bank-transfer/${orderBody.order.id}`)
+        return
+      }
       window.location.assign(paymentBody.authorizationUrl)
     } catch (error) { setCheckoutError(error.message); window.alert(error.message) }
   }
 
-  const isPublicRiderRoute = path === '/rider/register' || path === '/rider/application-status'
-  if (path.startsWith('/restaurant/') && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
-  if (path.startsWith('/rider/') && !isPublicRiderRoute && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
+  const isPublicRiderRoute = path === '/rider/login' || path === '/rider/register' || path === '/rider/application-status'
+  if (path.startsWith('/restaurant/') && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/partner/login" /></div>
+  if (path.startsWith('/rider/') && !isPublicRiderRoute && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/rider/login" /></div>
   if (path.startsWith('/restaurant/')) return <PortalAccessGate role="RESTAURANT"><RestaurantPortal path={path} /></PortalAccessGate>
   if (path.startsWith('/rider/') && !isPublicRiderRoute) return <PortalAccessGate role="RIDER"><RiderPortal path={path} /></PortalAccessGate>
   if (path === '/admin/login') return <AdminLogin onLogin={() => { window.history.pushState({}, '', '/admin/dashboard'); setPath('/admin/dashboard') }} />
@@ -291,9 +337,11 @@ function App() {
   if (path.startsWith('/admin/') && !localStorage.getItem('doorstep-admin-token')) return <AdminLogin onLogin={() => { window.history.pushState({}, '', path); setPath(path) }} />
   if (path.startsWith('/admin/')) return <AdminPortal path={path} />
   if (path.startsWith('/account') && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
+  if (path === '/partner/account' || path === '/partner/profile' || path === '/partner/settings') return <PortalAccessGate role="RESTAURANT"><RestaurantPortal path="/restaurant/profile" /></PortalAccessGate>
 
   const headerClass = hasScrolled || path !== '/' ? 'topbar is-scrolled' : 'topbar'
-  if (path !== '/') return <div className="app-shell"><header className={headerClass}><a className="brand" href="/" onClick={(event) => goTo(event, '/')} aria-label="DOORSTEP home"><span className="brand-mark"><Sparkles size={17} strokeWidth={2.5} /></span><span>doorstep</span></a><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'}><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/groceries" onClick={(event) => goTo(event, '/groceries')}>Groceries</a><a href="/menu" onClick={(event) => goTo(event, '/menu')}>Menu</a><a href="/track-order" onClick={(event) => goTo(event, '/track-order')}>Track order</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a></nav><div className="top-actions"><button className="icon-button notification" aria-label="Notifications" onClick={(event) => goTo(event, '/account/notifications')}><Bell size={19} /></button>{accountControl}<button className="cart-button" onClick={() => { window.history.pushState({}, '', '/cart'); setPath('/cart') }}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button></div><button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={22} /></button></header><RoutePage path={path} cart={cart} checkoutError={checkoutError} onAddToCart={(item, restaurant) => { addToCart(item, restaurant); setPath('/cart'); window.history.pushState({}, '', '/cart') }} onChangeQuantity={changeQuantity} onCheckout={() => { window.history.pushState({}, '', '/checkout'); setPath('/checkout') }} onComplete={completeOrder} /><ChatWidget open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} /></div>
+  const AccountFrame = path.startsWith('/account') ? AccountAccessGate : Fragment
+  if (path !== '/') return <AccountFrame><div className="app-shell"><header className={headerClass}><a className="brand" href="/" onClick={(event) => goTo(event, '/')} aria-label="DOORSTEP home"><span className="brand-mark"><Sparkles size={17} strokeWidth={2.5} /></span><span>doorstep</span></a><nav className={menuOpen ? 'main-nav is-open' : 'main-nav'}><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/groceries" onClick={(event) => goTo(event, '/groceries')}>Groceries</a><a href="/menu" onClick={(event) => goTo(event, '/menu')}>Menu</a><a href="/track-order" onClick={(event) => goTo(event, '/track-order')}>Track order</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a></nav><div className="top-actions"><button className="icon-button notification" aria-label="Notifications" onClick={(event) => goTo(event, '/account/notifications')}><Bell size={19} /></button>{accountControl}<button className="cart-button" onClick={() => { window.history.pushState({}, '', '/cart'); setPath('/cart') }}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button></div><button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={22} /></button></header><RoutePage path={path} cart={cart} checkoutError={checkoutError} onAddToCart={(item, restaurant) => { addToCart(item, restaurant); setPath('/cart'); window.history.pushState({}, '', '/cart') }} onChangeQuantity={changeQuantity} onCheckout={() => { window.history.pushState({}, '', '/checkout'); setPath('/checkout') }} onComplete={completeOrder} /><ChatWidget open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} /></div></AccountFrame>
 
   return (
     <div className="app-shell">
