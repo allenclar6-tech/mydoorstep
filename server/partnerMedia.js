@@ -5,6 +5,8 @@ import { readPrivateDocument, removePrivateDocument, storePrivateDocument } from
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } }).single('image')
 const menuPrefix = 'private/restaurant-media/'
 export const menuMediaUrl = item => item.imageUrl?.startsWith(menuPrefix) ? `/api/media/menu/${encodeURIComponent(item.id)}` : item.imageUrl
+export const publicLogoOwner = restaurant => restaurant.users?.find(member => member.user?.profileImageKey?.startsWith(`private/users/${member.userId}/`))
+export const publicRestaurantImage = restaurant => publicLogoOwner(restaurant) ? `/api/media/restaurants/${encodeURIComponent(restaurant.id)}/logo` : restaurant.coverImageUrl || null
 
 export function publicMenuItems(restaurant) {
   return [
@@ -63,6 +65,24 @@ export function registerPartnerMedia(app, { prisma, requireUser }) {
     }
   }
   app.post('/api/restaurant/logo', requireUser, partner, receiveImage, save('logo'))
+  app.get('/api/media/restaurants/:restaurantId/logo', async (request, response) => {
+    try {
+      const restaurant = await prisma.restaurant.findFirst({
+        where: { id: request.params.restaurantId, status: 'APPROVED' },
+        select: { users: { where: { role: 'OWNER' }, orderBy: { createdAt: 'asc' }, select: { userId: true, user: { select: { profileImageKey: true } } } } },
+      })
+      const owner = restaurant && publicLogoOwner(restaurant)
+      if (!owner) return response.status(404).json({ error: 'IMAGE_NOT_FOUND' })
+      const image = await readPrivateDocument(owner.user.profileImageKey)
+      response.set('Cache-Control', 'public, max-age=60')
+      response.set('X-Content-Type-Options', 'nosniff')
+      return response.type(image.mimeType).send(image.buffer)
+    } catch (error) {
+      if (error.status === 404) return response.status(404).json({ error: 'IMAGE_NOT_FOUND' })
+      console.error('[partner-media] logo_read_failed', { name: error.name })
+      return response.status(503).json({ error: 'MEDIA_SERVICE_UNAVAILABLE' })
+    }
+  })
   app.post('/api/restaurant/menu/:itemId/image', requireUser, partner, receiveImage, save('menu'))
   app.get('/api/restaurant/menu/:itemId/image', requireUser, partner, async (request, response) => {
     try {

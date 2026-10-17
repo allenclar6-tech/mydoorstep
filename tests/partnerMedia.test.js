@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import express from 'express'
 import request from 'supertest'
 import sharp from 'sharp'
-import { preparePartnerImage, registerPartnerMedia, menuMediaUrl, publicMenuItems } from '../server/partnerMedia.js'
+import { preparePartnerImage, registerPartnerMedia, menuMediaUrl, publicMenuItems, publicRestaurantImage } from '../server/partnerMedia.js'
 import { readPrivateDocument, removePrivateDocument } from '../server/uploadService.js'
 
 test('partner images reject invalid media and decode real raster images', async () => {
@@ -21,6 +21,12 @@ test('partner images reject invalid media and decode real raster images', async 
 test('menu media URLs never expose private file keys', () => {
   assert.equal(menuMediaUrl({ id: 'item', imageUrl: 'private/restaurant-media/store/test.png' }), '/api/media/menu/item')
   assert.equal(menuMediaUrl({ id: 'item', imageUrl: 'https://example.com/photo.jpg' }), 'https://example.com/photo.jpg')
+})
+
+test('store images use the owner logo without exposing private storage keys', () => {
+  assert.equal(publicRestaurantImage({ id: 'store', users: [{ userId: 'owner', user: { profileImageKey: 'private/users/owner/logo.png' } }] }), '/api/media/restaurants/store/logo')
+  assert.equal(publicRestaurantImage({ id: 'store', coverImageUrl: 'https://example.com/cover.jpg', users: [{ userId: 'owner', user: { profileImageKey: 'private/users/other/logo.png' } }] }), 'https://example.com/cover.jpg')
+  assert.equal(publicRestaurantImage({ id: 'store' }), null)
 })
 
 test('public menus include uncategorized partner items and their uploaded photo', () => {
@@ -73,6 +79,19 @@ test('partner uploads enforce role, ownership, persistence and public visibility
     const logo = await request(app).post('/api/restaurant/logo').set('Authorization', 'partner').attach('image', image, 'logo.png')
     assert.equal(logo.status, 200)
     assert.ok(keys.at(-1).startsWith('private/users/partner-test/'))
+    const logoKey = keys.at(-1)
+    prisma.restaurant = { findFirst: async ({ where, select }) => {
+      assert.equal(where.status, 'APPROVED')
+      assert.equal(select.users.where.role, 'OWNER')
+      return { users: [{ userId: 'partner-test', user: { profileImageKey: logoKey } }] }
+    } }
+    const publicLogo = await request(app).get('/api/media/restaurants/store/logo')
+    assert.equal(publicLogo.status, 200)
+    assert.match(publicLogo.headers['content-type'], /image\/png/)
+    prisma.restaurant.findFirst = async () => null
+    assert.equal((await request(app).get('/api/media/restaurants/store/logo')).status, 404)
+    prisma.restaurant.findFirst = async () => ({ users: [{ userId: 'other', user: { profileImageKey: logoKey } }] })
+    assert.equal((await request(app).get('/api/media/restaurants/store/logo')).status, 404)
     let failedKey
     prisma.menuItem.updateMany = async ({ data }) => { failedKey = data.imageUrl; throw new Error('Synthetic database failure') }
     const failed = await request(app).post('/api/restaurant/menu/item/image').set('Authorization', 'partner').attach('image', image, 'photo.png')

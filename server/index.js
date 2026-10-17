@@ -14,7 +14,7 @@ import { advanceDelivery, claimDelivery, getDeliveryTrackingSnapshot, recordLoca
 import { deliveryRealtime } from './realtime.js'
 import { requireAdmin, reviewApplication } from './adminService.js'
 import { readPrivateDocument, storePrivateDocument, uploadError } from './uploadService.js'
-import { menuMediaUrl, publicMenuItems, registerPartnerMedia } from './partnerMedia.js'
+import { menuMediaUrl, publicMenuItems, publicRestaurantImage, registerPartnerMedia } from './partnerMedia.js'
 import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
 import { buildAiReply } from './aiBrain.js'
 
@@ -174,7 +174,7 @@ function publicRestaurant(restaurant) {
     slug: restaurant.slug,
     description: restaurant.description,
     cuisine: restaurant.cuisineCategory,
-    image: restaurant.coverImageUrl,
+    image: publicRestaurantImage(restaurant),
     type: restaurant.storeType,
     address: restaurant.address,
     city: restaurant.city?.name || null,
@@ -195,7 +195,7 @@ app.get('/api/restaurants', async (request, response) => {
   const result = z.object({ search: z.string().max(100).optional(), type: z.enum(['RESTAURANT', 'GROCERY']).optional(), limit: z.coerce.number().int().min(1).max(50).default(24) }).safeParse(request.query)
   if (!result.success) return response.status(400).json({ error: 'INVALID_RESTAURANT_QUERY' })
   try {
-    const restaurants = await prisma.restaurant.findMany({ where: { status: 'APPROVED', ...(result.data.type ? { storeType: result.data.type } : {}), ...(result.data.search ? { OR: [{ name: { contains: result.data.search, mode: 'insensitive' } }, { description: { contains: result.data.search, mode: 'insensitive' } }] } : {}) }, include: { city: true, menuItems: { where: { categoryId: null, available: true } }, categories: { include: { items: { where: { available: true }, take: 6 } } } }, orderBy: { ratingAverage: 'desc' }, take: result.data.limit })
+    const restaurants = await prisma.restaurant.findMany({ where: { status: 'APPROVED', ...(result.data.type ? { storeType: result.data.type } : {}), ...(result.data.search ? { OR: [{ name: { contains: result.data.search, mode: 'insensitive' } }, { description: { contains: result.data.search, mode: 'insensitive' } }] } : {}) }, include: { city: true, users: { where: { role: 'OWNER' }, orderBy: { createdAt: 'asc' }, select: { userId: true, user: { select: { profileImageKey: true } } } }, menuItems: { where: { categoryId: null, available: true } }, categories: { include: { items: { where: { available: true }, take: 6 } } } }, orderBy: { ratingAverage: 'desc' }, take: result.data.limit })
     response.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
     return response.json({ restaurants: restaurants.map(publicRestaurant) })
   } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }

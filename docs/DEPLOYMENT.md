@@ -2,6 +2,13 @@
 
 ## Partner media API release
 
+Approved-store logos use `GET /api/media/restaurants/:restaurantId/logo`.
+The API selects OWNER membership only, validates the user-scoped image key and
+returns image bytes without disclosing private storage paths. Public store image
+URLs now prefer the uploaded owner logo, with the existing cover as a fallback.
+No database migration is needed. Deploy the API before the frontend styling that
+fits these logos without cropping and gives Add buttons white text on green.
+
 The public restaurant feed includes available uncategorized menu items as well
 as category-linked items. Partner item creation does not require a category, so
 excluding these records would hide newly created items and their photos.
