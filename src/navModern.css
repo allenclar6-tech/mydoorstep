@@ -48,6 +48,7 @@
 @media (max-width: 700px) {
 	.app-shell:has(> .topbar) { padding-top: 124px; }
 	.app-shell:has(> .topbar.signed-out) { padding-top: 62px; }
+	.app-shell:has(> .topbar.signed-out.has-location-selector) { padding-top: 124px; }
 	.topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 62px 62px; height: 124px; min-height: 124px; padding: 0 12px; position: fixed; left: 0; right: 0; width: 100%; }
 	.topbar.signed-out { grid-template-rows: 62px; height: 62px; min-height: 62px; }
 	.topbar .brand { font-size: 17px; gap: 7px; min-width: 0; }
@@ -115,9 +116,8 @@
 	.topbar .brand-mark, .topbar .cart-button b, .topbar .notification > b { background: #ffc244; color: #073b30; }
 	.topbar .main-nav a.active::after { background: #ffc244; }
 	.topbar .main-nav a { font-weight: 900; }
-	.topbar.signed-out.has-location-selector { grid-template-columns: auto minmax(0, 1fr) auto; }
-	.topbar.signed-out.has-location-selector .header-location-selector { grid-column: 2; margin: 0 10px; max-width: none; width: auto; }
-	.topbar.signed-out.has-location-selector .top-actions { grid-column: 3; }
+	.topbar.signed-out.has-location-selector { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 62px 62px; height: 124px; min-height: 124px; }
+	.topbar.signed-out.has-location-selector .header-location-selector { grid-column: 1 / -1; grid-row: 2; margin: 0 12px; max-width: none; width: auto; }
 }
 
 @media (max-width: 700px) {
