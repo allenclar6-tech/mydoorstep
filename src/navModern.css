@@ -106,12 +106,18 @@
 .topbar .brand { font-weight: 900; }
 .topbar .main-nav a, .topbar .cart-button, .topbar .profile-button { font-weight: 800; }
 .topbar svg { stroke-width: 2.6px; }
+.header-location-selector { align-items: center; background: #fffdf7; border: 1px solid rgba(18, 61, 45, .2); border-radius: 10px; color: #123d2d; display: flex; flex: 1; font-size: 12px; font-weight: 800; gap: 8px; margin: 0 auto; max-width: 420px; min-width: 0; padding: 10px 12px; text-align: left; }
+.header-location-selector span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header-location-selector svg:last-child { margin-left: auto; }
 
 @media (max-width: 700px) {
 	.topbar { background: linear-gradient(110deg, #007b65, #00a082 58%, #008c72); }
 	.topbar .brand-mark, .topbar .cart-button b, .topbar .notification > b { background: #ffc244; color: #073b30; }
 	.topbar .main-nav a.active::after { background: #ffc244; }
 	.topbar .main-nav a { font-weight: 900; }
+	.topbar.signed-out.has-location-selector { grid-template-columns: auto minmax(0, 1fr) auto; }
+	.topbar.signed-out.has-location-selector .header-location-selector { grid-column: 2; margin: 0 10px; max-width: none; width: auto; }
+	.topbar.signed-out.has-location-selector .top-actions { grid-column: 3; }
 }
 
 @media (max-width: 700px) {
