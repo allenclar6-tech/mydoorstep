@@ -8,6 +8,18 @@ import { readConfirmedLocation } from './location'
 const token = import.meta.env.VITE_MAP_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const sapeleCenter = [5.6846, 5.8916]
+const openStreetMapStyle = {
+  version: 8,
+  sources: {
+    openstreetmap: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [{ id: 'openstreetmap', type: 'raster', source: 'openstreetmap' }],
+}
 
 function createPin() {
   const element = document.createElement('div')
@@ -21,6 +33,7 @@ function featureLabel(feature) {
 }
 
 async function reverseGeocode(point) {
+  if (!token) return null
   const response = await fetch(`https://api.mapbox.com/search/geocode/v6/reverse?longitude=${encodeURIComponent(point.lng)}&latitude=${encodeURIComponent(point.lat)}&access_token=${encodeURIComponent(token)}`)
   if (!response.ok) throw new Error(`Reverse geocoding failed with ${response.status}`)
   const data = await response.json()
@@ -36,7 +49,7 @@ export function LocationMap({ onSelect, onCancel }) {
   const routePreviewRef = useRef(null)
   const abortControllerRef = useRef(null)
   const suppressAutocompleteRef = useRef(false)
-  const [message, setMessage] = useState(token ? 'Search for an address or place the pin exactly at your doorstep.' : 'Map configuration is unavailable.')
+  const [message, setMessage] = useState('Search for an address or place the pin exactly at your doorstep.')
   const [precision, setPrecision] = useState('')
   const [search, setSearch] = useState('')
   const [results, setResults] = useState([])
@@ -46,20 +59,20 @@ export function LocationMap({ onSelect, onCancel }) {
   const [searching, setSearching] = useState(false)
   const [initialLocation] = useState(() => readConfirmedLocation())
   const [selectedPoint, setSelectedPoint] = useState(initialLocation)
-  const [mapState, setMapState] = useState(token ? 'loading' : 'unavailable')
+  const [mapState, setMapState] = useState('loading')
   const [routeInfo, setRouteInfo] = useState('')
 
   useEffect(() => {
-    if (!token || !mapElement.current || mapRef.current) return undefined
+    if (!mapElement.current || mapRef.current) return undefined
     if (!mapboxgl.supported()) {
       setMapState('unsupported')
       setMessage('Your browser cannot display the interactive map, but you can still search, use GPS, and confirm an exact location.')
       return undefined
     }
-    mapboxgl.accessToken = token
+    if (token) mapboxgl.accessToken = token
     const map = new mapboxgl.Map({
       container: mapElement.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
+      style: token ? 'mapbox://styles/mapbox/streets-v12' : openStreetMapStyle,
       center: initialLocation ? [initialLocation.longitude, initialLocation.latitude] : sapeleCenter,
       zoom: 13,
       pitch: 0,
@@ -117,6 +130,10 @@ export function LocationMap({ onSelect, onCancel }) {
 
     map.on('style.load', () => {
       routePreviewRef.current = async (coordinates) => {
+          if (!token) {
+            setRouteInfo('Route preview is unavailable without a Mapbox token. Your exact delivery pin is still selected.')
+            return
+          }
           try {
             const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${sapeleCenter.join(',')};${coordinates.join(',')}?geometries=geojson&overview=full&steps=true&access_token=${encodeURIComponent(token)}`)
             if (!response.ok) throw new Error(`Route request failed with ${response.status}`)
@@ -163,7 +180,7 @@ export function LocationMap({ onSelect, onCancel }) {
       setMessage('We could not access precise location. Check browser permission or place the pin manually.')
     })
     map.on('error', (event) => {
-      if (event.error?.status === 401 || event.error?.status === 403) {
+      if (token && (event.error?.status === 401 || event.error?.status === 403)) {
         setMapState('unavailable')
         setMessage('The live map is temporarily unavailable. You can still choose a delivery area below.')
       }

@@ -61,6 +61,8 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         value: https://mydoorstep-api.onrender.com
+      - key: VITE_MAP_PUBLIC_TOKEN
+        sync: false
 
 databases:
   - name: mydoorstep-db
