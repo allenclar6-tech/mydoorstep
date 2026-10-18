@@ -67,8 +67,9 @@ export function MobileStoreDock() {
     { label: 'Alerts', href: '/account/notifications', icon: Bell, badge: unreadCount, active: path === '/account/notifications' },
     { label: 'Orders', href: '/track-order', icon: Clock3, active: path === '/track-order' || path.startsWith('/account/orders') },
     { label: 'Account', href: '/account', avatar: true, active: path === '/account' || (path.startsWith('/account/') && path !== '/account/notifications') },
+    { label: 'Sign out', href: '/login', icon: LogOut, action: () => endSession({ apiBase }) },
   ]
-  return <nav className="mobile-store-dock" aria-label="Primary mobile navigation">{items.map(({ label, href, icon: Icon, badge, avatar, active }) => <a key={href} href={href} onClick={(event) => { event.preventDefault(); navigate(href) }} className={active ? 'is-active' : ''} aria-current={active ? 'page' : undefined}>{avatar ? <ProfileAvatar className="mobile-store-avatar" size={19} /> : <span className="mobile-store-icon"><Icon size={19} />{badge > 0 && <b>{badge > 99 ? '99+' : badge}</b>}</span>}<span>{label}</span></a>)}</nav>
+  return <nav className="mobile-store-dock" aria-label="Primary mobile navigation">{items.map(({ label, href, icon: Icon, badge, avatar, active, action }) => <a key={label} href={href} onClick={(event) => { if (action) { event.preventDefault(); action(); return } event.preventDefault(); navigate(href) }} className={active ? 'is-active' : ''} aria-current={active ? 'page' : undefined}>{avatar ? <ProfileAvatar className="mobile-store-avatar" size={19} /> : <span className="mobile-store-icon"><Icon size={19} />{badge > 0 && <b>{badge > 99 ? '99+' : badge}</b>}</span>}<span>{label}</span></a>)}</nav>
 }
 
 function PageFrame({ eyebrow, title, intro, children, className = '' }) {
