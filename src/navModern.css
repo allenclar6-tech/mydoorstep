@@ -169,3 +169,7 @@
 
 /* Keep the authenticated photo visible while the account text remains compact. */
 .topbar .profile-button .profile-avatar { display: inline-flex; }
+
+@media (max-width: 700px) {
+	.topbar.signed-out .top-actions { display: flex; }
+}

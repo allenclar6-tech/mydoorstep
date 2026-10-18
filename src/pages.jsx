@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowRight, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
-import { categories, formatNaira, groceryStores, restaurants, sapeleLocations } from './data'
+import { formatNaira, sapeleLocations } from './data'
 import { PasswordField } from './PasswordField'
 import { ProfileAvatar } from './ProfileAvatar'
 import { GroceryOwnerApplication } from './GroceryOwnerApplication'
@@ -77,29 +77,36 @@ function PageFrame({ eyebrow, title, intro, children, className = '' }) {
 function DiscoveryPage({ offers = false, grocery = false, market = false }) {
   const [query, setQuery] = useState('')
   const [openOnly, setOpenOnly] = useState(false)
-  const [liveRestaurants, setLiveRestaurants] = useState(null)
+  const [liveRestaurants, setLiveRestaurants] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const typeQuery = grocery ? '&type=GROCERY' : market ? '' : '&type=RESTAURANT'
-  useEffect(() => { fetch(`${apiBase}/api/restaurants?limit=24${typeQuery}`).then((response) => response.ok ? response.json() : null).then((body) => body?.restaurants && setLiveRestaurants(body.restaurants)).catch(() => undefined) }, [typeQuery])
-  const fallbackStores = grocery
-    ? groceryStores.map((store) => ({ ...store, type: 'GROCERY' }))
-    : market
-      ? [...restaurants.map((store) => ({ ...store, type: 'RESTAURANT' })), ...groceryStores.map((store) => ({ ...store, type: 'GROCERY' }))]
-      : restaurants.map((store) => ({ ...store, type: 'RESTAURANT' }))
-  const source = liveRestaurants?.length ? liveRestaurants : fallbackStores
-  const visible = source.filter((restaurant) => (!openOnly || restaurant.openNow !== false) && (!query || `${restaurant.name} ${restaurant.cuisine || restaurant.description || ''} ${(restaurant.items || []).map((item) => item.name).join(' ')}`.toLowerCase().includes(query.toLowerCase())))
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError('')
+    fetch(`${apiBase}/api/restaurants?limit=24${typeQuery}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Approved partner listings are temporarily unavailable.')
+        return response.json()
+      })
+      .then((body) => { if (active) setLiveRestaurants(body.restaurants || []) })
+      .catch((loadError) => { if (active) setError(loadError.message) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [typeQuery])
+  const visible = liveRestaurants.filter((restaurant) => (!openOnly || restaurant.openNow !== false) && (!query || `${restaurant.name} ${restaurant.cuisine || restaurant.description || ''} ${(restaurant.items || []).map((item) => item.name).join(' ')}`.toLowerCase().includes(query.toLowerCase())))
   const title = grocery ? 'Groceries, delivered today.' : market ? 'Everything local, in one market.' : offers ? 'Good food, better timing.' : 'Find your next favourite.'
   const intro = grocery ? 'Fresh produce, pantry staples, drinks, and household essentials delivered across Sapele.' : market ? 'Browse approved restaurants, grocery stores, and their available products in one place.' : offers ? 'Limited-time offers from the local kitchens we love. Every campaign is configured by the DOORSTEP team.' : 'Browse approved restaurants, compare delivery times, and find something worth sharing.'
-  return <PageFrame eyebrow={grocery ? 'GROCERIES' : market ? 'DOORSTEP MARKETS' : offers ? 'DOORSTEP DEALS' : 'DISCOVER SAPELE'} title={title} intro={intro}><section className="discovery-toolbar"><div className="route-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={grocery ? 'Search groceries or stores' : market ? 'Search restaurants, groceries, or products' : 'Search restaurants or dishes'} /></div><label className="filter-check"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} /> Open now</label></section><section className="route-grid">{visible.map((restaurant) => { const isGrocery = restaurant.type === 'GROCERY'; return <article className="route-restaurant" key={restaurant.id}><img src={restaurant.image || restaurants[0].image} alt={restaurant.name} /><div><div className="route-restaurant-top"><h2>{restaurant.name}</h2><span><Star size={14} fill="currentColor" /> {restaurant.rating}</span></div><p>{restaurant.cuisine || restaurant.description || 'Local favourites'}</p><small><Clock3 size={13} /> {restaurant.time || `${restaurant.openingTime || '09:00'}–${restaurant.closingTime || '22:00'}`} · {restaurant.fee || 'Delivery calculated at checkout'}</small><button className="text-link" onClick={() => navigate(`${isGrocery ? '/groceries/' : '/restaurants/'}${restaurant.slug || restaurant.name.toLowerCase().replaceAll(' ', '-')}`)}>View {isGrocery ? 'store' : 'menu'} <ArrowRight size={15} /></button></div></article> })}</section>{visible.length === 0 && <div className="empty-state">No {grocery ? 'grocery stores or products' : market ? 'restaurants, grocery stores, or products' : 'approved restaurants'} match that search.</div>}</PageFrame>
+  return <PageFrame eyebrow={grocery ? 'GROCERIES' : market ? 'DOORSTEP MARKETS' : offers ? 'DOORSTEP DEALS' : 'DISCOVER SAPELE'} title={title} intro={intro}>{offers && <section className="route-grid offer-services-grid"><article className="route-restaurant"><div><span className="section-kicker">FOOD DELIVERY</span><h2>Restaurant meals</h2><p>Browse approved local restaurants and their currently available menus.</p><button className="text-link" type="button" onClick={() => navigate('/restaurants')}>Find restaurants <ArrowRight size={15} /></button></div></article><article className="route-restaurant"><div><span className="section-kicker">GROCERY DELIVERY</span><h2>Everyday essentials</h2><p>Shop approved grocery stores for available household and pantry items.</p><button className="text-link" type="button" onClick={() => navigate('/groceries')}>Explore groceries <ArrowRight size={15} /></button></div></article><article className="route-restaurant"><div><span className="section-kicker">NEED DETAILS?</span><h2>We're here to help.</h2><p>Get support with orders, payments, delivery, accounts, or partnering with DOORSTEP.</p><button className="text-link" type="button" onClick={() => navigate('/help')}>Contact support <ArrowRight size={15} /></button></div></article></section>}<section className="discovery-toolbar"><div className="route-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={grocery ? 'Search groceries or stores' : market ? 'Search restaurants, groceries, or products' : 'Search restaurants or dishes'} /></div><label className="filter-check"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} /> Open now</label></section>{error ? <div className="empty-state" role="alert">{error}</div> : loading ? <div className="empty-state" role="status">Loading approved partner listings...</div> : <><section className="route-grid">{visible.map((restaurant) => { const isGrocery = restaurant.type === 'GROCERY'; return <article className="route-restaurant" key={restaurant.id}>{restaurant.image && <img src={restaurant.image} alt={restaurant.name} />}<div><div className="route-restaurant-top"><h2>{restaurant.name}</h2><span><Star size={14} fill="currentColor" /> {restaurant.rating}</span></div><p>{restaurant.cuisine || restaurant.description || 'Approved local partner'}</p><small><Clock3 size={13} /> {restaurant.time || `${restaurant.openingTime || '09:00'}–${restaurant.closingTime || '22:00'}`} · {restaurant.fee || 'Delivery calculated at checkout'}</small><button className="text-link" onClick={() => navigate(`${isGrocery ? '/groceries/' : '/restaurants/'}${restaurant.slug || restaurant.name.toLowerCase().replaceAll(' ', '-')}`)}>View {isGrocery ? 'store' : 'menu'} <ArrowRight size={15} /></button></div></article> })}</section>{visible.length === 0 && <div className="empty-state">No {grocery ? 'approved grocery stores or products' : market ? 'approved restaurants, grocery stores, or products' : 'approved restaurants'} match that search yet.</div>}</>}</PageFrame>
 }
 
-function CategoryPage({ category }) {
-  const stores = category === 'All food' ? restaurants : restaurants.filter((store) => store.category === category)
-  return <PageFrame eyebrow="FOOD CATEGORY" title={`${category}, ready when you are.`} intro={`Browse local ${category.toLowerCase()} stores and open any menu to see its available items.`}><section className="route-grid">{stores.map((store) => <article className="route-restaurant" key={store.id}><img src={store.image} alt={store.name} /><div><div className="route-restaurant-top"><h2>{store.name}</h2><span><Star size={14} fill="currentColor" /> {store.rating}</span></div><p>{store.cuisine}</p><small><Clock3 size={13} /> {store.time} · {store.fee}</small><button className="text-link" onClick={() => navigate(`/restaurants/${store.name.toLowerCase().replaceAll(' ', '-')}`)}>View menu <ArrowRight size={15} /></button></div></article>)}</section></PageFrame>
-}
+function CategoryPage() { return <DiscoveryPage /> }
 
 function MenuDirectoryPage() {
   const [liveStores, setLiveStores] = useState(null)
   const [error, setError] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('')
   useEffect(() => {
     let active = true
     fetch(`${apiBase}/api/restaurants?limit=50`)
@@ -115,14 +122,26 @@ function MenuDirectoryPage() {
       })
     return () => { active = false }
   }, [])
-  const fallbackStores = [...restaurants.map((store) => ({ ...store, type: 'RESTAURANT' })), ...groceryStores.map((store) => ({ ...store, type: 'GROCERY' }))]
-  const stores = (liveStores?.length ? liveStores : fallbackStores).map((store) => ({
+  const stores = (liveStores || []).map((store) => ({
     ...store,
     kind: store.type === 'GROCERY' ? 'Grocery store' : 'Restaurant',
     itemCount: store.items?.length || 0,
     path: `${store.type === 'GROCERY' ? '/groceries/' : '/restaurants/'}${store.slug || store.name.toLowerCase().replaceAll(' ', '-')}`,
   }))
-  return <PageFrame eyebrow="DOORSTEP MENUS" title="Choose a store. See its menu." intro="Explore local restaurant dishes and grocery essentials, then open any store to browse its current menu.">{error && <p role="status" className="profile-message">{error} Showing available listings instead.</p>}<section className="menu-directory-grid">{stores.map((store) => <button className="menu-directory-card" key={`${store.kind}-${store.id}`} onClick={() => navigate(store.path)}><img src={store.image} alt={store.name} loading="lazy" /><div className="menu-directory-card-content"><span>{store.kind}</span><h2>{store.name}</h2><p>{store.cuisine || store.description || 'Local favourites'}</p><small>{store.itemCount} items available <ArrowRight size={15} /></small></div></button>)}</section></PageFrame>
+  const foodCategories = useMemo(() => {
+    const categories = new Map()
+    stores.filter((store) => store.type === 'RESTAURANT').forEach((store) => {
+      ;(store.items || []).forEach((item) => {
+        const category = item.category?.trim() || 'Other dishes'
+        const current = categories.get(category) || []
+        current.push({ ...item, store })
+        categories.set(category, current)
+      })
+    })
+    return [...categories.entries()].sort(([first], [second]) => first.localeCompare(second))
+  }, [liveStores])
+  const visibleCategories = selectedCategory ? foodCategories.filter(([category]) => category === selectedCategory) : foodCategories
+  return <PageFrame eyebrow="DOORSTEP FOOD MENU" title="Find food by type." intro="Food categories are collected automatically from the current menus of approved restaurants. New partner dishes appear in their own category as soon as they are available.">{error ? <p role="alert" className="profile-message">{error}</p> : liveStores === null ? <div className="empty-state" role="status">Loading approved restaurant menus...</div> : foodCategories.length === 0 ? <div className="empty-state">No approved restaurant dishes are available yet.</div> : <><section className="menu-category-filter" aria-label="Food categories"><button className={selectedCategory ? '' : 'is-active'} type="button" onClick={() => setSelectedCategory('')}>All food</button>{foodCategories.map(([category, items]) => <button className={selectedCategory === category ? 'is-active' : ''} type="button" key={category} onClick={() => setSelectedCategory(category)}>{category} <span>{items.length}</span></button>)}</section><section className="menu-category-results">{visibleCategories.map(([category, items]) => <section className="menu-category-group" key={category}><div className="section-heading"><div><span className="section-kicker">FOOD TYPE</span><h2>{category}</h2></div><span>{items.length} available</span></div><div className="menu-directory-grid">{items.map(({ store, ...item }) => <button className="menu-directory-card" key={item.id} type="button" onClick={() => navigate(store.path)}>{item.image && <img src={item.image} alt="" loading="lazy" />}<div className="menu-directory-card-content"><span>{store.name}</span><h3>{item.name}</h3><p>{item.description || 'Available from this approved restaurant.'}</p><small>{formatNaira(item.price)} <ArrowRight size={15} /></small></div></button>)}</div></section>)}</section><section className="menu-directory-stores"><div className="section-heading"><div><span className="section-kicker">BROWSE BY PARTNER</span><h2>Approved restaurants</h2></div></div><div className="menu-directory-grid">{stores.filter((store) => store.type === 'RESTAURANT').map((store) => <button className="menu-directory-card" key={store.id} type="button" onClick={() => navigate(store.path)}>{store.image && <img src={store.image} alt={store.name} loading="lazy" />}<div className="menu-directory-card-content"><span>Restaurant</span><h3>{store.name}</h3><p>{store.cuisine || store.description || 'Approved local partner'}</p><small>{store.itemCount} menu items <ArrowRight size={15} /></small></div></button>)}</div></section></>}</PageFrame>
 }
 
 function LegacyAuthPage({ register = false }) {
