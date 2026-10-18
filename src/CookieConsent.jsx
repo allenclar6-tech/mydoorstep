@@ -22,9 +22,12 @@ export function CookieConsent() {
   if (!visible) return null
 
   return <aside className="cookie-consent" aria-label="Cookie preferences" role="dialog" aria-live="polite">
-    <div>
-      <strong>Cookies on DOORSTEP</strong>
-      <p>We use essential cookies to keep your account, cart, and delivery choices working. You can accept optional cookies or continue with essential cookies only.</p>
+    <div className="cookie-consent-visual" aria-hidden="true"><span className="cookie-consent-chip cookie-consent-chip-one" /><span className="cookie-consent-chip cookie-consent-chip-two" /><span className="cookie-consent-chip cookie-consent-chip-three" /></div>
+    <div className="cookie-consent-copy">
+      <span className="cookie-consent-kicker">YOUR PRIVACY, YOUR CHOICE</span>
+      <strong>Cookies that keep DOORSTEP working smoothly.</strong>
+      <p>Essential cookies securely remember your session, cart, delivery area, and preferences. You can allow optional cookies or continue with essential cookies only.</p>
+      <ul><li>Secure account and checkout experience</li><li>Saved delivery and cart preferences</li></ul>
     </div>
     <div className="cookie-consent-actions">
       <button className="quiet-button" type="button" onClick={() => saveConsent('essential')}>Essential only</button>
