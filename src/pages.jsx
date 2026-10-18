@@ -24,6 +24,7 @@ export function MobileStoreDock() {
   const [cartCount, setCartCount] = useState(() => loadCart().reduce((count, item) => count + item.quantity, 0))
   const [unreadCount, setUnreadCount] = useState(0)
   const isExcludedRoute = ['/login', '/register', '/forgot-password', '/reset-password', '/location'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/') || path.startsWith('/partner/') || path === '/rider/register'
+  const isSignedIn = Boolean(localStorage.getItem('doorstep-token'))
 
   useEffect(() => {
     const refreshCart = () => setCartCount(loadCart().reduce((count, item) => count + item.quantity, 0))
@@ -35,7 +36,7 @@ export function MobileStoreDock() {
     }
   }, [])
 
-  if (isExcludedRoute) return null
+  if (!isSignedIn || isExcludedRoute) return null
 
   useEffect(() => {
     const token = localStorage.getItem('doorstep-token')
