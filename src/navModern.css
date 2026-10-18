@@ -86,8 +86,10 @@
 }
 
 @media (max-width: 700px) {
-	.app-shell:has(> .topbar) { padding-top: 124px; }
-	.topbar { grid-template-rows: 62px 62px; height: 124px; min-height: 124px; }
+	.app-shell:has(> .topbar) { padding-top: 68px; }
+	.app-shell:has(> .topbar.has-location-selector) { padding-top: 124px; }
+	.topbar { grid-template-rows: 68px; height: 68px; min-height: 68px; }
+	.topbar.has-location-selector { grid-template-rows: 62px 62px; height: 124px; min-height: 124px; }
 	.topbar .main-nav, .topbar .top-actions, .topbar .menu-toggle { display: none; }
 }
 

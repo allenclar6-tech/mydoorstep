@@ -1284,7 +1284,8 @@ h1 { font-weight: 800; letter-spacing: -4px; }
     .mobile-store-dock a svg { stroke-width: 2.5; }
     .mobile-store-icon { display: inline-flex; position: relative; }
     .mobile-store-icon b { align-items: center; background: #e96f4f; border: 2px solid #fff; border-radius: 999px; color: #fff; display: flex; font-family: 'DM Mono', monospace; font-size: .48rem; height: 15px; justify-content: center; min-width: 15px; padding: 0 2px; position: absolute; right: -10px; top: -7px; }
-    .mobile-store-avatar { background: #d8e7d9; border-radius: 50%; color: #23473b; height: 19px; overflow: hidden; width: 19px; }
+    .mobile-store-avatar { background: #d8e7d9; border-radius: 50%; color: #23473b; height: 31px; overflow: hidden; width: 31px; }
+    .mobile-store-avatar img { background: #d8e7d9; object-fit: contain; padding: 1px; }
     .mobile-store-dock a.is-active { color: #007c63; }
     .mobile-store-dock a.is-active svg {
       background: #e1f5eb;
@@ -1292,7 +1293,7 @@ h1 { font-weight: 800; letter-spacing: -4px; }
       box-sizing: content-box;
       padding: 5px 10px;
     }
-    .mobile-store-dock a.is-active .mobile-store-avatar { box-sizing: content-box; padding: 5px 10px; }
+    .mobile-store-dock a.is-active .mobile-store-avatar { box-shadow: 0 0 0 4px #e1f5eb; }
     .chat-widget { bottom: 86px; }
   }
   .delivery-map-welcome h2 { font-size: 1.34rem; }
