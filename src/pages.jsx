@@ -19,7 +19,7 @@ const NavigationPage = lazy(() => import('./navigation/NavigationPage'))
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
-function MobileStoreDock() {
+export function MobileStoreDock() {
   const path = window.location.pathname
   const [cartCount, setCartCount] = useState(() => loadCart().reduce((count, item) => count + item.quantity, 0))
   const [unreadCount, setUnreadCount] = useState(0)
