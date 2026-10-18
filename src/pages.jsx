@@ -57,10 +57,11 @@ function MobileStoreDock() {
 
   const items = [
     { label: 'Home', href: '/', icon: Home, active: path === '/' },
-    { label: 'Food', href: '/restaurants', icon: Utensils, active: path.startsWith('/restaurants') || path === '/menu' },
+    { label: 'Restaurants', href: '/restaurants', icon: Utensils, active: path.startsWith('/restaurants') },
     { label: 'Groceries', href: '/groceries', icon: ShoppingBag, active: path.startsWith('/groceries') },
     { label: 'Menu', href: '/menu', icon: Utensils, active: path === '/menu' },
     { label: 'Offers', href: '/offers', icon: Sparkles, active: path === '/offers' },
+    { label: 'Markets', href: '/markets', icon: Store, active: path === '/markets' },
     { label: 'Cart', href: '/cart', icon: ShoppingBag, badge: cartCount, active: path === '/cart' || path === '/checkout' },
     { label: 'Alerts', href: '/account/notifications', icon: Bell, badge: unreadCount, active: path === '/account/notifications' },
     { label: 'Orders', href: '/track-order', icon: Clock3, active: path === '/track-order' || path.startsWith('/account/orders') },
@@ -73,15 +74,22 @@ function PageFrame({ eyebrow, title, intro, children, className = '' }) {
   return <main className={`route-page ${className}`.trim()}><div className="route-hero"><span className="section-kicker">{eyebrow}</span><h1>{title}</h1><p>{intro}</p></div>{children}<MobileStoreDock /></main>
 }
 
-function DiscoveryPage({ offers = false, grocery = false }) {
+function DiscoveryPage({ offers = false, grocery = false, market = false }) {
   const [query, setQuery] = useState('')
   const [openOnly, setOpenOnly] = useState(false)
   const [liveRestaurants, setLiveRestaurants] = useState(null)
-  useEffect(() => { fetch(`${apiBase}/api/restaurants?limit=24${grocery ? '&type=GROCERY' : ''}`).then((response) => response.ok ? response.json() : null).then((body) => body?.restaurants && setLiveRestaurants(body.restaurants)).catch(() => undefined) }, [grocery])
-  const fallbackStores = grocery ? groceryStores : restaurants
+  const typeQuery = grocery ? '&type=GROCERY' : market ? '' : '&type=RESTAURANT'
+  useEffect(() => { fetch(`${apiBase}/api/restaurants?limit=24${typeQuery}`).then((response) => response.ok ? response.json() : null).then((body) => body?.restaurants && setLiveRestaurants(body.restaurants)).catch(() => undefined) }, [typeQuery])
+  const fallbackStores = grocery
+    ? groceryStores.map((store) => ({ ...store, type: 'GROCERY' }))
+    : market
+      ? [...restaurants.map((store) => ({ ...store, type: 'RESTAURANT' })), ...groceryStores.map((store) => ({ ...store, type: 'GROCERY' }))]
+      : restaurants.map((store) => ({ ...store, type: 'RESTAURANT' }))
   const source = liveRestaurants?.length ? liveRestaurants : fallbackStores
   const visible = source.filter((restaurant) => (!openOnly || restaurant.openNow !== false) && (!query || `${restaurant.name} ${restaurant.cuisine || restaurant.description || ''} ${(restaurant.items || []).map((item) => item.name).join(' ')}`.toLowerCase().includes(query.toLowerCase())))
-  return <PageFrame eyebrow={grocery ? 'GROCERIES' : offers ? 'DOORSTEP DEALS' : 'DISCOVER SAPELE'} title={grocery ? 'Groceries, delivered today.' : offers ? 'Good food, better timing.' : 'Find your next favourite.'} intro={grocery ? 'Fresh produce, pantry staples, drinks, and household essentials delivered across Sapele.' : offers ? 'Limited-time offers from the local kitchens we love. Every campaign is configured by the DOORSTEP team.' : 'Browse approved restaurants, compare delivery times, and find something worth sharing.'}><section className="discovery-toolbar"><div className="route-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={grocery ? 'Search groceries or stores' : 'Search restaurants or dishes'} /></div><label className="filter-check"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} /> Open now</label></section><section className="route-grid">{visible.map((restaurant) => <article className="route-restaurant" key={restaurant.id}><img src={restaurant.image || restaurants[0].image} alt={restaurant.name} /><div><div className="route-restaurant-top"><h2>{restaurant.name}</h2><span><Star size={14} fill="currentColor" /> {restaurant.rating}</span></div><p>{restaurant.cuisine || restaurant.description || 'Local favourites'}</p><small><Clock3 size={13} /> {restaurant.time || `${restaurant.openingTime || '09:00'}–${restaurant.closingTime || '22:00'}`} · {restaurant.fee || 'Delivery calculated at checkout'}</small><button className="text-link" onClick={() => navigate(`${grocery ? '/groceries/' : '/restaurants/'}${restaurant.slug || restaurant.name.toLowerCase().replaceAll(' ', '-')}`)}>View {grocery ? 'store' : 'menu'} <ArrowRight size={15} /></button></div></article>)}</section>{visible.length === 0 && <div className="empty-state">No {grocery ? 'grocery stores or products' : 'approved kitchens'} match that search.</div>}</PageFrame>
+  const title = grocery ? 'Groceries, delivered today.' : market ? 'Everything local, in one market.' : offers ? 'Good food, better timing.' : 'Find your next favourite.'
+  const intro = grocery ? 'Fresh produce, pantry staples, drinks, and household essentials delivered across Sapele.' : market ? 'Browse approved restaurants, grocery stores, and their available products in one place.' : offers ? 'Limited-time offers from the local kitchens we love. Every campaign is configured by the DOORSTEP team.' : 'Browse approved restaurants, compare delivery times, and find something worth sharing.'
+  return <PageFrame eyebrow={grocery ? 'GROCERIES' : market ? 'DOORSTEP MARKETS' : offers ? 'DOORSTEP DEALS' : 'DISCOVER SAPELE'} title={title} intro={intro}><section className="discovery-toolbar"><div className="route-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={grocery ? 'Search groceries or stores' : market ? 'Search restaurants, groceries, or products' : 'Search restaurants or dishes'} /></div><label className="filter-check"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} /> Open now</label></section><section className="route-grid">{visible.map((restaurant) => { const isGrocery = restaurant.type === 'GROCERY'; return <article className="route-restaurant" key={restaurant.id}><img src={restaurant.image || restaurants[0].image} alt={restaurant.name} /><div><div className="route-restaurant-top"><h2>{restaurant.name}</h2><span><Star size={14} fill="currentColor" /> {restaurant.rating}</span></div><p>{restaurant.cuisine || restaurant.description || 'Local favourites'}</p><small><Clock3 size={13} /> {restaurant.time || `${restaurant.openingTime || '09:00'}–${restaurant.closingTime || '22:00'}`} · {restaurant.fee || 'Delivery calculated at checkout'}</small><button className="text-link" onClick={() => navigate(`${isGrocery ? '/groceries/' : '/restaurants/'}${restaurant.slug || restaurant.name.toLowerCase().replaceAll(' ', '-')}`)}>View {isGrocery ? 'store' : 'menu'} <ArrowRight size={15} /></button></div></article> })}</section>{visible.length === 0 && <div className="empty-state">No {grocery ? 'grocery stores or products' : market ? 'restaurants, grocery stores, or products' : 'approved restaurants'} match that search.</div>}</PageFrame>
 }
 
 function CategoryPage({ category }) {
@@ -1049,6 +1057,7 @@ export function RoutePage({ path, cart = [], checkoutError = '', onAddToCart = (
   if (path.startsWith('/restaurants/')) return <RestaurantPage slug={path.split('/')[2]} onAddToCart={onAddToCart} />
   if (path === '/groceries') return <DiscoveryPage grocery />
   if (path.startsWith('/groceries/')) return <RestaurantPage grocery slug={path.split('/')[2]} onAddToCart={onAddToCart} />
+  if (path === '/markets') return <DiscoveryPage market />
   if (path === '/partners/groceries/register') return <GroceryOwnerApplication />
   if (path === '/offers') return <DiscoveryPage offers />
   if (path === '/cart') return <CartPage cart={cart} onChangeQuantity={onChangeQuantity} onCheckout={onCheckout} />
