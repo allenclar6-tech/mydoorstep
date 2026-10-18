@@ -59,6 +59,9 @@ function MobileStoreDock() {
     { label: 'Home', href: '/', icon: Home, active: path === '/' },
     { label: 'Food', href: '/restaurants', icon: Utensils, active: path.startsWith('/restaurants') || path === '/menu' },
     { label: 'Groceries', href: '/groceries', icon: ShoppingBag, active: path.startsWith('/groceries') },
+    { label: 'Menu', href: '/menu', icon: Utensils, active: path === '/menu' },
+    { label: 'Offers', href: '/offers', icon: Sparkles, active: path === '/offers' },
+    { label: 'Help', href: '/help', icon: HelpCircle, active: path === '/help' || path === '/account/support' },
     { label: 'Cart', href: '/cart', icon: ShoppingBag, badge: cartCount, active: path === '/cart' || path === '/checkout' },
     { label: 'Alerts', href: '/account/notifications', icon: Bell, badge: unreadCount, active: path === '/account/notifications' },
     { label: 'Orders', href: '/track-order', icon: Clock3, active: path === '/track-order' || path.startsWith('/account/orders') },
@@ -88,8 +91,31 @@ function CategoryPage({ category }) {
 }
 
 function MenuDirectoryPage() {
-  const stores = [...restaurants.map((store) => ({ ...store, kind: 'Restaurant', path: `/restaurants/${store.name.toLowerCase().replaceAll(' ', '-')}` })), ...groceryStores.map((store) => ({ ...store, kind: 'Grocery store', path: `/groceries/${store.name.toLowerCase().replaceAll(' ', '-')}` }))]
-  return <PageFrame eyebrow="DOORSTEP MENUS" title="Choose a store. See its menu." intro="Explore local restaurant dishes and grocery essentials, then open any store to browse its full menu."><section className="menu-directory-grid">{stores.map((store) => <button className="menu-directory-card" key={`${store.kind}-${store.id}`} onClick={() => navigate(store.path)}><img src={store.image} alt={store.name} loading="lazy" /><div className="menu-directory-card-content"><span>{store.kind}</span><h2>{store.name}</h2><p>{store.cuisine}</p><small>{store.items.length} items available <ArrowRight size={15} /></small></div></button>)}</section></PageFrame>
+  const [liveStores, setLiveStores] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let active = true
+    fetch(`${apiBase}/api/restaurants?limit=50`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('The latest menus are temporarily unavailable.')
+        return response.json()
+      })
+      .then((body) => {
+        if (active) setLiveStores(body.restaurants || [])
+      })
+      .catch((loadError) => {
+        if (active) setError(loadError.message)
+      })
+    return () => { active = false }
+  }, [])
+  const fallbackStores = [...restaurants.map((store) => ({ ...store, type: 'RESTAURANT' })), ...groceryStores.map((store) => ({ ...store, type: 'GROCERY' }))]
+  const stores = (liveStores?.length ? liveStores : fallbackStores).map((store) => ({
+    ...store,
+    kind: store.type === 'GROCERY' ? 'Grocery store' : 'Restaurant',
+    itemCount: store.items?.length || 0,
+    path: `${store.type === 'GROCERY' ? '/groceries/' : '/restaurants/'}${store.slug || store.name.toLowerCase().replaceAll(' ', '-')}`,
+  }))
+  return <PageFrame eyebrow="DOORSTEP MENUS" title="Choose a store. See its menu." intro="Explore local restaurant dishes and grocery essentials, then open any store to browse its current menu.">{error && <p role="status" className="profile-message">{error} Showing available listings instead.</p>}<section className="menu-directory-grid">{stores.map((store) => <button className="menu-directory-card" key={`${store.kind}-${store.id}`} onClick={() => navigate(store.path)}><img src={store.image} alt={store.name} loading="lazy" /><div className="menu-directory-card-content"><span>{store.kind}</span><h2>{store.name}</h2><p>{store.cuisine || store.description || 'Local favourites'}</p><small>{store.itemCount} items available <ArrowRight size={15} /></small></div></button>)}</section></PageFrame>
 }
 
 function LegacyAuthPage({ register = false }) {

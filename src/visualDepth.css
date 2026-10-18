@@ -1,4 +1,5 @@
 :root { --depth-shadow: 0 22px 48px rgba(23, 46, 37, .13), 0 5px 14px rgba(23, 46, 37, .07); --depth-shadow-hover: 0 30px 58px rgba(23, 46, 37, .2), 0 10px 22px rgba(23, 46, 37, .1); --glass: rgba(255, 253, 247, .78); }
+.mobile-store-dock { display: none; }
 body { background: radial-gradient(circle at 8% 4%, rgba(233, 111, 79, .12), transparent 23rem), radial-gradient(circle at 92% 16%, rgba(116, 176, 135, .18), transparent 28rem), var(--paper); }
 body::before { background-image: linear-gradient(rgba(35, 71, 59, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(35, 71, 59, .025) 1px, transparent 1px); background-size: 32px 32px; content: ''; inset: 0; mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .45), transparent 55%); pointer-events: none; position: fixed; z-index: -1; }
 button, a, input, select, textarea { transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease, background-color .2s ease; }
@@ -1254,14 +1255,20 @@ h1 { font-weight: 800; letter-spacing: -4px; }
       bottom: 0;
       box-shadow: 0 -8px 24px rgba(13, 55, 39, .12);
       display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-auto-columns: minmax(64px, 1fr);
+      grid-auto-flow: column;
+      grid-template-columns: repeat(10, minmax(64px, 1fr));
       left: 0;
       min-height: 70px;
       padding: 7px max(9px, env(safe-area-inset-left)) calc(7px + env(safe-area-inset-bottom)) max(9px, env(safe-area-inset-right));
       position: fixed;
       right: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+      touch-action: pan-x;
       z-index: 60;
     }
+    .mobile-store-dock::-webkit-scrollbar { display: none; }
     .mobile-store-dock a {
       align-items: center;
       color: #678076;
