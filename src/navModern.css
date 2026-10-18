@@ -60,7 +60,7 @@
 	.topbar .icon-button { display: inline-flex; height: 38px; width: 38px; }
 	.topbar .account-menu { display: block; position: relative; }
 	.topbar .profile-button { height: 38px; padding: 0; width: 38px; }
-	.topbar .profile-button span, .topbar .profile-button svg:last-child { display: none; }
+	.topbar .profile-button span { display: none; }
 	.topbar .top-actions svg { height: 22px; stroke-width: 3px; width: 22px; }
 	.topbar .menu-toggle { display: none; }
 	.topbar .main-nav { align-items: center; background: transparent; border: 0; box-shadow: none; display: flex; flex-direction: row; gap: 22px; grid-column: 1 / -1; grid-row: 2; margin: 0; overflow-x: auto; padding: 0 2px; position: static; scrollbar-width: none; }
