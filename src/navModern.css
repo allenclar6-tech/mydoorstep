@@ -22,6 +22,7 @@
 .topbar .main-nav a.active::after { background: var(--orange); bottom: 14px; display: block; height: 3px; left: 0; width: 100%; }
 .mobile-nav-links { display: none; }
 .topbar .top-actions { gap: 8px; }
+.topbar.signed-out .top-actions { margin-left: auto; }
 .topbar .cart-button { background: #fff; border-radius: 5px; box-shadow: none; color: var(--green); min-height: 38px; padding: 8px 11px; }
 .topbar .cart-button:hover { background: #f1f5ef; box-shadow: none; transform: none; }
 .topbar .cart-button b { background: var(--orange); color: #fff; height: 17px; width: 17px; }
