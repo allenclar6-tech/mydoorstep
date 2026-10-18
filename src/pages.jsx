@@ -144,6 +144,42 @@ function MenuDirectoryPage() {
   return <PageFrame eyebrow="DOORSTEP FOOD MENU" title="Find food by type." intro="Food categories are collected automatically from the current menus of approved restaurants. New partner dishes appear in their own category as soon as they are available.">{error ? <p role="alert" className="profile-message">{error}</p> : liveStores === null ? <div className="empty-state" role="status">Loading approved restaurant menus...</div> : foodCategories.length === 0 ? <div className="empty-state">No approved restaurant dishes are available yet.</div> : <><section className="menu-category-filter" aria-label="Food categories"><button className={selectedCategory ? '' : 'is-active'} type="button" onClick={() => setSelectedCategory('')}>All food</button>{foodCategories.map(([category, items]) => <button className={selectedCategory === category ? 'is-active' : ''} type="button" key={category} onClick={() => setSelectedCategory(category)}>{category} <span>{items.length}</span></button>)}</section><section className="menu-category-results">{visibleCategories.map(([category, items]) => <section className="menu-category-group" key={category}><div className="section-heading"><div><span className="section-kicker">FOOD TYPE</span><h2>{category}</h2></div><span>{items.length} available</span></div><div className="menu-directory-grid">{items.map(({ store, ...item }) => <button className="menu-directory-card" key={item.id} type="button" onClick={() => navigate(store.path)}>{item.image && <img src={item.image} alt="" loading="lazy" />}<div className="menu-directory-card-content"><span>{store.name}</span><h3>{item.name}</h3><p>{item.description || 'Available from this approved restaurant.'}</p><small>{formatNaira(item.price)} <ArrowRight size={15} /></small></div></button>)}</div></section>)}</section><section className="menu-directory-stores"><div className="section-heading"><div><span className="section-kicker">BROWSE BY PARTNER</span><h2>Approved restaurants</h2></div></div><div className="menu-directory-grid">{stores.filter((store) => store.type === 'RESTAURANT').map((store) => <button className="menu-directory-card" key={store.id} type="button" onClick={() => navigate(store.path)}>{store.image && <img src={store.image} alt={store.name} loading="lazy" />}<div className="menu-directory-card-content"><span>Restaurant</span><h3>{store.name}</h3><p>{store.cuisine || store.description || 'Approved local partner'}</p><small>{store.itemCount} menu items <ArrowRight size={15} /></small></div></button>)}</div></section></>}</PageFrame>
 }
 
+function MarketBrowsePage() {
+  const [partners, setPartners] = useState(null)
+  const [query, setQuery] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    fetch(`${apiBase}/api/restaurants?limit=50`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('The market catalog is temporarily unavailable.')
+        return response.json()
+      })
+      .then((body) => { if (active) setPartners(body.restaurants || []) })
+      .catch((loadError) => { if (active) setError(loadError.message) })
+    return () => { active = false }
+  }, [])
+
+  const catalog = useMemo(() => (partners || []).flatMap((partner) => (partner.items || []).map((item) => ({
+    ...item,
+    category: item.category?.trim() || (partner.type === 'GROCERY' ? 'Essentials' : 'Other dishes'),
+    partner,
+    partnerPath: `${partner.type === 'GROCERY' ? '/groceries/' : '/restaurants/'}${partner.slug || partner.name.toLowerCase().replaceAll(' ', '-')}`,
+  }))), [partners])
+  const categories = useMemo(() => [...new Set(catalog.map((item) => item.category))].sort((first, second) => first.localeCompare(second)), [catalog])
+  const normalizedQuery = query.trim().toLowerCase()
+  const results = catalog.filter((item) => (!selectedCategory || item.category === selectedCategory) && (!normalizedQuery || `${item.name} ${item.description || ''} ${item.category} ${item.partner.name} ${item.partner.type}`.toLowerCase().includes(normalizedQuery)))
+  const groupedResults = useMemo(() => {
+    const groups = new Map()
+    results.forEach((item) => groups.set(item.category, [...(groups.get(item.category) || []), item]))
+    return [...groups.entries()].sort(([first], [second]) => first.localeCompare(second))
+  }, [results])
+
+  return <PageFrame eyebrow="DOORSTEP MARKETS" title="Browse food, products, and essentials." intro="Search all currently available dishes and grocery products from approved DOORSTEP partners in one place."><section className="discovery-toolbar"><div className="route-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search food, products, essentials, or stores" aria-label="Search the markets catalog" /></div></section>{error ? <div className="empty-state" role="alert">{error}</div> : partners === null ? <div className="empty-state" role="status">Loading approved food and grocery products...</div> : catalog.length === 0 ? <div className="empty-state">No approved food or grocery products are available yet.</div> : <><section className="menu-category-filter" aria-label="Market categories"><button className={selectedCategory ? '' : 'is-active'} type="button" onClick={() => setSelectedCategory('')}>All categories</button>{categories.map((category) => <button className={selectedCategory === category ? 'is-active' : ''} type="button" key={category} onClick={() => setSelectedCategory(category)}>{category}</button>)}</section><section className="menu-category-results">{groupedResults.map(([category, items]) => <section className="menu-category-group" key={category}><div className="section-heading"><div><span className="section-kicker">{items.some((item) => item.partner.type === 'GROCERY') ? 'FOOD & ESSENTIALS' : 'FOOD'}</span><h2>{category}</h2></div><span>{items.length} available</span></div><div className="menu-directory-grid">{items.map((item) => <button className="menu-directory-card" key={item.id} type="button" onClick={() => navigate(item.partnerPath)}>{item.image && <img src={item.image} alt="" loading="lazy" />}<div className="menu-directory-card-content"><span>{item.partner.type === 'GROCERY' ? 'Grocery' : 'Restaurant'} · {item.partner.name}</span><h3>{item.name}</h3><p>{item.description || `Available from ${item.partner.name}.`}</p><small>{formatNaira(item.price)} <ArrowRight size={15} /></small></div></button>)}</div></section>)}</section>{results.length === 0 && <div className="empty-state">No available food, product, or essential matches “{query}”.</div>}</>}</PageFrame>
+}
+
 function LegacyAuthPage({ register = false }) {
   const [role, setRole] = useState('customer')
   const [submitted, setSubmitted] = useState(false)
@@ -1076,7 +1112,7 @@ export function RoutePage({ path, cart = [], checkoutError = '', onAddToCart = (
   if (path.startsWith('/restaurants/')) return <RestaurantPage slug={path.split('/')[2]} onAddToCart={onAddToCart} />
   if (path === '/groceries') return <DiscoveryPage grocery />
   if (path.startsWith('/groceries/')) return <RestaurantPage grocery slug={path.split('/')[2]} onAddToCart={onAddToCart} />
-  if (path === '/markets') return <DiscoveryPage market />
+  if (path === '/markets') return <MarketBrowsePage />
   if (path === '/partners/groceries/register') return <GroceryOwnerApplication />
   if (path === '/offers') return <DiscoveryPage offers />
   if (path === '/cart') return <CartPage cart={cart} onChangeQuantity={onChangeQuantity} onCheckout={onCheckout} />
