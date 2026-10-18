@@ -11,6 +11,7 @@ import { LocationMap } from './LocationMap'
 import { DeliveryTrackingMap } from './DeliveryTrackingMap'
 import { readConfirmedLocation } from './location'
 import { signOut as endSession } from './services/authService'
+import { loadCart } from './services/orderService'
 import { SignInLinks, SignOutNotice } from './authControls'
 
 const NavigationPage = lazy(() => import('./navigation/NavigationPage'))
@@ -20,15 +21,50 @@ const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : imp
 
 function MobileStoreDock() {
   const path = window.location.pathname
-  if (['/login', '/register', '/forgot-password', '/reset-password', '/location'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/') || path.startsWith('/partner/') || path === '/rider/register') return null
+  const [cartCount, setCartCount] = useState(() => loadCart().reduce((count, item) => count + item.quantity, 0))
+  const [unreadCount, setUnreadCount] = useState(0)
+  const isExcludedRoute = ['/login', '/register', '/forgot-password', '/reset-password', '/location'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/') || path.startsWith('/partner/') || path === '/rider/register'
+
+  useEffect(() => {
+    const refreshCart = () => setCartCount(loadCart().reduce((count, item) => count + item.quantity, 0))
+    window.addEventListener('doorstep-cart-change', refreshCart)
+    window.addEventListener('storage', refreshCart)
+    return () => {
+      window.removeEventListener('doorstep-cart-change', refreshCart)
+      window.removeEventListener('storage', refreshCart)
+    }
+  }, [])
+
+  if (isExcludedRoute) return null
+
+  useEffect(() => {
+    const token = localStorage.getItem('doorstep-token')
+    if (!token) return undefined
+    let active = true
+    const refreshNotifications = async () => {
+      const response = await fetch(`${apiBase}/api/notifications`, { headers: authHeaders() })
+      if (!response.ok) throw new Error('Could not refresh notifications.')
+      const body = await response.json()
+      if (active) setUnreadCount((body.notifications || []).filter((notification) => !notification.readAt).length)
+    }
+    refreshNotifications().catch((error) => console.error(error))
+    window.addEventListener('doorstep-notifications-change', refreshNotifications)
+    return () => {
+      active = false
+      window.removeEventListener('doorstep-notifications-change', refreshNotifications)
+    }
+  }, [])
+
   const items = [
     { label: 'Home', href: '/', icon: Home, active: path === '/' },
     { label: 'Food', href: '/restaurants', icon: Utensils, active: path.startsWith('/restaurants') || path === '/menu' },
     { label: 'Groceries', href: '/groceries', icon: ShoppingBag, active: path.startsWith('/groceries') },
-    { label: 'Orders', href: '/track-order', icon: Clock3, active: path === '/track-order' || path === '/cart' || path === '/checkout' || path.startsWith('/account/orders') },
-    { label: 'Account', href: '/account', icon: UserCircle, active: path === '/account' || path.startsWith('/account/') },
+    { label: 'Cart', href: '/cart', icon: ShoppingBag, badge: cartCount, active: path === '/cart' || path === '/checkout' },
+    { label: 'Alerts', href: '/account/notifications', icon: Bell, badge: unreadCount, active: path === '/account/notifications' },
+    { label: 'Orders', href: '/track-order', icon: Clock3, active: path === '/track-order' || path.startsWith('/account/orders') },
+    { label: 'Account', href: '/account', avatar: true, active: path === '/account' || (path.startsWith('/account/') && path !== '/account/notifications') },
   ]
-  return <nav className="mobile-store-dock" aria-label="Primary mobile navigation">{items.map(({ label, href, icon: Icon, active }) => <a key={href} href={href} onClick={(event) => { event.preventDefault(); navigate(href) }} className={active ? 'is-active' : ''} aria-current={active ? 'page' : undefined}><Icon size={19} /><span>{label}</span></a>)}</nav>
+  return <nav className="mobile-store-dock" aria-label="Primary mobile navigation">{items.map(({ label, href, icon: Icon, badge, avatar, active }) => <a key={href} href={href} onClick={(event) => { event.preventDefault(); navigate(href) }} className={active ? 'is-active' : ''} aria-current={active ? 'page' : undefined}>{avatar ? <ProfileAvatar className="mobile-store-avatar" size={19} /> : <span className="mobile-store-icon"><Icon size={19} />{badge > 0 && <b>{badge > 99 ? '99+' : badge}</b>}</span>}<span>{label}</span></a>)}</nav>
 }
 
 function PageFrame({ eyebrow, title, intro, children, className = '' }) {
@@ -544,8 +580,8 @@ function NotificationsPage() {
   const [loading, setLoading] = useState(true)
   const load = () => fetch(`${apiBase}/api/notifications`, { headers: authHeaders() }).then((response) => response.json()).then((body) => setNotifications(body.notifications || [])).finally(() => setLoading(false))
   useEffect(() => { load() }, [])
-  const markAll = async () => { await fetch(`${apiBase}/api/notifications/read-all`, { method: 'POST', headers: authHeaders() }); load() }
-  const markOne = async (id) => { await fetch(`${apiBase}/api/notifications/${id}/read`, { method: 'PATCH', headers: authHeaders() }); load() }
+  const markAll = async () => { await fetch(`${apiBase}/api/notifications/read-all`, { method: 'POST', headers: authHeaders() }); window.dispatchEvent(new Event('doorstep-notifications-change')); load() }
+  const markOne = async (id) => { await fetch(`${apiBase}/api/notifications/${id}/read`, { method: 'PATCH', headers: authHeaders() }); window.dispatchEvent(new Event('doorstep-notifications-change')); load() }
   return <PageFrame eyebrow="NOTIFICATION CENTER" title="Stay close to every update." intro="Order, payment, delivery, promotion, account, and security updates live here."><section className="notification-page"><div className="notification-toolbar"><div><span className="section-kicker">INBOX</span><h2>{notifications.filter((item) => !item.readAt).length} unread updates</h2></div><button className="text-link" onClick={markAll}>Mark all as read <Check size={15} /></button></div>{loading ? <div className="empty-state">Loading your notifications...</div> : notifications.length === 0 ? <div className="notification-empty"><Bell size={30} /><h2>Your inbox is calm.</h2><p>Payment confirmations, rider updates, and support replies will appear here.</p></div> : <div className="notification-list">{notifications.map((notification) => <button className={notification.readAt ? 'notification-row read' : 'notification-row'} key={notification.id} onClick={() => markOne(notification.id)}><span className="notification-type"><Bell size={16} /></span><div><strong>{notification.title}</strong><p>{notification.body}</p><small>{new Date(notification.createdAt).toLocaleString('en-NG')}</small></div>{!notification.readAt && <i />}</button>)}</div>}</section></PageFrame>
 }
 

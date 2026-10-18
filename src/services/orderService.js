@@ -10,4 +10,5 @@ export function loadCart() {
 
 export function saveCart(cart) {
   localStorage.setItem(CART_KEY, JSON.stringify(cart))
+  window.dispatchEvent(new Event('doorstep-cart-change'))
 }

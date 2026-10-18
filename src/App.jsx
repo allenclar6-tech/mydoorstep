@@ -89,6 +89,7 @@ function App() {
   const [hasScrolled, setHasScrolled] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [accountRole, setAccountRole] = useState(() => localStorage.getItem('doorstep-role'))
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
 
   useEffect(() => {
     const onPopState = () => setPath(currentPath())
@@ -240,6 +241,26 @@ function App() {
   }
 
   const isSignedIn = Boolean(localStorage.getItem('doorstep-token'))
+  useEffect(() => {
+    if (!isSignedIn) {
+      setUnreadNotificationCount(0)
+      return undefined
+    }
+    let active = true
+    const refreshNotifications = async () => {
+      const token = localStorage.getItem('doorstep-token')
+      const response = await fetch(`${apiBase}/api/notifications`, { headers: { Authorization: `Bearer ${token}` } })
+      if (!response.ok) throw new Error('Could not refresh notifications.')
+      const body = await response.json()
+      if (active) setUnreadNotificationCount((body.notifications || []).filter((notification) => !notification.readAt).length)
+    }
+    refreshNotifications().catch((error) => console.error(error))
+    window.addEventListener('doorstep-notifications-change', refreshNotifications)
+    return () => {
+      active = false
+      window.removeEventListener('doorstep-notifications-change', refreshNotifications)
+    }
+  }, [isSignedIn, path])
   const accountItems = isSignedIn
     ? [{ label: accountRole === 'RESTAURANT' ? 'Partner account' : 'My Account', detail: accountRole === 'RESTAURANT' ? 'Your business profile and settings' : 'Your profile and account settings', icon: UserCircle, path: accountPathFor(accountRole) }, { label: 'Sign out', detail: 'Securely end your session', icon: LogOut, action: signOut }]
     : [{ label: 'Customer login', detail: 'Orders, favourites and deliveries', icon: ShoppingBag, path: '/login' }, { label: 'Partner sign in', detail: 'Restaurant and grocery workspace', icon: KeyRound, path: '/partner/login' }, { label: 'Rider sign in', detail: 'Your deliveries and earnings', icon: Compass, path: '/rider/login' }, { label: 'Create an account', detail: 'Find your place on DOORSTEP', icon: Plus, path: '/register' }]
@@ -343,7 +364,7 @@ function App() {
   const headerClass = `${hasScrolled || path !== '/' ? 'topbar is-scrolled' : 'topbar'}${isSignedIn ? '' : ' signed-out'}${shouldShowHeaderLocation ? ' has-location-selector' : ''}`
   const headerLocationControl = shouldShowHeaderLocation && <button className="header-location-selector" type="button" onClick={() => { window.history.pushState({}, '', '/location'); setPath('/location') }} aria-label="Choose delivery address"><MapPin size={17} /><span>{deliveryLocation === 'Amukpe, Sapele' ? 'Choose delivery address' : deliveryLocation}</span><ChevronDown size={16} /></button>
   const AccountFrame = path.startsWith('/account') ? AccountAccessGate : Fragment
-  if (path !== '/') return <AccountFrame><div className="app-shell"><header className={headerClass}><a className="brand" href="/" onClick={(event) => goTo(event, '/')} aria-label="DOORSTEP home"><span className="brand-mark"><Sparkles size={17} strokeWidth={2.5} /></span><span>doorstep</span></a>{headerLocationControl}{isSignedIn && <nav className={menuOpen ? 'main-nav is-open' : 'main-nav'}><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/groceries" onClick={(event) => goTo(event, '/groceries')}>Groceries</a><a href="/menu" onClick={(event) => goTo(event, '/menu')}>Menu</a><a href="/track-order" onClick={(event) => goTo(event, '/track-order')}>Track order</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a></nav>}<div className="top-actions">{isSignedIn && <button className="icon-button notification" aria-label="Notifications" onClick={(event) => goTo(event, '/account/notifications')}><Bell size={19} /></button>}{accountControl}{isSignedIn && <button className="cart-button" onClick={() => { window.history.pushState({}, '', '/cart'); setPath('/cart') }}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button>}</div>{isSignedIn && <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={22} /></button>}</header><RoutePage path={path} cart={cart} checkoutError={checkoutError} onAddToCart={(item, restaurant) => { addToCart(item, restaurant); setPath('/cart'); window.history.pushState({}, '', '/cart') }} onChangeQuantity={changeQuantity} onCheckout={() => { window.history.pushState({}, '', '/checkout'); setPath('/checkout') }} onComplete={completeOrder} /><ChatWidget open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} /></div></AccountFrame>
+  if (path !== '/') return <AccountFrame><div className="app-shell"><header className={headerClass}><a className="brand" href="/" onClick={(event) => goTo(event, '/')} aria-label="DOORSTEP home"><span className="brand-mark"><Sparkles size={17} strokeWidth={2.5} /></span><span>doorstep</span></a>{headerLocationControl}{isSignedIn && <nav className={menuOpen ? 'main-nav is-open' : 'main-nav'}><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/groceries" onClick={(event) => goTo(event, '/groceries')}>Groceries</a><a href="/menu" onClick={(event) => goTo(event, '/menu')}>Menu</a><a href="/track-order" onClick={(event) => goTo(event, '/track-order')}>Track order</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a></nav>}<div className="top-actions">{isSignedIn && <button className="icon-button notification" aria-label={unreadNotificationCount ? `Notifications, ${unreadNotificationCount} unread` : 'Notifications'} onClick={(event) => goTo(event, '/account/notifications')}><Bell size={19} />{unreadNotificationCount > 0 && <b>{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</b>}</button>}{accountControl}{isSignedIn && <button className="cart-button" onClick={() => { window.history.pushState({}, '', '/cart'); setPath('/cart') }}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button>}</div>{isSignedIn && <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={22} /></button>}</header><RoutePage path={path} cart={cart} checkoutError={checkoutError} onAddToCart={(item, restaurant) => { addToCart(item, restaurant); setPath('/cart'); window.history.pushState({}, '', '/cart') }} onChangeQuantity={changeQuantity} onCheckout={() => { window.history.pushState({}, '', '/checkout'); setPath('/checkout') }} onComplete={completeOrder} /><ChatWidget open={chatOpen} onToggle={() => setChatOpen(!chatOpen)} /></div></AccountFrame>
 
   return (
     <div className="app-shell">
@@ -353,7 +374,7 @@ function App() {
         {isSignedIn && <nav className={menuOpen ? 'main-nav is-open' : 'main-nav'}>
           <a className="active" href="/" onClick={(event) => goTo(event, '/')}>Home</a><a href="/restaurants" onClick={(event) => goTo(event, '/restaurants')}>Restaurants</a><a href="/groceries" onClick={(event) => goTo(event, '/groceries')}>Groceries</a><a href="/menu" onClick={(event) => goTo(event, '/menu')}>Menu</a><a href="/track-order" onClick={(event) => goTo(event, '/track-order')}>Track order</a><a href="/offers" onClick={(event) => goTo(event, '/offers')}>Offers</a><a href="/how-it-works" onClick={(event) => goTo(event, '/how-it-works')}>How it works</a><a href="/help" onClick={(event) => goTo(event, '/help')}>Help</a>
         </nav>}
-        <div className="top-actions">{isSignedIn && <button className="icon-button notification" aria-label="Notifications" onClick={(event) => goTo(event, '/account/notifications')}><Bell size={19} /></button>}{accountControl}{isSignedIn && <button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button>}</div>
+        <div className="top-actions">{isSignedIn && <button className="icon-button notification" aria-label={unreadNotificationCount ? `Notifications, ${unreadNotificationCount} unread` : 'Notifications'} onClick={(event) => goTo(event, '/account/notifications')}><Bell size={19} />{unreadNotificationCount > 0 && <b>{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</b>}</button>}{accountControl}{isSignedIn && <button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={18} /><span>Cart</span>{cartCount > 0 && <b>{cartCount}</b>}</button>}</div>
         {isSignedIn && <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={22} /></button>}
       </header>
       <main id="top">
