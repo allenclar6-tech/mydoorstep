@@ -61,7 +61,6 @@ function MobileStoreDock() {
     { label: 'Groceries', href: '/groceries', icon: ShoppingBag, active: path.startsWith('/groceries') },
     { label: 'Menu', href: '/menu', icon: Utensils, active: path === '/menu' },
     { label: 'Offers', href: '/offers', icon: Sparkles, active: path === '/offers' },
-    { label: 'Help', href: '/help', icon: HelpCircle, active: path === '/help' || path === '/account/support' },
     { label: 'Cart', href: '/cart', icon: ShoppingBag, badge: cartCount, active: path === '/cart' || path === '/checkout' },
     { label: 'Alerts', href: '/account/notifications', icon: Bell, badge: unreadCount, active: path === '/account/notifications' },
     { label: 'Orders', href: '/track-order', icon: Clock3, active: path === '/track-order' || path.startsWith('/account/orders') },
