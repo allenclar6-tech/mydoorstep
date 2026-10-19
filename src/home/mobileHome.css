@@ -1,0 +1,139 @@
+/* Phone home screen + app-style bottom bar. Desktop keeps the existing home. */
+.m-home { display: none; }
+
+@media (max-width: 700px) {
+  :root {
+    --m-forest: var(--t-forest-800);
+    --m-green: #007c63;
+    --m-sun: #ffc244;
+    --m-sun-soft: #fff1c9;
+    --m-ink: var(--t-ink);
+    --m-muted: var(--t-muted);
+    --m-paper: var(--t-paper);
+  }
+
+  /* Swap the marketing home for the app-style one on phones. */
+  main#top > section { display: none; }
+  .m-home { background: var(--m-paper); display: block; font-family: Manrope, system-ui, sans-serif; min-height: 100dvh; padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+
+  .m-home-top {
+    background: var(--m-sun);
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 14px max(16px, env(safe-area-inset-left)) 34px max(16px, env(safe-area-inset-right));
+  }
+  .m-address {
+    align-items: center; align-self: flex-start; background: transparent; border: 0; color: var(--m-forest); cursor: pointer;
+    display: flex; gap: 8px; max-width: 100%; min-height: 44px; padding: 0; text-align: left;
+  }
+  .m-address > svg:first-child { color: var(--m-forest); flex: 0 0 auto; }
+  .m-address span { display: flex; flex-direction: column; min-width: 0; }
+  .m-address small { color: var(--t-forest-700); font-size: .72rem; font-weight: 700; }
+  .m-address strong { color: var(--m-forest); font-size: 1rem; font-weight: 800; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-search {
+    align-items: center; background: #fff; border-radius: 14px; box-shadow: 0 6px 16px rgba(120, 80, 0, .16);
+    color: var(--m-muted); display: flex; gap: 10px; min-height: 50px; padding: 0 8px 0 14px;
+  }
+  .m-search input { background: transparent; border: 0; color: var(--m-ink); flex: 1; font: inherit; font-size: 16px; font-weight: 600; min-width: 0; outline: none; padding: 0; }
+  .m-search input::placeholder { color: #97a39e; font-weight: 500; }
+  .m-search input::-webkit-search-cancel-button { display: none; }
+  .m-search button { background: #eef2ef; border: 0; border-radius: 50%; color: var(--m-ink); display: inline-flex; height: 32px; justify-content: center; align-items: center; width: 32px; }
+  .m-search:focus-within { box-shadow: 0 0 0 3px var(--m-forest), 0 6px 16px rgba(120, 80, 0, .16); }
+
+  /* White sheet that tucks over the green band, like a native app. */
+  .m-home-sheet {
+    background: var(--m-paper); border-radius: 24px 24px 0 0; display: flex; flex-direction: column; gap: 26px;
+    margin-top: -20px; padding: 22px 0 0; position: relative;
+  }
+
+  /* Category bubbles: the one loud element on the page. */
+  .m-bubbles { display: grid; gap: 16px 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 16px; }
+  .m-bubble { align-items: center; background: none; border: 0; color: var(--m-ink); cursor: pointer; display: flex; flex-direction: column; gap: 8px; padding: 0; }
+  .m-bubble-icon {
+    align-items: center; background: #e2f2e8; border-radius: 50%; color: var(--m-forest);
+    display: flex; height: 72px; justify-content: center; transition: transform .15s ease; width: 72px;
+  }
+  .m-bubble.is-featured .m-bubble-icon { background: var(--m-sun); box-shadow: 0 8px 18px rgba(237, 170, 20, .35); }
+  .m-bubble:active .m-bubble-icon { transform: scale(.94); }
+  .m-bubble-label { font-size: .8rem; font-weight: 750; line-height: 1.2; text-align: center; }
+  .m-bubble:focus-visible { outline: none; }
+  .m-bubble:focus-visible .m-bubble-icon { box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--m-green); }
+
+  .m-send-card {
+    align-items: center; background: var(--m-forest); border: 0; border-radius: 20px; color: #fff; cursor: pointer;
+    display: flex; gap: 14px; margin: 0 16px; padding: 18px; text-align: left;
+  }
+  .m-send-copy { display: flex; flex: 1; flex-direction: column; gap: 6px; }
+  .m-send-copy strong { color: #fff; font-size: 1.02rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; }
+  .m-send-copy span { color: var(--t-on-dark-soft); font-size: .78rem; line-height: 1.45; }
+  .m-send-icon { align-items: center; background: var(--m-sun); border-radius: 16px; color: var(--m-forest); display: flex; flex: 0 0 60px; height: 60px; justify-content: center; transform: rotate(-6deg); }
+
+  .m-rail header { align-items: baseline; display: flex; justify-content: space-between; padding: 0 16px 12px; }
+  .m-rail h2 { color: var(--m-ink); font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; margin: 0; }
+  .m-rail header button { align-items: center; background: none; border: 0; color: var(--m-green); display: inline-flex; font-size: .82rem; font-weight: 800; gap: 2px; min-height: 36px; padding: 0; }
+  .m-rail-track {
+    display: grid; gap: 12px; grid-auto-columns: 74%; grid-auto-flow: column; overflow-x: auto; overscroll-behavior-x: contain;
+    padding: 0 16px 4px; scroll-padding-inline: 16px; scroll-snap-type: x mandatory; scrollbar-width: none;
+  }
+  .m-rail-track::-webkit-scrollbar { display: none; }
+  .m-rail-note { color: var(--m-muted); font-size: .84rem; line-height: 1.5; margin: 0; padding: 0 16px; }
+
+  .m-store { background: none; border: 0; color: var(--m-ink); cursor: pointer; display: flex; flex-direction: column; gap: 6px; padding: 0; scroll-snap-align: start; text-align: left; }
+  .m-store-media { aspect-ratio: 16 / 10; background: #dfe8e2; border-radius: 16px; display: block; overflow: hidden; position: relative; width: 100%; }
+  .m-store-media img { height: 100%; object-fit: cover; width: 100%; }
+  .m-store-initial { align-items: center; color: var(--m-forest); display: flex; font-size: 2.2rem; font-weight: 800; height: 100%; justify-content: center; }
+  .m-store-closed { background: var(--t-forest-900); border-radius: 999px; bottom: 8px; color: #fff; font-size: .7rem; font-weight: 800; left: 8px; padding: 4px 9px; position: absolute; }
+  .m-store-name { font-size: .95rem; font-weight: 800; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-store-meta { align-items: center; color: var(--m-muted); display: flex; font-size: .76rem; font-weight: 600; gap: 8px; min-width: 0; }
+  .m-store-meta > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-store-rating { align-items: center; color: var(--m-ink); display: inline-flex; font-weight: 800; gap: 3px; }
+  .m-store-rating svg { color: #f2a900; }
+  .m-store:focus-visible { outline: none; }
+  .m-store:focus-visible .m-store-media { box-shadow: 0 0 0 3px var(--m-green); }
+  .m-store-skeleton { pointer-events: none; }
+  .m-store-skeleton .m-store-media, .m-skel-line { animation: m-pulse 1.4s ease-in-out infinite; background: #e2e9e4; }
+  .m-skel-line { border-radius: 6px; display: block; height: 12px; width: 70%; }
+  .m-skel-line.short { width: 40%; }
+  @keyframes m-pulse { 50% { opacity: .55; } }
+
+  .m-promise { border-top: 1px solid #e3e9e5; display: flex; flex-direction: column; gap: 10px; margin: 0 16px; padding-top: 18px; }
+  .m-promise p { align-items: flex-start; color: var(--m-muted); display: flex; font-size: .8rem; gap: 10px; line-height: 1.5; margin: 0; }
+  .m-promise svg { color: var(--m-green); flex: 0 0 auto; margin-top: 2px; }
+
+  /* Basket bar sits above the tab bar when there is something in it. */
+  .m-cart-bar {
+    align-items: center; background: var(--m-green); border: 0; border-radius: 16px; bottom: calc(84px + env(safe-area-inset-bottom));
+    box-shadow: 0 10px 24px rgba(0, 76, 58, .35); color: #fff; cursor: pointer; display: flex; font: inherit; font-size: .92rem;
+    font-weight: 800; gap: 12px; left: 12px; min-height: 54px; padding: 0 16px; position: fixed; right: 12px; z-index: 55;
+  }
+  .m-cart-bar strong { margin-left: auto; }
+  .m-cart-count { align-items: center; background: var(--t-forest-700); border-radius: 8px; display: inline-flex; height: 28px; justify-content: center; min-width: 28px; }
+
+  /* App-style tab bar: five tabs, Send in the middle. Overrides the older scrolling dock. */
+  .mobile-store-dock {
+    grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: visible;
+    padding-left: max(6px, env(safe-area-inset-left)); padding-right: max(6px, env(safe-area-inset-right)); touch-action: auto;
+  }
+  .mobile-store-dock a { font-size: .66rem; gap: 3px; min-height: 52px; }
+  .mobile-store-dock a.is-active svg { background: transparent; padding: 0; }
+  .mobile-store-dock a.is-active { color: var(--m-forest); }
+  .mobile-store-dock a.is-active > span:last-child { font-weight: 850; }
+  .mobile-store-dock a.is-featured .mobile-store-icon {
+    align-items: center; background: var(--m-sun); border: 4px solid #fff; border-radius: 50%; box-shadow: 0 6px 16px rgba(237, 170, 20, .4);
+    color: var(--m-forest); height: 52px; justify-content: center; margin-top: -26px; width: 52px;
+  }
+  .mobile-store-dock a.is-featured { color: var(--m-forest); }
+
+  /* On the home screen the header shares the sunflower band so the top reads as one surface. */
+  .app-shell:has(.m-home) .topbar:not(.is-scrolled) { background: var(--m-sun); border-bottom-color: transparent; box-shadow: none; }
+  /* Compact help bubble on the home screen so it doesn't cover store cards. */
+  .app-shell:has(.m-home) .chat-launcher > span { display: none; }
+  .app-shell:has(.m-home) .chat-launcher { border-radius: 50%; height: 46px; justify-content: center; padding: 0; width: 46px; }
+
+  /* Basket bar replaces the floating chat bubble's spot on the home screen. */
+  body:has(.m-cart-bar) .chat-widget { bottom: calc(150px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
+  .m-store-skeleton .m-store-media, .m-skel-line { animation: none; }
+  .m-bubble-icon { transition: none; }
+}

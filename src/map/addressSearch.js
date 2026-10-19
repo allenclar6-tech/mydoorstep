@@ -1,4 +1,4 @@
-import { mapToken, SAPELE_CENTER } from './mapCore'
+import { mapToken, SAPELE_CENTER } from './mapConfig'
 import { sapeleDeliveryDirectory } from '../data'
 
 export const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'

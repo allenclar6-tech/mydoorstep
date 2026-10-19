@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Layers, X } from 'lucide-react'
 import { MAP_STYLES, probeStyles } from './mapStyles'
-import { mapToken } from './mapCore'
+import { mapToken } from './mapConfig'
 
 /**
  * Compact on-map Layers button. Opens a bottom sheet on phones and a popover on

@@ -1,10 +1,8 @@
 import mapboxgl from 'mapbox-gl'
 import { describeStyleStatus, readPreferredStyleId, savePreferredStyleId, styleById } from './mapStyles'
+import { mapToken, SAPELE_CENTER } from './mapConfig'
 
-// Public, browser-side token. It is not a secret: restrict it to the DOORSTEP
-// website URLs and the public scopes the app needs in the Mapbox account.
-export const mapToken = import.meta.env.VITE_MAP_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || ''
-export const SAPELE_CENTER = [5.6846, 5.8916]
+export { mapToken, SAPELE_CENTER }
 
 export function describeMapError(event) {
   const status = event?.error?.status ?? event?.status

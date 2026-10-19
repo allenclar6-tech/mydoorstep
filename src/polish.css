@@ -40,6 +40,7 @@ p { line-height: 1.6; }
 
 /* Spotlight without a photo: a single centred column instead of an empty half. */
 .spotlight-section.spotlight-no-photo { grid-template-columns: 1fr; min-height: 0; }
+.spotlight-copy .section-kicker, .logistics-copy .section-kicker, .grocery-showcase-copy .section-kicker { color: #ffd76a; }
 .spotlight-no-photo .spotlight-copy { max-width: 720px; padding: 64px 8vw; }
 
 /* Logistics: a straight, framed photo instead of a tilted card with a sticker. */

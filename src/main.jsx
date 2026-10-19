@@ -13,6 +13,8 @@ import './accountEntry.css'
 import './map/mapExperience.css'
 import './parcel/parcel.css'
 import './polish.css'
+import './theme.css'
+import './home/mobileHome.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

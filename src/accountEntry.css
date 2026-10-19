@@ -39,9 +39,15 @@
 .account-menu-popover > button:focus-visible, .partner-registration-login a:focus-visible { outline: 3px solid #08775a; outline-offset: 3px; }
 .partner-registration-login a { color: #07664f; display: inline-block; font-weight: 850; padding: 10px 4px; text-underline-offset: 4px; }
 .auth-entry-page .auth-layout { gap: 28px; margin-top: 28px; }
-.auth-entry-page .partner-cta, .auth-entry-page .auth-form, .admin-login-card { background: linear-gradient(145deg, #fffefa, #eef7f0); border: 1px solid #c7dbce; border-radius: 26px; box-shadow: 0 22px 48px #123d2d18, inset 0 2px 0 #fff; }
+.auth-entry-page .partner-cta, .auth-entry-page .auth-form, .admin-login-card { border: 1px solid #c7dbce; border-radius: 26px; box-shadow: 0 22px 48px #123d2d18; }
+.auth-entry-page .auth-form, .admin-login-card { background: #fff; }
+/* The welcome card carries white text, so it keeps a solid role colour rather than the light form fill. */
+.auth-entry-page .partner-cta { background: #123d2d; border-color: #0c261d; }
+.auth-entry-page .auth-layout-restaurant .partner-cta { background: #7a3e2e; border-color: #5e2f22; }
+.auth-entry-page .auth-layout-rider .partner-cta { background: #1f4a5e; border-color: #173a4a; }
 .auth-emblem { align-items: center; background: linear-gradient(135deg, #39b984, #086347); border: 1px solid #409e79; border-radius: 26px; box-shadow: 0 18px 24px #0b57322b, inset 0 2px 0 #b0f3ce; color: #fff; display: flex; height: 104px; justify-content: center; margin-bottom: 26px; transform: rotate(-7deg); width: 104px; }
 .auth-entry-page h1, .auth-entry-page h2, .admin-login-card h1 { color: #123b2d; font-weight: 900; }
+.auth-entry-page .partner-cta h2 { color: #fff; }
 .auth-entry-page p, .auth-entry-page label, .auth-entry-page input, .admin-login-card p, .admin-login-card label, .admin-login-card input, .onboarding-card label { font-weight: 750; }
 .auth-entry-page .checkout-button, .admin-login-card .admin-primary { box-shadow: inset 0 1px 0 #ffffff50; font-weight: 900; min-height: 48px; transition: transform .15s ease; }
 .auth-entry-page .checkout-button:active, .admin-login-card .admin-primary:active { transform: translateY(3px); }
