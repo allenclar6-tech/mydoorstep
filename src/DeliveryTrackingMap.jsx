@@ -1,123 +1,189 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
+import { createDoorstepMap, describeMapError, featureOf, lineOverlay, mapToken, SAPELE_CENTER } from './map/mapCore'
+import { LayersControl } from './map/LayersControl'
+import { fetchDrivingRoutes, formatDuration } from './map/addressSearch'
 
-const token = import.meta.env.VITE_MAP_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
+const STALE_AFTER_MS = 2 * 60 * 1000
 
-function marker(className, label) {
+function markerElement(className, label) {
   const element = document.createElement('div')
   element.className = `tracking-marker ${className}`
+  element.setAttribute('role', 'img')
   element.setAttribute('aria-label', label)
   return element
 }
 
 async function geocodeAddress(address) {
-  if (!address || !token) return null
-  const response = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(`${address}, Nigeria`)}&country=ng&limit=1&access_token=${encodeURIComponent(token)}`)
+  if (!address || !mapToken) return null
+  const response = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(`${address}, Nigeria`)}&country=ng&limit=1&access_token=${encodeURIComponent(mapToken)}`)
   if (!response.ok) throw new Error(`Address lookup failed with ${response.status}`)
   const feature = (await response.json()).features?.[0]
   return Array.isArray(feature?.geometry?.coordinates) ? feature.geometry.coordinates : null
 }
 
-function formatEta(seconds) {
-  if (!Number.isFinite(seconds)) return 'Route ETA unavailable'
-  return `About ${Math.max(1, Math.ceil(seconds / 60))} min away`
+const toLngLat = (point) => point?.latitude != null && point?.longitude != null ? [Number(point.longitude), Number(point.latitude)] : null
+const distanceMeters = (a, b) => {
+  const radians = (value) => value * Math.PI / 180
+  const dLat = radians(b[1] - a[1]); const dLng = radians(b[0] - a[0])
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(radians(a[1])) * Math.cos(radians(b[1])) * Math.sin(dLng / 2) ** 2
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(h))
 }
 
+function ageLabel(recordedAt, now) {
+  if (!recordedAt) return ''
+  const seconds = Math.max(0, Math.round((now - new Date(recordedAt).getTime()) / 1000))
+  if (seconds < 60) return 'updated just now'
+  const minutes = Math.round(seconds / 60)
+  return `last update ${minutes} min ago`
+}
+
+/**
+ * Live delivery map for both food orders and parcel bookings. Markers are
+ * updated in place (the map is never recreated), and route lines survive
+ * basemap style changes via the map controller.
+ */
 export function DeliveryTrackingMap({ tracking, connection }) {
   const mapElement = useRef(null)
   const mapRef = useRef(null)
+  const controllerRef = useRef(null)
   const markers = useRef({})
-  const [mapState, setMapState] = useState(token ? 'loading' : 'unavailable')
+  const lastEtaRef = useRef({ at: 0, from: null })
+  const [controller, setController] = useState(null)
+  const [mapState, setMapState] = useState(mapToken ? 'loading' : 'unavailable')
   const [routeInfo, setRouteInfo] = useState('')
-  const [mapError, setMapError] = useState('')
+  const [riderEta, setRiderEta] = useState(null)
+  const [mapError, setMapError] = useState(mapToken ? '' : 'Map view is not configured for this build. Your delivery status updates still work.')
+  const [now, setNow] = useState(Date.now())
 
-  const destination = tracking?.order?.destination?.latitude != null && tracking?.order?.destination?.longitude != null
-    ? [Number(tracking.order.destination.longitude), Number(tracking.order.destination.latitude)]
-    : null
-  const rider = tracking?.delivery?.location?.latitude != null && tracking?.delivery?.location?.longitude != null
-    ? [Number(tracking.delivery.location.longitude), Number(tracking.delivery.location.latitude)]
-    : null
+  const isParcel = tracking?.kind === 'parcel' || Boolean(tracking?.parcel)
+  const pickup = isParcel ? toLngLat(tracking.parcel.pickup) : null
+  const destination = isParcel ? toLngLat(tracking.parcel.destination) : toLngLat(tracking?.order?.destination)
+  const rider = toLngLat(tracking?.delivery?.location)
+  const recordedAt = tracking?.delivery?.location?.recordedAt
+  const active = Boolean(tracking?.delivery?.active)
+  const deliveryStatus = tracking?.delivery?.status
+  const stale = recordedAt ? now - new Date(recordedAt).getTime() > STALE_AFTER_MS : false
+  const heading = ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT'].includes(deliveryStatus) ? 'pickup' : 'destination'
+
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 15_000); return () => window.clearInterval(timer) }, [])
 
   useEffect(() => {
-    if (!token || !mapElement.current || mapRef.current || !mapboxgl.supported()) {
-      if (!mapboxgl.supported()) setMapState('unavailable')
-      return undefined
-    }
-    mapboxgl.accessToken = token
-    const map = new mapboxgl.Map({ container: mapElement.current, style: 'mapbox://styles/mapbox/streets-v12', center: destination || [5.6846, 5.8916], zoom: destination ? 14 : 12 })
-    map.addControl(new mapboxgl.NavigationControl(), 'top-right')
+    if (!mapToken || !mapElement.current || mapRef.current) return undefined
+    if (!mapboxgl.supported()) { setMapState('unavailable'); setMapError('This browser cannot display the map. Your delivery status updates still work.'); return undefined }
+    const created = createDoorstepMap(mapElement.current, { center: destination || SAPELE_CENTER, zoom: destination ? 14 : 12 })
+    const { map, controller: mapController } = created
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right')
     mapRef.current = map
-    map.on('load', () => setMapState('ready'))
-    map.on('error', () => {
-      setMapState('unavailable')
-      setMapError('Live map is unavailable right now. Your order status is still up to date.')
+    controllerRef.current = mapController
+    map.on('load', () => { setMapState('ready'); setController(mapController) })
+    map.on('error', (event) => {
+      const problem = describeMapError(event)
+      if (!map.loaded() || problem.code === 'TOKEN_INVALID' || problem.code === 'TOKEN_RESTRICTED') {
+        setMapState('unavailable')
+        setMapError(`${problem.message} Your delivery status updates still work.`)
+      }
     })
+    const observer = new ResizeObserver(() => map.resize())
+    observer.observe(mapElement.current)
     return () => {
+      observer.disconnect()
       Object.values(markers.current).forEach((mapMarker) => mapMarker.remove())
+      markers.current = {}
+      mapController.destroy()
       map.remove()
       mapRef.current = null
-      markers.current = {}
+      controllerRef.current = null
     }
   }, [])
 
-  useEffect(() => {
+  const setMarker = (key, position, className, label) => {
     const map = mapRef.current
-    if (!map || !destination) return
-    if (!markers.current.destination) markers.current.destination = new mapboxgl.Marker({ element: marker('tracking-marker-customer', 'Delivery destination') }).setLngLat(destination).addTo(map)
-    else markers.current.destination.setLngLat(destination)
-  }, [destination?.[0], destination?.[1]])
+    if (!map) return
+    if (!position) { markers.current[key]?.remove(); delete markers.current[key]; return }
+    if (!markers.current[key]) markers.current[key] = new mapboxgl.Marker({ element: markerElement(className, label) }).setLngLat(position).addTo(map)
+    else markers.current[key].setLngLat(position)
+  }
 
+  useEffect(() => { setMarker('destination', destination, 'tracking-marker-customer', 'Delivery destination') }, [destination?.[0], destination?.[1], mapState])
+  useEffect(() => { if (isParcel) setMarker('pickup', pickup, 'tracking-marker-restaurant', 'Pickup point') }, [pickup?.[0], pickup?.[1], mapState])
   useEffect(() => {
-    const map = mapRef.current
-    if (!map || !rider) return
-    if (!markers.current.rider) markers.current.rider = new mapboxgl.Marker({ element: marker('tracking-marker-rider', 'Assigned rider') }).setLngLat(rider).addTo(map)
-    else markers.current.rider.setLngLat(rider)
-  }, [rider?.[0], rider?.[1]])
+    setMarker('rider', active ? rider : null, `tracking-marker-rider${stale ? ' is-stale' : ''}`, stale ? 'Assigned rider (location may be out of date)' : 'Assigned rider')
+    markers.current.rider?.getElement().classList.toggle('is-stale', stale)
+  }, [rider?.[0], rider?.[1], active, stale, mapState])
 
+  // Delivery route: stored server route for parcels; restaurant -> customer preview for food orders.
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !tracking?.order?.restaurant?.address || !destination) return
+    const mapController = controllerRef.current
+    if (!map || !mapController || mapState !== 'ready' || !destination) return undefined
     let cancelled = false
-    geocodeAddress(tracking.order.restaurant.address).then(async (restaurant) => {
-      if (cancelled || !restaurant) {
-        if (!cancelled) setMapError('Restaurant location is unavailable for this order. The destination and rider remain visible.')
-        return
-      }
-      if (!markers.current.restaurant) markers.current.restaurant = new mapboxgl.Marker({ element: marker('tracking-marker-restaurant', 'Restaurant') }).setLngLat(restaurant).addTo(map)
-      else markers.current.restaurant.setLngLat(restaurant)
-      const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${restaurant.join(',')};${destination.join(',')}?geometries=geojson&overview=full&access_token=${encodeURIComponent(token)}`)
-      if (!response.ok) throw new Error(`Route request failed with ${response.status}`)
-      const route = (await response.json()).routes?.[0]
-      if (!route?.geometry || cancelled) return
-      const data = { type: 'Feature', properties: {}, geometry: route.geometry }
-      const source = map.getSource('delivery-tracking-route')
-      if (source) source.setData(data)
-      else {
-        map.addSource('delivery-tracking-route', { type: 'geojson', data })
-        map.addLayer({ id: 'delivery-tracking-route-casing', type: 'line', source: 'delivery-tracking-route', paint: { 'line-color': '#ffffff', 'line-width': 8, 'line-opacity': .9 } })
-        map.addLayer({ id: 'delivery-tracking-route-line', type: 'line', source: 'delivery-tracking-route', paint: { 'line-color': '#007c63', 'line-width': 5, 'line-opacity': .95 } })
-      }
-      setRouteInfo(formatEta(route.duration))
-      const bounds = new mapboxgl.LngLatBounds(restaurant, destination)
+    const draw = (geometry, origin) => {
+      mapController.setOverlay('delivery-tracking-route', { type: 'geojson', data: featureOf(geometry) }, lineOverlay('delivery-tracking-route', { color: '#007c63', width: 5 }), { slot: 'middle' })
+      const bounds = new mapboxgl.LngLatBounds(origin, destination)
+      geometry.coordinates.forEach((coordinate) => bounds.extend(coordinate))
       if (rider) bounds.extend(rider)
       map.fitBounds(bounds, { padding: 52, maxZoom: 15, duration: 0 })
+    }
+    if (isParcel) {
+      const geometry = tracking.parcel.route?.geometry
+      if (geometry?.type === 'LineString' && pickup) {
+        draw(geometry, pickup)
+        setRouteInfo(`${(tracking.parcel.route.distanceMeters / 1000).toFixed(1)} km delivery route`)
+      }
+      return undefined
+    }
+    if (!tracking?.order?.restaurant?.address) return undefined
+    geocodeAddress(tracking.order.restaurant.address).then(async (restaurant) => {
+      if (cancelled) return
+      if (!restaurant) { setMapError('The restaurant location could not be placed on the map. The destination and rider remain visible.'); return }
+      setMarker('restaurant', restaurant, 'tracking-marker-restaurant', 'Restaurant')
+      const [route] = await fetchDrivingRoutes({ longitude: restaurant[0], latitude: restaurant[1] }, { longitude: destination[0], latitude: destination[1] }, { alternatives: false })
+      if (cancelled || !route) return
+      draw(route.geometry, restaurant)
+      setRouteInfo(`About ${formatDuration(route.durationSeconds)} from restaurant to door (estimate)`)
     }).catch(() => !cancelled && setMapError('Route estimate is unavailable. The live delivery point remains available.'))
     return () => { cancelled = true }
-  }, [tracking?.order?.restaurant?.address, destination?.[0], destination?.[1]])
+  }, [isParcel, tracking?.parcel?.id, tracking?.order?.restaurant?.address, destination?.[0], destination?.[1], mapState])
+
+  // Rider ETA to the next stop: refreshed at most every 60 s or when the rider moves 150 m.
+  useEffect(() => {
+    if (!active || !rider || stale) { setRiderEta(null); return undefined }
+    const target = heading === 'pickup' && pickup ? pickup : destination
+    if (!target) return undefined
+    const last = lastEtaRef.current
+    if (last.from && Date.now() - last.at < 60_000 && distanceMeters(last.from, rider) < 150) return undefined
+    lastEtaRef.current = { at: Date.now(), from: rider }
+    const controller = new AbortController()
+    fetchDrivingRoutes({ longitude: rider[0], latitude: rider[1] }, { longitude: target[0], latitude: target[1] }, { alternatives: false, signal: controller.signal })
+      .then(([route]) => setRiderEta({ seconds: route.durationSeconds, to: heading }))
+      .catch(() => setRiderEta(null))
+    return () => controller.abort()
+  }, [rider?.[0], rider?.[1], active, stale, heading])
 
   const recenter = () => {
     const map = mapRef.current
-    if (!map || !destination) return
-    if (rider) map.flyTo({ center: rider, zoom: Math.max(map.getZoom(), 14), duration: 550, essential: true })
-    else map.flyTo({ center: destination, zoom: Math.max(map.getZoom(), 14), duration: 550, essential: true })
+    if (!map) return
+    const focus = rider && active ? rider : destination || pickup
+    if (focus) map.flyTo({ center: focus, zoom: Math.max(map.getZoom(), 14), duration: 550, essential: true })
   }
 
+  const headline = !active
+    ? (deliveryStatus === 'DELIVERED' ? 'Delivered. Live tracking has ended.' : deliveryStatus === 'CANCELLED' ? 'Cancelled. Live tracking has ended.' : 'Live tracking starts when a rider accepts.')
+    : !rider ? 'Waiting for your rider to share their location'
+      : stale ? `Rider location is out of date (${ageLabel(recordedAt, now)}). It will update when their signal returns.`
+        : riderEta ? `Rider about ${formatDuration(riderEta.seconds)} from the ${riderEta.to} (estimate) · ${ageLabel(recordedAt, now)}`
+          : `Rider location ${ageLabel(recordedAt, now)}`
+
   return <section className="delivery-tracking-map">
-    <div className="delivery-tracking-map-head"><div><span className="section-kicker">LIVE DELIVERY VIEW</span><strong>{routeInfo || (rider ? 'Your rider is sharing a verified location' : 'Waiting for your rider to start sharing location')}</strong></div><span className={`tracking-connection ${connection}`}>{connection === 'live' ? 'Live signal' : connection === 'connecting' ? 'Connecting' : 'Reconnecting'}</span></div>
-    <div className="delivery-tracking-map-canvas" ref={mapElement} aria-label="Live delivery tracking map" />
-    {mapState !== 'ready' && <div className="tracking-map-overlay">{mapState === 'loading' ? 'Preparing your live delivery view…' : 'Map view unavailable. Your secure delivery updates remain available.'}</div>}
-    <button className="tracking-recenter" type="button" onClick={recenter} disabled={!destination}>Focus delivery</button>
-    {mapError && <p className="tracking-map-notice">{mapError}</p>}
+    <div className="delivery-tracking-map-head"><div><span className="section-kicker">LIVE DELIVERY VIEW</span><strong>{headline}</strong>{routeInfo && <small>{routeInfo}</small>}</div><span className={`tracking-connection ${connection}`}>{!active ? 'Ended' : connection === 'live' ? 'Live signal' : connection === 'connecting' ? 'Connecting' : 'Reconnecting'}</span></div>
+    <div className="delivery-tracking-stage">
+      <div className="delivery-tracking-map-canvas" ref={mapElement} aria-label="Live delivery tracking map" />
+      {mapState === 'ready' && <LayersControl controller={controller} />}
+      {mapState !== 'ready' && <div className="tracking-map-overlay">{mapState === 'loading' ? 'Preparing your live delivery view…' : mapError}</div>}
+      {mapState === 'ready' && <button className="tracking-recenter" type="button" onClick={recenter} disabled={!destination && !pickup}>Focus delivery</button>}
+    </div>
+    {mapError && mapState === 'ready' && <p className="tracking-map-notice">{mapError}</p>}
   </section>
 }

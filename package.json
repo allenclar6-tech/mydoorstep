@@ -18,7 +18,8 @@
     "db:seed": "node prisma/seed.js",
     "admin:create": "node server/createAdmin.js",
     "pretest": "prisma generate",
-    "test": "node --test tests/api.test.js tests/navigation.test.js tests/auth.test.js tests/partnerMedia.test.js"
+    "test": "node --test tests/api.test.js tests/navigation.test.js tests/auth.test.js tests/partnerMedia.test.js tests/parcel.test.js",
+    "test:integration": "node --test tests/parcel.integration.test.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

@@ -32,6 +32,8 @@ export const publicRoutes = [
   '/account/support',
   '/location',
   '/navigate',
+  '/send',
+  '/parcels',
   '/privacy',
   '/terms',
   '/refund-policy',

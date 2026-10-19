@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowRight, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
-import { formatNaira, sapeleLocations } from './data'
+import { categories, formatNaira, sapeleLocations } from './data'
 import { PasswordField } from './PasswordField'
 import { ProfileAvatar } from './ProfileAvatar'
 import { GroceryOwnerApplication } from './GroceryOwnerApplication'
@@ -9,12 +9,15 @@ import { ApplicationReviewSummary, clearApplicationDraft, getApplicationReview, 
 import { applicationSubmissionError, validateOpeningHours } from './applicationValidation'
 import { LocationMap } from './LocationMap'
 import { DeliveryTrackingMap } from './DeliveryTrackingMap'
+import { useDeliveryTracking } from './tracking/useDeliveryTracking'
 import { readConfirmedLocation } from './location'
 import { signOut as endSession } from './services/authService'
 import { loadCart } from './services/orderService'
 import { SignInLinks, SignOutNotice } from './authControls'
 
 const NavigationPage = lazy(() => import('./navigation/NavigationPage'))
+const ParcelRoutes = lazy(() => import('./parcel/ParcelRoutes'))
+const PaymentResultPage = lazy(() => import('./parcel/ParcelRoutes').then((module) => ({ default: module.PaymentResult })))
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
@@ -23,7 +26,7 @@ export function MobileStoreDock() {
   const path = window.location.pathname
   const [cartCount, setCartCount] = useState(() => loadCart().reduce((count, item) => count + item.quantity, 0))
   const [unreadCount, setUnreadCount] = useState(0)
-  const isExcludedRoute = ['/login', '/register', '/forgot-password', '/reset-password', '/location'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/') || path.startsWith('/partner/') || path === '/rider/register'
+  const isExcludedRoute = ['/login', '/register', '/forgot-password', '/reset-password', '/location', '/send'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/') || path.startsWith('/partner/') || path === '/rider/register'
   const isSignedIn = Boolean(localStorage.getItem('doorstep-token'))
 
   useEffect(() => {
@@ -206,7 +209,9 @@ function AuthPage({ register = false, portalRole = 'CUSTOMER' }) {
       if (body.user.role !== portalRole) throw new Error(`This account is ${body.user.role.toLowerCase()} access, not ${portalRole.toLowerCase()} access.`)
       localStorage.setItem('doorstep-token', body.token)
       localStorage.setItem('doorstep-role', body.user.role)
-      const destination = body.user.role === 'RESTAURANT' ? '/restaurant/dashboard' : body.user.role === 'RIDER' ? '/rider/dashboard' : '/account/orders'
+      const requestedReturn = new URLSearchParams(window.location.search).get('return') || ''
+      const safeReturn = /^\/(?!\/)[\w\-/?=&.%]*$/.test(requestedReturn) ? requestedReturn : ''
+      const destination = body.user.role === 'RESTAURANT' ? '/restaurant/dashboard' : body.user.role === 'RIDER' ? '/rider/dashboard' : safeReturn || '/account/orders'
       navigate(destination)
     } catch (authError) { setError(authError.message) } finally { setBusy(false) }
   }
@@ -468,7 +473,8 @@ function AccountDashboard() {
 function PackageIcon() { return <ShoppingBag size={24} /> }
 function HeartIcon() { return <span className="account-heart">♡</span> }
 
-const verificationErrorMessage = (code) => ({  EMAIL_VERIFICATION_NOT_CONFIGURED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
+const verificationErrorMessage = (code) =>
+ ({  EMAIL_VERIFICATION_NOT_CONFIGURED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
   EMAIL_VERIFICATION_PROVIDER_UNSUPPORTED: 'Email verification is temporarily unavailable. Please contact support or try again later.',
   EMAIL_VERIFICATION_RATE_LIMITED: 'Too many verification emails have been requested. Please wait a few minutes before trying again.',
   SMS_VERIFICATION_NOT_CONFIGURED: 'SMS verification is temporarily unavailable. Please choose email verification or try again later.',
@@ -914,86 +920,7 @@ function OrdersPage() {
   </PageFrame>
 }
 
-function useCustomerDeliveryTracking(deliveryId) {
-  const [snapshot, setSnapshot] = useState(null)
-  const [connection, setConnection] = useState('connecting')
-
-  useEffect(() => {
-    if (!deliveryId) {
-      setSnapshot(null)
-      return undefined
-    }
-
-    const token = localStorage.getItem('doorstep-token')
-    if (!token) return undefined
-    let active = true
-    let socket
-    let retryTimer
-    let retryCount = 0
-    const endpoint = apiBase || import.meta.env.VITE_API_BASE_URL || 'https://mydoorstep-api.onrender.com'
-    const fetchSnapshot = async () => {
-      try {
-        const response = await fetch(`${endpoint}/api/deliveries/${deliveryId}/tracking`, { headers: { Authorization: `Bearer ${token}` } })
-        if (!response.ok) throw new Error('Tracking snapshot request failed')
-        const body = await response.json()
-        if (active) setSnapshot(body)
-      } catch {
-        if (active) setConnection('offline')
-      }
-    }
-    const scheduleReconnect = () => {
-      if (!active) return
-      retryTimer = window.setTimeout(connect, Math.min(30000, 1000 * 2 ** retryCount))
-      retryCount += 1
-    }
-    const connect = () => {
-      if (!active || document.visibilityState !== 'visible') return
-      setConnection('connecting')
-      const websocketUrl = new URL(`${endpoint}/api/deliveries/${deliveryId}/live`)
-      websocketUrl.protocol = websocketUrl.protocol === 'https:' ? 'wss:' : 'ws:'
-      socket = new WebSocket(websocketUrl, ['bearer', token])
-      socket.onopen = () => {
-        retryCount = 0
-        if (active) setConnection('live')
-      }
-      socket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data)
-          if (message.type === 'tracking.snapshot' && message.data) setSnapshot(message.data)
-          if (message.type === 'tracking.location' && message.data && active) setSnapshot((current) => current ? { ...current, delivery: { ...current.delivery, location: message.data } } : current)
-        } catch {
-          if (active) setConnection('offline')
-        }
-      }
-      socket.onclose = () => {
-        if (active) {
-          setConnection('offline')
-          scheduleReconnect()
-        }
-      }
-      socket.onerror = () => socket.close()
-    }
-    const refresh = () => {
-      if (document.visibilityState === 'visible') {
-        fetchSnapshot()
-        if (!socket || socket.readyState === WebSocket.CLOSED) connect()
-      }
-    }
-    fetchSnapshot()
-    connect()
-    const pollingTimer = window.setInterval(fetchSnapshot, 15000)
-    document.addEventListener('visibilitychange', refresh)
-    return () => {
-      active = false
-      window.clearTimeout(retryTimer)
-      window.clearInterval(pollingTimer)
-      document.removeEventListener('visibilitychange', refresh)
-      socket?.close()
-    }
-  }, [deliveryId])
-
-  return { snapshot, connection }
-}
+const useCustomerDeliveryTracking = useDeliveryTracking
 
 function OrderPage({ orderId }) {
   const [apiOrder, setApiOrder] = useState(null)
@@ -1120,7 +1047,8 @@ export function RoutePage({ path, cart = [], checkoutError = '', onAddToCart = (
   if (path === '/cart') return <CartPage cart={cart} onChangeQuantity={onChangeQuantity} onCheckout={onCheckout} />
   if (path === '/checkout') return <CheckoutPage cart={cart} onComplete={onComplete} error={checkoutError} />
   if (path.startsWith('/payment/bank-transfer/')) return <BankTransferPaymentPage orderId={path.split('/').at(-1)} />
-  if (path === '/payment/callback') return <PaymentCallbackPage />
+  if (path === '/payment/callback') return <Suspense fallback={<main className="route-page" role="status">Confirming payment…</main>}><PaymentResultPage /></Suspense>
+  if (path === '/send' || path === '/parcels' || path.startsWith('/parcels/')) return <Suspense fallback={<main className="route-page" role="status">Loading package delivery…</main>}><ParcelRoutes path={path} /></Suspense>
   if (path === '/account/orders') return <OrdersPage />
   if (path.startsWith('/account/orders/')) return <OrderPage orderId={path.split('/')[3]} />
   if (path === '/login') return <AuthPage />

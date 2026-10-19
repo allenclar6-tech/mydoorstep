@@ -1,4 +1,5 @@
 import { prisma } from './prisma.js'
+import { parcelStatusByDeliveryStatus, RIDER_REQUEST_TTL_MS } from './parcelService.js'
 
 export const deliveryTransitions = {
   AVAILABLE: ['REQUESTED', 'CANCELLED'],
@@ -17,7 +18,8 @@ const orderStatusByDeliveryStatus = {
   DELIVERED: 'DELIVERED',
 }
 
-const activeLocationStatuses = new Set(['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'])
+export const activeLocationStatuses = new Set(['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'])
+export const releasableStatuses = new Set(['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT'])
 const locationUpdateTimes = new Map()
 export const LOCATION_UPDATE_INTERVAL_MS = 2_000
 const MAX_LOCATION_ACCURACY_METERS = 100
@@ -43,34 +45,108 @@ export function validateLocationUpdate(input, now = Date.now()) {
   return { latitude, longitude, accuracy, capturedAt }
 }
 
-export async function claimDelivery(deliveryId, riderId) {
+async function recordParcelEvent(transaction, bookingId, status, { actorId = null, actorRole = null, note = null } = {}) {
+  await transaction.parcelEvent.create({ data: { bookingId, status, actorId, actorRole, note } })
+}
+
+async function notifyParcelCustomer(transaction, booking, title, body) {
+  await transaction.notification.create({ data: { userId: booking.customerId, type: 'DELIVERY', title, body } })
+}
+
+export async function claimDelivery(deliveryId, riderId, now = new Date()) {
   return prisma.$transaction(async (transaction) => {
-    const rider = await transaction.rider.findUnique({ where: { id: riderId } })
+    const rider = await transaction.rider.findUnique({ where: { id: riderId }, include: { user: { select: { id: true, firstName: true } } } })
     if (!rider || rider.status !== 'APPROVED' || rider.availability !== 'ONLINE') throw serviceError('RIDER_NOT_AVAILABLE', 'Rider must be approved and online.', 403)
-    const deliveryBeforeClaim = await transaction.delivery.findUnique({ where: { id: deliveryId }, include: { order: { select: { restaurantId: true } } } })
+    const deliveryBeforeClaim = await transaction.delivery.findUnique({ where: { id: deliveryId }, include: { order: { select: { restaurantId: true } }, parcelBooking: { select: { id: true, customerId: true, reference: true, status: true } } } })
     if (!deliveryBeforeClaim) throw serviceError('DELIVERY_NOT_FOUND', 'Delivery was not found.', 404)
-    if (rider.network === 'BUSINESS_OWNED' && rider.restaurantId !== deliveryBeforeClaim.order.restaurantId) {
+    if (rider.network === 'BUSINESS_OWNED' && (!deliveryBeforeClaim.order || rider.restaurantId !== deliveryBeforeClaim.order.restaurantId)) {
       throw serviceError('BUSINESS_RIDER_DELIVERY_FORBIDDEN', 'Business riders can only claim deliveries for their own business.', 403)
     }
-    const claimed = await transaction.delivery.updateMany({ where: { id: deliveryId, status: { in: ['AVAILABLE', 'REQUESTED'] }, riderId: null }, data: { riderId, status: 'ACCEPTED', acceptedAt: new Date() } })
+    const requestStillReserved = deliveryBeforeClaim.status === 'REQUESTED' && deliveryBeforeClaim.requestedRiderId && deliveryBeforeClaim.requestExpiresAt && deliveryBeforeClaim.requestExpiresAt > now
+    if (requestStillReserved && deliveryBeforeClaim.requestedRiderId !== riderId) throw serviceError('DELIVERY_RESERVED_FOR_ANOTHER_RIDER', 'This delivery was requested from another rider.', 409)
+    const conflicting = await transaction.delivery.count({ where: { riderId, status: { in: [...activeLocationStatuses] }, NOT: { id: deliveryId } } })
+    if (conflicting > 0) throw serviceError('RIDER_HAS_ACTIVE_DELIVERY', 'Finish your current delivery before accepting another one.', 409)
+    const claimed = await transaction.delivery.updateMany({ where: { id: deliveryId, status: { in: ['AVAILABLE', 'REQUESTED'] }, riderId: null }, data: { riderId, status: 'ACCEPTED', acceptedAt: now, requestedRiderId: null, requestExpiresAt: null } })
     if (claimed.count !== 1) throw serviceError('DELIVERY_ALREADY_CLAIMED', 'Another rider has already accepted this delivery.', 409)
-    await transaction.order.update({ where: { id: deliveryBeforeClaim.orderId }, data: { riderId, status: 'RIDER_ASSIGNED' } })
+    if (deliveryBeforeClaim.orderId) {
+      await transaction.order.update({ where: { id: deliveryBeforeClaim.orderId }, data: { riderId, status: 'RIDER_ASSIGNED' } })
+    } else if (deliveryBeforeClaim.parcelBooking) {
+      const booking = deliveryBeforeClaim.parcelBooking
+      const changed = await transaction.parcelBooking.updateMany({ where: { id: booking.id, status: 'SEARCHING_FOR_RIDER' }, data: { riderId, status: 'RIDER_ASSIGNED', assignedAt: now } })
+      if (changed.count !== 1) throw serviceError('PARCEL_STATE_CHANGED', 'This booking is no longer waiting for a rider.', 409)
+      await recordParcelEvent(transaction, booking.id, 'RIDER_ASSIGNED', { actorId: rider.user.id, actorRole: 'RIDER' })
+      await notifyParcelCustomer(transaction, booking, 'Rider assigned', `${rider.user.firstName} accepted your delivery ${booking.reference}.`)
+    }
+    return transaction.delivery.findUnique({ where: { id: deliveryId } })
+  })
+}
+
+export async function rejectDeliveryRequest(deliveryId, riderId) {
+  return prisma.$transaction(async (transaction) => {
+    const delivery = await transaction.delivery.findUnique({ where: { id: deliveryId }, include: { parcelBooking: { select: { id: true, customerId: true, reference: true } } } })
+    if (!delivery) throw serviceError('DELIVERY_NOT_FOUND', 'Delivery was not found.', 404)
+    if (delivery.status !== 'REQUESTED' || delivery.requestedRiderId !== riderId) throw serviceError('NO_PENDING_REQUEST', 'There is no pending request for you on this delivery.', 409)
+    const changed = await transaction.delivery.updateMany({ where: { id: deliveryId, status: 'REQUESTED', requestedRiderId: riderId }, data: { status: 'AVAILABLE', requestedRiderId: null, requestExpiresAt: null } })
+    if (changed.count !== 1) throw serviceError('DELIVERY_STATE_CHANGED', 'This delivery changed while you were responding.', 409)
+    if (delivery.parcelBooking) {
+      await recordParcelEvent(transaction, delivery.parcelBooking.id, 'SEARCHING_FOR_RIDER', { actorRole: 'RIDER', note: 'Requested rider declined' })
+      await notifyParcelCustomer(transaction, delivery.parcelBooking, 'Rider unavailable', `The rider you requested for ${delivery.parcelBooking.reference} declined. You can request another available rider.`)
+    }
+    return transaction.delivery.findUnique({ where: { id: deliveryId } })
+  })
+}
+
+/** An assigned rider hands a delivery back before pickup; it returns to the open pool. */
+export async function releaseDelivery(deliveryId, riderId, reason) {
+  return prisma.$transaction(async (transaction) => {
+    const delivery = await transaction.delivery.findUnique({ where: { id: deliveryId }, include: { parcelBooking: { select: { id: true, customerId: true, reference: true } } } })
+    if (!delivery) throw serviceError('DELIVERY_NOT_FOUND', 'Delivery was not found.', 404)
+    if (delivery.riderId !== riderId) throw serviceError('ASSIGNED_RIDER_REQUIRED', 'Only the assigned rider can release this delivery.', 403)
+    if (delivery.orderId) throw serviceError('RELEASE_NOT_SUPPORTED', 'Contact DOORSTEP support to hand back a food order.', 409)
+    if (!releasableStatuses.has(delivery.status)) throw serviceError('DELIVERY_NOT_RELEASABLE', 'A delivery can only be released before the package is picked up.', 409)
+    const changed = await transaction.delivery.updateMany({ where: { id: deliveryId, riderId, status: delivery.status }, data: { riderId: null, status: 'AVAILABLE', acceptedAt: null } })
+    if (changed.count !== 1) throw serviceError('DELIVERY_STATE_CHANGED', 'This delivery changed while you were responding.', 409)
+    if (delivery.parcelBooking) {
+      await transaction.parcelBooking.update({ where: { id: delivery.parcelBooking.id }, data: { riderId: null, status: 'SEARCHING_FOR_RIDER', assignedAt: null } })
+      await recordParcelEvent(transaction, delivery.parcelBooking.id, 'SEARCHING_FOR_RIDER', { actorRole: 'RIDER', note: reason ? `Rider released the delivery: ${reason}` : 'Rider released the delivery' })
+      await notifyParcelCustomer(transaction, delivery.parcelBooking, 'Finding another rider', `Your rider could not continue with ${delivery.parcelBooking.reference}. We are looking for another rider.`)
+    }
     return transaction.delivery.findUnique({ where: { id: deliveryId } })
   })
 }
 
 export async function advanceDelivery(deliveryId, riderId, nextStatus) {
   return prisma.$transaction(async (transaction) => {
-    const delivery = await transaction.delivery.findUnique({ where: { id: deliveryId } })
+    const delivery = await transaction.delivery.findUnique({ where: { id: deliveryId }, include: { parcelBooking: { select: { id: true, customerId: true, reference: true, status: true } } } })
     if (!delivery) throw serviceError('DELIVERY_NOT_FOUND', 'Delivery was not found.', 404)
     if (delivery.riderId !== riderId) throw serviceError('ASSIGNED_RIDER_REQUIRED', 'Only the assigned rider can advance this delivery.', 403)
     if (!deliveryTransitions[delivery.status]?.includes(nextStatus)) throw serviceError('INVALID_DELIVERY_TRANSITION', 'Delivery stages must be completed in order.', 409)
-    const timestamps = { ACCEPTED: { acceptedAt: new Date() }, PICKED_UP: { pickedUpAt: new Date() }, DELIVERED: { deliveredAt: new Date() } }
+    const now = new Date()
+    const timestamps = { ACCEPTED: { acceptedAt: now }, PICKED_UP: { pickedUpAt: now }, DELIVERED: { deliveredAt: now } }
     const updatedCount = await transaction.delivery.updateMany({ where: { id: deliveryId, riderId, status: delivery.status }, data: { status: nextStatus, ...(timestamps[nextStatus] || {}) } })
     if (updatedCount.count !== 1) throw serviceError('DELIVERY_STATE_CHANGED', 'This delivery was updated by another request. Refresh and try again.', 409)
     const updated = await transaction.delivery.findUnique({ where: { id: deliveryId } })
-    const orderStatus = orderStatusByDeliveryStatus[nextStatus]
-    if (orderStatus) await transaction.order.update({ where: { id: delivery.orderId }, data: { status: orderStatus, ...(nextStatus === 'PICKED_UP' ? { pickedUpAt: new Date() } : {}), ...(nextStatus === 'DELIVERED' ? { deliveredAt: new Date() } : {}) } })
+    if (delivery.orderId) {
+      const orderStatus = orderStatusByDeliveryStatus[nextStatus]
+      if (orderStatus) await transaction.order.update({ where: { id: delivery.orderId }, data: { status: orderStatus, ...(nextStatus === 'PICKED_UP' ? { pickedUpAt: now } : {}), ...(nextStatus === 'DELIVERED' ? { deliveredAt: now } : {}) } })
+    } else if (delivery.parcelBooking) {
+      const booking = delivery.parcelBooking
+      const parcelStatus = parcelStatusByDeliveryStatus[nextStatus]
+      if (parcelStatus && parcelStatus !== booking.status) {
+        const changed = await transaction.parcelBooking.updateMany({ where: { id: booking.id, status: booking.status }, data: { status: parcelStatus, ...(parcelStatus === 'PICKED_UP' ? { pickedUpAt: now } : {}), ...(parcelStatus === 'DELIVERED' ? { deliveredAt: now } : {}) } })
+        if (changed.count !== 1) throw serviceError('PARCEL_STATE_CHANGED', 'This booking changed while you were updating it.', 409)
+        await recordParcelEvent(transaction, booking.id, parcelStatus, { actorRole: 'RIDER' })
+        const messages = {
+          RIDER_EN_ROUTE_TO_PICKUP: ['Rider on the way to pickup', `Your rider is heading to the pickup point for ${booking.reference}.`],
+          PICKED_UP: ['Package picked up', `Your package ${booking.reference} has been collected.`],
+          IN_TRANSIT: ['Package in transit', `Your package ${booking.reference} is on its way to the recipient.`],
+          DELIVERED: ['Package delivered', `Your package ${booking.reference} was delivered.`],
+        }
+        if (messages[parcelStatus]) await notifyParcelCustomer(transaction, booking, ...messages[parcelStatus])
+      } else if (nextStatus === 'ARRIVED_AT_RESTAURANT') {
+        await recordParcelEvent(transaction, booking.id, booking.status, { actorRole: 'RIDER', note: 'Rider arrived at pickup' })
+      }
+    }
     return updated
   })
 }
@@ -81,15 +157,25 @@ export async function recordLocation(deliveryId, riderId, location) {
   if (!activeLocationStatuses.has(delivery.status)) throw serviceError('LOCATION_NOT_ACTIVE', 'Location sharing is only available during an active delivery.', 409)
   const lastUpdate = locationUpdateTimes.get(`${deliveryId}:${riderId}`)
   if (lastUpdate && Date.now() - lastUpdate < LOCATION_UPDATE_INTERVAL_MS) throw serviceError('LOCATION_RATE_LIMITED', 'Location updates are arriving too quickly.', 429)
-  const saved = await prisma.riderLocation.create({ data: { riderId, deliveryId, latitude: location.latitude, longitude: location.longitude } })
+  const saved = await prisma.riderLocation.create({ data: { riderId, deliveryId, latitude: location.latitude, longitude: location.longitude, recordedAt: location.capturedAt instanceof Date ? location.capturedAt : new Date() } })
   locationUpdateTimes.set(`${deliveryId}:${riderId}`, Date.now())
   return saved
+}
+
+function riderPublicProfile(rider) {
+  if (!rider) return null
+  return {
+    firstName: rider.user?.firstName || 'Rider',
+    vehicleType: rider.vehicleType || null,
+    rating: rider.ratingCount > 0 ? { average: Number(rider.ratingAverage), count: rider.ratingCount } : null,
+  }
 }
 
 export async function getDeliveryTrackingSnapshot(deliveryId, user, { activeOnly = false } = {}) {
   const delivery = await prisma.delivery.findUnique({
     where: { id: deliveryId },
     include: {
+      rider: { select: { vehicleType: true, ratingAverage: true, ratingCount: true, user: { select: { firstName: true, phone: true } } } },
       order: {
         select: {
           id: true,
@@ -102,25 +188,55 @@ export async function getDeliveryTrackingSnapshot(deliveryId, user, { activeOnly
           restaurant: { select: { name: true, address: true } },
         },
       },
+      parcelBooking: {
+        select: {
+          id: true, reference: true, customerId: true, status: true,
+          pickupAddress: true, pickupLatitude: true, pickupLongitude: true,
+          dropoffAddress: true, dropoffLatitude: true, dropoffLongitude: true,
+          routeGeometry: true, distanceMeters: true, durationSeconds: true,
+        },
+      },
     },
   })
   if (!delivery) throw serviceError('DELIVERY_NOT_FOUND', 'Delivery was not found.', 404)
   const active = activeLocationStatuses.has(delivery.status)
+  const ownerId = delivery.order?.customerId || delivery.parcelBooking?.customerId
   const assignedRider = user.role === 'RIDER' && user.rider?.id === delivery.riderId
-  const customer = user.role === 'CUSTOMER' && user.id === delivery.order.customerId
+  const customer = user.role === 'CUSTOMER' && user.id === ownerId
   const administrator = user.role === 'ADMIN' && active
   if (!customer && !assignedRider && !administrator) throw serviceError('DELIVERY_ACCESS_FORBIDDEN', 'You cannot track this delivery.', 403)
   if (activeOnly && !active) throw serviceError('LOCATION_NOT_ACTIVE', 'Live tracking is only available for active deliveries.', 409)
-  const location = delivery.riderId
+  // Precise rider position is only disclosed while the delivery is active.
+  const location = delivery.riderId && active
     ? await prisma.riderLocation.findFirst({ where: { riderId: delivery.riderId, deliveryId }, orderBy: { recordedAt: 'desc' } })
     : null
-  return {
+  const base = {
     delivery: {
       id: delivery.id,
       status: delivery.status,
       active,
       location: location ? { latitude: location.latitude, longitude: location.longitude, recordedAt: location.recordedAt } : null,
+      rider: active ? riderPublicProfile(delivery.rider) : null,
     },
+  }
+  if (delivery.parcelBooking) {
+    const booking = delivery.parcelBooking
+    return {
+      ...base,
+      kind: 'parcel',
+      parcel: {
+        id: booking.id,
+        reference: booking.reference,
+        status: booking.status,
+        pickup: { address: booking.pickupAddress, latitude: booking.pickupLatitude, longitude: booking.pickupLongitude },
+        destination: { address: booking.dropoffAddress, latitude: booking.dropoffLatitude, longitude: booking.dropoffLongitude },
+        route: { geometry: booking.routeGeometry, distanceMeters: booking.distanceMeters, durationSeconds: booking.durationSeconds },
+      },
+    }
+  }
+  return {
+    ...base,
+    kind: 'order',
     order: {
       id: delivery.order.id,
       orderNumber: delivery.order.orderNumber,
@@ -139,3 +255,5 @@ export async function getDeliveryTrackingSnapshot(deliveryId, user, { activeOnly
 }
 
 export function serviceError(code, message, status) { return Object.assign(new Error(message), { code, status }) }
+
+export { RIDER_REQUEST_TTL_MS }

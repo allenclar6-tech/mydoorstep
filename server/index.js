@@ -9,7 +9,7 @@ import multer from 'multer'
 import { z } from 'zod'
 import { prisma } from './prisma.js'
 import { createSession, hashPassword, requireUser, revokeSession, revokeUserSessions, verifyPassword } from './auth.js'
-import { initializePayment, isOrderPayable, matchesPaystackPayment, PaymentError, verifyWebhookSignature } from './paymentService.js'
+import { initializePayment, isOrderPayable, matchesPaystackPayment, PaymentError, verifyPaystackTransaction, verifyWebhookSignature } from './paymentService.js'
 import { advanceDelivery, claimDelivery, getDeliveryTrackingSnapshot, recordLocation, validateLocationUpdate } from './deliveryService.js'
 import { deliveryRealtime } from './realtime.js'
 import { requireAdmin, reviewApplication } from './adminService.js'
@@ -18,6 +18,7 @@ import { menuMediaUrl, publicMenuItems, publicRestaurantImage, registerPartnerMe
 import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
 import { buildAiReply } from './aiBrain.js'
 import { createNavigationRouter } from './navigation.js'
+import { applyPaystackVerification, confirmParcelPayment, createParcelRouter } from './parcelRoutes.js'
 
 const app = express()
 const port = Number(process.env.PORT || process.env.API_PORT || 4000)
@@ -59,6 +60,7 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draf
 app.use(express.json({ limit: '1mb', verify: (request, _response, buffer) => { request.rawBody = buffer } }))
 app.use('/api', (request, response, next) => { if (request.method !== 'GET' || request.headers.authorization) response.set('Cache-Control', 'no-store'); next() })
 app.use('/api/navigation', createNavigationRouter())
+app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
 
 app.get('/api/health', (_request, response) => {
   response.json({ service: 'doorstep-api', status: 'ok', environment: process.env.NODE_ENV || 'development' })
@@ -1042,7 +1044,7 @@ app.get('/api/admin/bank-transfers', requireUser, requireAdmin, async (request, 
   const result = z.object({ status: z.enum(['PENDING_VERIFICATION', 'SUCCESSFUL', 'FAILED', 'EXPIRED', 'AMOUNT_MISMATCH']).optional() }).safeParse(request.query)
   if (!result.success) return response.status(400).json({ error: 'INVALID_BANK_TRANSFER_FILTER' })
   try {
-    const payments = await prisma.payment.findMany({ where: { method: 'BANK_TRANSFER', ...(result.data.status ? { status: result.data.status } : {}) }, include: { order: { include: { customer: { select: { firstName: true, lastName: true, email: true } } } }, transactions: { orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' }, take: 100 })
+    const payments = await prisma.payment.findMany({ where: { method: 'BANK_TRANSFER', ...(result.data.status ? { status: result.data.status } : {}) }, include: { order: { include: { customer: { select: { firstName: true, lastName: true, email: true } } } }, parcelBooking: { select: { id: true, reference: true, status: true, customer: { select: { firstName: true, lastName: true, email: true } } } }, transactions: { orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' }, take: 100 })
     return response.json({ payments })
   } catch {
     return response.status(503).json({ error: 'BANK_TRANSFER_SERVICE_UNAVAILABLE' })
@@ -1059,6 +1061,14 @@ app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdm
     })
     if (!payment) return response.status(404).json({ error: 'BANK_TRANSFER_NOT_FOUND' })
     if (payment.status !== 'PENDING_VERIFICATION') return response.status(409).json({ error: 'BANK_TRANSFER_NOT_PENDING_VERIFICATION' })
+    if (payment.parcelBookingId) {
+      await prisma.$transaction(async (transaction) => {
+        await transaction.payment.update({ where: { id: payment.id }, data: { providerTransactionId: result.data.bankTransactionId } })
+        await confirmParcelPayment(transaction, payment, { providerReference: result.data.bankTransactionId, source: 'admin_bank_transfer', metadata: { note: result.data.note, transferReference: payment.reference } })
+        await transaction.auditLog.create({ data: { actorId: request.user.id, action: 'CONFIRM_BANK_TRANSFER', entityType: 'Payment', entityId: payment.id, metadata: { bankTransactionId: result.data.bankTransactionId, parcelBookingId: payment.parcelBookingId } } })
+      })
+      return response.json({ confirmed: true })
+    }
     await prisma.$transaction(async (transaction) => {
       await transaction.payment.update({ where: { id: payment.id }, data: { status: 'SUCCESSFUL', verifiedAt: new Date(), providerTransactionId: result.data.bankTransactionId } })
       await transaction.order.update({ where: { id: payment.orderId }, data: { status: 'PAID', paidAt: new Date() } })
@@ -1074,31 +1084,84 @@ app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdm
   }
 })
 
+// Confirms a verified food-order payment. Idempotent: a second confirmation is a no-op.
+async function confirmOrderPayment(transaction, payment, { providerReference, metadata }) {
+  const currentOrder = await transaction.order.findUnique({ where: { id: payment.orderId }, select: { status: true } })
+  if (!currentOrder || !isOrderPayable(currentOrder.status)) throw Object.assign(new Error('Order is not payable in its current state.'), { code: 'ORDER_NOT_PAYABLE', status: 409 })
+  const changed = await transaction.payment.updateMany({ where: { id: payment.id, status: { not: 'SUCCESSFUL' } }, data: { status: 'SUCCESSFUL', verifiedAt: new Date() } })
+  if (changed.count !== 1) return { duplicate: true }
+  const order = await transaction.order.update({ where: { id: payment.orderId }, data: { status: 'PAID', paidAt: new Date() }, include: { restaurant: { include: { users: true } } } })
+  await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
+  const commissionMinor = Math.round(order.subtotalMinor * 0.15)
+  await transaction.commission.upsert({ where: { orderId: order.id }, update: {}, create: { orderId: order.id, percentage: 15, amountMinor: commissionMinor } })
+  await transaction.restaurantPayout.upsert({ where: { orderId: order.id }, update: {}, create: { restaurantId: order.restaurantId, orderId: order.id, amountMinor: order.subtotalMinor - commissionMinor } })
+  await transaction.notification.create({ data: { userId: order.customerId, type: 'PAYMENT', title: 'Payment confirmed', body: `Your payment for ${order.orderNumber} was confirmed. The restaurant is preparing your order.` } })
+  for (const member of order.restaurant.users) await transaction.notification.create({ data: { userId: member.userId, type: 'ORDER', title: 'New paid order', body: `Order ${order.orderNumber} is ready for your restaurant to accept.` } })
+  await transaction.transaction.create({ data: { paymentId: payment.id, type: 'PAYMENT_SUCCESS', amountMinor: payment.amountMinor, providerReference, metadata } })
+  return { confirmed: true }
+}
+
+// Finds a payment by its current reference, or by a reference that was retired after a failed attempt.
+async function findPaymentByReference(reference) {
+  const current = await prisma.payment.findUnique({ where: { reference } })
+  if (current) return { payment: current, expectedReference: reference }
+  const rotated = await prisma.transaction.findFirst({ where: { type: 'PAYMENT_REFERENCE_ROTATED', providerReference: reference }, include: { payment: true } })
+  return rotated?.payment ? { payment: rotated.payment, expectedReference: reference } : { payment: null, expectedReference: reference }
+}
+
 app.post('/api/payments/webhook', async (request, response) => {
   if (!verifyWebhookSignature(request.rawBody, request.get('x-paystack-signature'))) return response.status(401).json({ error: 'INVALID_WEBHOOK_SIGNATURE' })
   const event = request.body
   if (event.event !== 'charge.success' || !event.data?.reference) return response.status(200).json({ received: true })
   try {
-    const payment = await prisma.payment.findUnique({ where: { reference: event.data.reference } })
+    const { payment, expectedReference } = await findPaymentByReference(event.data.reference)
     if (!payment) return response.status(200).json({ received: true })
+    if (payment.parcelBookingId) {
+      const outcome = await applyPaystackVerification(prisma, payment, { status: 'success', reference: event.data.reference, amount: event.data.amount, currency: event.data.currency, id: event.data.id, gatewayResponse: event.data.gateway_response || null, paidAt: event.data.paid_at || null }, 'webhook', { expectedReference })
+      if (outcome.status === 'mismatch') return response.status(400).json({ error: 'PAYMENT_RECONCILIATION_FAILED' })
+      return response.status(200).json({ received: true, ...(outcome.duplicate ? { duplicate: true } : {}) })
+    }
     if (payment.status === 'SUCCESSFUL') return response.status(200).json({ received: true, duplicate: true })
-    if (!matchesPaystackPayment(payment, event)) return response.status(400).json({ error: 'PAYMENT_RECONCILIATION_FAILED' })
-    await prisma.$transaction(async (transaction) => {
-      const currentOrder = await transaction.order.findUnique({ where: { id: payment.orderId }, select: { status: true } })
-      if (!currentOrder || !isOrderPayable(currentOrder.status)) throw Object.assign(new Error('Order is not payable in its current state.'), { code: 'ORDER_NOT_PAYABLE', status: 409 })
-      await transaction.payment.update({ where: { id: payment.id }, data: { status: 'SUCCESSFUL', verifiedAt: new Date() } })
-      const order = await transaction.order.update({ where: { id: payment.orderId }, data: { status: 'PAID', paidAt: new Date() }, include: { restaurant: { include: { users: true } } } })
-      await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
-      const commissionMinor = Math.round(order.subtotalMinor * 0.15)
-      await transaction.commission.upsert({ where: { orderId: order.id }, update: {}, create: { orderId: order.id, percentage: 15, amountMinor: commissionMinor } })
-      await transaction.restaurantPayout.upsert({ where: { orderId: order.id }, update: {}, create: { restaurantId: order.restaurantId, orderId: order.id, amountMinor: order.subtotalMinor - commissionMinor } })
-      await transaction.notification.create({ data: { userId: order.customerId, type: 'PAYMENT', title: 'Payment confirmed', body: `Your payment for ${order.orderNumber} was confirmed. The restaurant is preparing your order.` } })
-      for (const member of order.restaurant.users) await transaction.notification.create({ data: { userId: member.userId, type: 'ORDER', title: 'New paid order', body: `Order ${order.orderNumber} is ready for your restaurant to accept.` } })
-      await transaction.transaction.create({ data: { paymentId: payment.id, type: 'PAYMENT_SUCCESS', amountMinor: payment.amountMinor, providerReference: event.data.reference, metadata: event.data } })
-    })
+    if (!matchesPaystackPayment({ ...payment, reference: expectedReference }, event)) return response.status(400).json({ error: 'PAYMENT_RECONCILIATION_FAILED' })
+    await prisma.$transaction((transaction) => confirmOrderPayment(transaction, payment, { providerReference: event.data.reference, metadata: event.data }))
     return response.status(200).json({ received: true })
   } catch {
     return response.status(503).json({ error: 'PAYMENT_WEBHOOK_RETRY' })
+  }
+})
+
+// Called by the payment callback page. The browser only supplies a reference; the server asks Paystack.
+app.post('/api/payments/verify', requireUser, rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false }), async (request, response) => {
+  const result = z.object({ reference: z.string().trim().min(6).max(120) }).safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_PAYMENT_REFERENCE' })
+  try {
+    const { payment, expectedReference } = await findPaymentByReference(result.data.reference)
+    if (!payment) return response.status(404).json({ error: 'PAYMENT_NOT_FOUND' })
+    const owner = payment.parcelBookingId
+      ? await prisma.parcelBooking.findUnique({ where: { id: payment.parcelBookingId }, select: { id: true, customerId: true } })
+      : await prisma.order.findUnique({ where: { id: payment.orderId }, select: { id: true, customerId: true } })
+    if (!owner || owner.customerId !== request.user.id) return response.status(404).json({ error: 'PAYMENT_NOT_FOUND' })
+    const target = payment.parcelBookingId ? { kind: 'parcel', id: owner.id } : { kind: 'order', id: owner.id }
+    if (payment.status === 'SUCCESSFUL') return response.json({ ...target, status: 'SUCCESSFUL' })
+    if (payment.method !== 'PAYSTACK') return response.json({ ...target, status: payment.status })
+    const verified = await verifyPaystackTransaction(result.data.reference)
+    if (payment.parcelBookingId) {
+      const outcome = await applyPaystackVerification(prisma, payment, verified, 'verify', { expectedReference })
+      const refreshed = await prisma.payment.findUnique({ where: { id: payment.id }, select: { status: true } })
+      return response.json({ ...target, status: refreshed.status, providerStatus: verified.status, ...(outcome.refundRequired ? { refundReview: true } : {}) })
+    }
+    if (verified.status === 'success') {
+      if (!matchesPaystackPayment({ ...payment, reference: expectedReference }, { data: verified })) return response.status(409).json({ ...target, error: 'PAYMENT_RECONCILIATION_FAILED' })
+      await prisma.$transaction((transaction) => confirmOrderPayment(transaction, payment, { providerReference: verified.reference, metadata: { source: 'verify', gatewayResponse: verified.gatewayResponse } }))
+      return response.json({ ...target, status: 'SUCCESSFUL', providerStatus: verified.status })
+    }
+    if (verified.status === 'failed') await prisma.payment.updateMany({ where: { id: payment.id, status: 'PENDING' }, data: { status: 'FAILED' } })
+    const refreshed = await prisma.payment.findUnique({ where: { id: payment.id }, select: { status: true } })
+    return response.json({ ...target, status: refreshed.status, providerStatus: verified.status })
+  } catch (error) {
+    const paymentError = error instanceof PaymentError ? error : null
+    if (!paymentError) console.error('[payments] verify_failed', JSON.stringify({ name: error?.name, code: error?.code }))
+    return response.status(paymentError?.status || 503).json({ error: paymentError?.code || 'PAYMENT_VERIFICATION_UNAVAILABLE' })
   }
 })
 
@@ -1242,7 +1305,7 @@ app.get('/api/restaurant/summary', requireUser, async (request, response) => {
 app.get('/api/rider/deliveries', requireUser, async (request, response) => {
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
-    const deliveries = await prisma.delivery.findMany({ where: { OR: [{ status: 'AVAILABLE' }, { riderId: request.user.rider.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } }] }, include: { order: { include: { restaurant: { select: { name: true, address: true, phone: true } } } } }, orderBy: { requestedAt: 'asc' }, take: 50 })
+    const deliveries = await prisma.delivery.findMany({ where: { orderId: { not: null }, OR: [{ status: 'AVAILABLE' }, { riderId: request.user.rider.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } }] }, include: { order: { include: { restaurant: { select: { name: true, address: true, phone: true } } } } }, orderBy: { requestedAt: 'asc' }, take: 50 })
     return response.json({ deliveries })
   } catch { return response.status(503).json({ error: 'RIDER_DELIVERY_SERVICE_UNAVAILABLE' }) }
 })
@@ -1267,7 +1330,7 @@ app.patch('/api/rider/availability', requireUser, async (request, response) => {
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
     if (request.user.rider.status !== 'APPROVED' && result.data.availability === 'ONLINE') return response.status(403).json({ error: 'RIDER_NOT_APPROVED' })
-    const rider = await prisma.rider.update({ where: { id: request.user.rider.id }, data: { availability: result.data.availability } })
+    const rider = await prisma.rider.update({ where: { id: request.user.rider.id }, data: { availability: result.data.availability, ...(result.data.availability === 'OFFLINE' ? { availabilityLatitude: null, availabilityLongitude: null, availabilityAccuracyM: null, availabilityLocatedAt: null } : {}) } })
     return response.json({ rider: { id: rider.id, availability: rider.availability, status: rider.status } })
   } catch { return response.status(503).json({ error: 'RIDER_AVAILABILITY_SERVICE_UNAVAILABLE' }) }
 })
@@ -1286,6 +1349,7 @@ app.post('/api/deliveries/:deliveryId/claim', requireUser, async (request, respo
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
     const delivery = await claimDelivery(request.params.deliveryId, request.user.rider.id)
+    deliveryRealtime.broadcastStatus(delivery.id, delivery.status)
     return response.json({ delivery })
   } catch (error) {
     return response.status(error.status || 503).json({ error: error.code || 'DELIVERY_SERVICE_UNAVAILABLE', message: error.message })
@@ -1298,6 +1362,7 @@ app.post('/api/deliveries/:deliveryId/status', requireUser, async (request, resp
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
     const delivery = await advanceDelivery(request.params.deliveryId, request.user.rider.id, result.data.status)
+    deliveryRealtime.broadcastStatus(delivery.id, delivery.status)
     return response.json({ delivery })
   } catch (error) {
     return response.status(error.status || 503).json({ error: error.code || 'DELIVERY_SERVICE_UNAVAILABLE', message: error.message })
@@ -1308,7 +1373,7 @@ app.post('/api/deliveries/by-order/:orderNumber/status', requireUser, async (req
   const result = z.object({ status: z.enum(['GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED']) }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_DELIVERY_STATUS' })
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
-  try { const order = await prisma.order.findFirst({ where: { orderNumber: request.params.orderNumber, riderId: request.user.rider.id }, select: { delivery: { select: { id: true } } } }); if (!order?.delivery) return response.status(404).json({ error: 'DELIVERY_NOT_FOUND' }); const delivery = await advanceDelivery(order.delivery.id, request.user.rider.id, result.data.status); return response.json({ delivery }) } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'DELIVERY_SERVICE_UNAVAILABLE', message: error.message }) }
+  try { const order = await prisma.order.findFirst({ where: { orderNumber: request.params.orderNumber, riderId: request.user.rider.id }, select: { delivery: { select: { id: true } } } }); if (!order?.delivery) return response.status(404).json({ error: 'DELIVERY_NOT_FOUND' }); const delivery = await advanceDelivery(order.delivery.id, request.user.rider.id, result.data.status); deliveryRealtime.broadcastStatus(delivery.id, delivery.status); return response.json({ delivery }) } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'DELIVERY_SERVICE_UNAVAILABLE', message: error.message }) }
 })
 
 app.post('/api/deliveries/:deliveryId/location', requireUser, async (request, response) => {
@@ -1362,7 +1427,7 @@ app.get('/api/admin/deliveries/active', requireUser, async (request, response) =
   try {
     const deliveries = await prisma.delivery.findMany({
       where: { status: { in: ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } },
-      include: { order: { select: { orderNumber: true, restaurant: { select: { name: true } } } }, rider: { select: { user: { select: { firstName: true, lastName: true } } } } },
+      include: { order: { select: { orderNumber: true, restaurant: { select: { name: true } } } }, parcelBooking: { select: { reference: true, pickupAddress: true } }, rider: { select: { user: { select: { firstName: true, lastName: true } } } } },
       orderBy: { acceptedAt: 'desc' },
     })
     const activeDeliveries = await Promise.all(deliveries.map(async (delivery) => {
@@ -1370,8 +1435,9 @@ app.get('/api/admin/deliveries/active', requireUser, async (request, response) =
       return {
         id: delivery.id,
         status: delivery.status,
-        orderNumber: delivery.order.orderNumber,
-        restaurant: delivery.order.restaurant.name,
+        kind: delivery.parcelBooking ? 'parcel' : 'order',
+        orderNumber: delivery.order?.orderNumber || delivery.parcelBooking?.reference,
+        restaurant: delivery.order?.restaurant.name || `Package pickup: ${delivery.parcelBooking?.pickupAddress || 'customer location'}`,
         rider: delivery.rider ? `${delivery.rider.user.firstName} ${delivery.rider.user.lastName}`.trim() : 'Awaiting rider',
         location: snapshot.delivery.location,
       }

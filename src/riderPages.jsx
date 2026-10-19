@@ -3,6 +3,7 @@ import { ArrowRight, Bike, Bell, Check, Clock3, DollarSign, MapPin, Menu, Packag
 import { formatNaira } from './data'
 import { SessionSignOutButton } from './authControls'
 import { RiderAccount } from './RiderAccount'
+import { AvailabilityLocationToggle, RiderParcelJobs } from './rider/RiderParcelJobs'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
@@ -96,21 +97,59 @@ function CurrentDelivery({ delivery, setDelivery }) {
 }
 
 function RiderDashboard() {
+  const [summary, setSummary] = useState(null)
+  const [summaryError, setSummaryError] = useState('')
   const [online, setOnline] = useState(false)
+  const [toggleError, setToggleError] = useState('')
   const [delivery, setDelivery] = useState(null)
+  const [activeParcel, setActiveParcel] = useState(null)
   const token = localStorage.getItem('doorstep-token')
+  const loadSummary = () => fetch(`${apiBase}/api/rider/summary`, { headers: { Authorization: `Bearer ${token}` } }).then(async (response) => {
+    const body = await response.json()
+    if (!response.ok) throw new Error(body.message || 'Could not load your rider summary.')
+    setSummary(body)
+    setOnline(body.availability === 'ONLINE')
+    setSummaryError('')
+  }).catch((error) => setSummaryError(error.message))
   useEffect(() => {
+    loadSummary()
     fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => {
-      const active = body.deliveries?.find((item) => item.riderId)
+      const active = body.deliveries?.find((item) => item.riderId && item.order)
       if (active) setDelivery({ id: active.id, order: active.order.orderNumber, restaurant: active.order.restaurant.name, pickup: active.order.restaurant.address, customer: 'Customer', dropoff: active.order.addressSnapshot, status: active.status })
     }).catch(() => undefined)
   }, [token])
   const toggleOnline = async () => {
     const next = online ? 'OFFLINE' : 'ONLINE'
-    const response = await fetch(`${apiBase}/api/rider/availability`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ availability: next }) })
-    if (response.ok) setOnline(!online)
+    setToggleError('')
+    try {
+      const response = await fetch(`${apiBase}/api/rider/availability`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ availability: next }) })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error === 'RIDER_NOT_APPROVED' ? 'Your rider account must be approved before you can go online.' : 'Could not change your availability. Check your connection and try again.')
+      setOnline(next === 'ONLINE')
+      loadSummary()
+    } catch (error) { setToggleError(error.message) }
   }
-  return <><RiderIntro eyebrow="TODAY AT A GLANCE" title="Ready for the next good trip?" action={<button className={online ? 'online-toggle active' : 'online-toggle'} onClick={toggleOnline}><span /> {online ? 'Online' : 'Offline'}</button>} /><div className="demo-banner"><span>LIVE RIDER WORKSPACE</span><p>Your availability and assigned deliveries are now synchronized with DOORSTEP operations.</p></div><section className="metric-grid"><div><span>Today's deliveries</span><strong>7</strong><small>2 still active</small></div><div><span>Today's earnings</span><strong>{formatNaira(9800)}</strong><small>Before payout</small></div><div><span>Acceptance rate</span><strong>88%</strong><small>Last 30 days</small></div><div><span>Your rating</span><strong>4.9 <em>★</em></strong><small>From 84 deliveries</small></div></section><section className="rider-layout">{delivery ? <CurrentDelivery delivery={delivery} setDelivery={setDelivery} /> : <div className="rider-delivery-card"><span className="section-kicker">NO ACTIVE DELIVERY</span><h3>Ready when an assignment arrives.</h3><p>Go online to receive available delivery requests.</p></div>}<div className="portal-panel"><div className="panel-heading"><div><span className="section-kicker">DELIVERY CARE</span><h3>Before you move</h3></div></div><div className="rider-care"><Bike size={20} /><p>Only share your location while an active delivery is in progress. Customer and restaurant details stay limited to the current order.</p></div><button className="text-link" onClick={() => navigate('/rider/verification')}>View verification <ArrowRight size={14} /></button></div></section></>
+  const approved = summary?.approval === 'APPROVED'
+  const metric = (value) => summary ? value : '…'
+  return <><RiderIntro eyebrow="TODAY AT A GLANCE" title="Ready for the next good trip?" action={<button className={online ? 'online-toggle active' : 'online-toggle'} onClick={toggleOnline} aria-pressed={online}><span /> {online ? 'Online' : 'Offline'}</button>} />
+    {toggleError && <p className="profile-message" role="alert">{toggleError}</p>}
+    {summaryError && <p className="profile-message" role="alert">{summaryError}</p>}
+    {summary && !approved && <div className="demo-banner"><span>APPROVAL PENDING</span><p>DOORSTEP operations must approve your rider account before you can go online or accept deliveries.</p></div>}
+    <section className="metric-grid">
+      <div><span>Delivered today</span><strong>{metric(summary?.today.completedDeliveries)}</strong><small>{summary ? `${summary.activeDeliveries} active now` : 'Loading'}</small></div>
+      <div><span>Recorded earnings today</span><strong>{summary ? formatNaira(Math.round(summary.today.recordedEarningsMinor / 100)) : '…'}</strong><small>From payout records</small></div>
+      <div><span>All-time deliveries</span><strong>{metric(summary?.completedDeliveries)}</strong><small>Completed</small></div>
+      <div><span>Your rating</span><strong>{summary?.rating ? <>{summary.rating.average.toFixed(1)} <em>★</em></> : summary ? 'New' : '…'}</strong><small>{summary?.rating ? `From ${summary.rating.count} rating${summary.rating.count === 1 ? '' : 's'}` : 'No ratings yet'}</small></div>
+    </section>
+    <AvailabilityLocationToggle online={online} />
+    <section className="rider-layout">
+      <div className="rider-work-column">
+        {delivery && <CurrentDelivery delivery={delivery} setDelivery={setDelivery} />}
+        {activeParcel && <RiderLocationSharing deliveryId={activeParcel.deliveryId} active />}
+        {!delivery && <RiderParcelJobs online={online} approved={approved} onActiveChange={setActiveParcel} />}
+      </div>
+      <div className="portal-panel"><div className="panel-heading"><div><span className="section-kicker">DELIVERY CARE</span><h3>Before you move</h3></div></div><div className="rider-care"><Bike size={20} /><p>Live location is shared with the customer only during an active delivery, and only while this page is open in your browser. Keep the screen on during deliveries.</p></div><button className="text-link" onClick={() => navigate('/rider/verification')}>View verification <ArrowRight size={14} /></button></div>
+    </section></>
 }
 
 function Available() { const [deliveries, setDeliveries] = useState([]); const token = localStorage.getItem('doorstep-token'); useEffect(() => { fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => setDeliveries(body.deliveries || [])).catch(() => undefined) }, []); const claim = async (id) => { const response = await fetch(`${apiBase}/api/deliveries/${id}/claim`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }); if (response.ok) navigate('/rider/dashboard') }; return <><RiderIntro eyebrow="AVAILABLE DELIVERIES" title="Choose your next route." /><section className="orders-panel">{deliveries.filter((delivery) => delivery.status === 'AVAILABLE').map((delivery) => <div className="portal-order-row" key={delivery.id}><div className="order-id"><strong>{delivery.order.orderNumber}</strong><small>{delivery.order.restaurant.name}</small></div><div className="order-items">{delivery.order.restaurant.address} → {delivery.order.addressSnapshot}</div><strong>{formatNaira(delivery.order.deliveryFeeMinor / 100)}</strong><button className="small-action" onClick={() => claim(delivery.id)}>Accept</button></div>)}{deliveries.length === 0 && <div className="empty-state">No delivery requests are available right now.</div>}</section></> }

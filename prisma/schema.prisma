@@ -89,6 +89,18 @@ enum DeliveryStatus {
   CANCELLED
 }
 
+enum ParcelStatus {
+  PENDING_PAYMENT
+  PAYMENT_CONFIRMED
+  SEARCHING_FOR_RIDER
+  RIDER_ASSIGNED
+  RIDER_EN_ROUTE_TO_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
 enum PayoutStatus {
   PENDING
   PROCESSING
@@ -137,6 +149,7 @@ model User {
   referralsSent     Referral[]       @relation("Referrer")
   referralsReceived Referral[]       @relation("Referred")
   orders            Order[]          @relation("CustomerOrders")
+  parcelBookings    ParcelBooking[]  @relation("CustomerParcels")
   sessions          Session[]
   profileImageKey   String?
 }
@@ -272,8 +285,14 @@ model Rider {
   deliveries     Delivery[]
   locations      RiderLocation[]
   payouts        RiderPayout[]
+  parcelBookings ParcelBooking[]   @relation("AssignedParcelRider")
+  availabilityLatitude   Decimal?  @db.Decimal(10, 7)
+  availabilityLongitude  Decimal?  @db.Decimal(10, 7)
+  availabilityAccuracyM  Int?
+  availabilityLocatedAt  DateTime?
 
   @@index([restaurantId, status])
+  @@index([status, availability])
 }
 
 model RiderApplication {
@@ -517,17 +536,23 @@ model OrderItem {
 
 model Delivery {
   id          String         @id @default(cuid())
-  orderId     String         @unique
+  orderId     String?        @unique
+  parcelBookingId String?    @unique
   riderId     String?
-  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order       Order?         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  parcelBooking ParcelBooking? @relation(fields: [parcelBookingId], references: [id], onDelete: Cascade)
+  requestedRiderId String?
+  requestExpiresAt DateTime?
   rider       Rider?         @relation(fields: [riderId], references: [id])
   status      DeliveryStatus @default(AVAILABLE)
   requestedAt DateTime?
   acceptedAt  DateTime?
   pickedUpAt  DateTime?
   deliveredAt DateTime?
+  cancelledAt DateTime?
 
   @@index([riderId, status])
+  @@index([requestedRiderId, status])
 }
 
 model RiderLocation {
@@ -542,10 +567,80 @@ model RiderLocation {
   @@index([riderId, recordedAt])
 }
 
+model ParcelBooking {
+  id                   String        @id @default(cuid())
+  reference            String        @unique
+  idempotencyKey       String?       @unique
+  customerId           String
+  customer             User          @relation("CustomerParcels", fields: [customerId], references: [id])
+  riderId              String?
+  rider                Rider?        @relation("AssignedParcelRider", fields: [riderId], references: [id])
+  serviceCode          String
+  serviceName          String
+  pickupAddress        String
+  pickupLatitude       Decimal       @db.Decimal(10, 7)
+  pickupLongitude      Decimal       @db.Decimal(10, 7)
+  pickupContactName    String
+  pickupContactPhone   String
+  pickupNotes          String?
+  dropoffAddress       String
+  dropoffLatitude      Decimal       @db.Decimal(10, 7)
+  dropoffLongitude     Decimal       @db.Decimal(10, 7)
+  recipientName        String
+  recipientPhone       String
+  packageDescription   String
+  packageSize          String
+  deliveryInstructions String?
+  distanceMeters       Int
+  durationSeconds      Int
+  routeGeometry        Json
+  routeProvider        String
+  baseFeeMinor         Int
+  distanceFeeMinor     Int
+  minimumFareAdjustmentMinor Int     @default(0)
+  serviceFeeMinor      Int
+  totalMinor           Int
+  currency             String        @default("NGN")
+  pricingSnapshot      Json
+  status               ParcelStatus  @default(PENDING_PAYMENT)
+  riderRating          Int?
+  paidAt               DateTime?
+  assignedAt           DateTime?
+  pickedUpAt           DateTime?
+  deliveredAt          DateTime?
+  cancelledAt          DateTime?
+  cancellationReason   String?
+  cancelledByRole      String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  delivery             Delivery?
+  payment              Payment?
+  events               ParcelEvent[]
+
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+  @@index([riderId, status])
+}
+
+model ParcelEvent {
+  id         String        @id @default(cuid())
+  bookingId  String
+  booking    ParcelBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  status     ParcelStatus
+  actorId    String?
+  actorRole  String?
+  note       String?
+  createdAt  DateTime      @default(now())
+
+  @@index([bookingId, createdAt])
+}
+
 model Payment {
   id           String        @id @default(cuid())
-  orderId      String        @unique
-  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId      String?       @unique
+  order        Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  parcelBookingId String?    @unique
+  parcelBooking ParcelBooking? @relation(fields: [parcelBookingId], references: [id], onDelete: Cascade)
   provider     String
   method       String        @default("PAYSTACK")
   reference    String        @unique

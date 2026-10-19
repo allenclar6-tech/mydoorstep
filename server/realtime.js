@@ -49,7 +49,7 @@ export class DeliveryRealtime {
       const clients = this.clients.get(deliveryId) || new Set()
       clients.add(socket)
       this.clients.set(deliveryId, clients)
-      send(socket, { type: 'tracking.snapshot', ...snapshot })
+      send(socket, { type: 'tracking.snapshot', ...snapshot, data: snapshot })
       socket.on('close', () => {
         clients.delete(socket)
         if (!clients.size) this.clients.delete(deliveryId)
@@ -73,12 +73,20 @@ export class DeliveryRealtime {
   }
 
   broadcastLocation(deliveryId, location) {
-    const message = {
-      type: 'tracking.location',
-      deliveryId,
-      location: { latitude: location.latitude, longitude: location.longitude, recordedAt: location.recordedAt },
-    }
+    const position = { latitude: location.latitude, longitude: location.longitude, recordedAt: location.recordedAt }
+    const message = { type: 'tracking.location', deliveryId, location: position, data: position }
     for (const socket of this.clients.get(deliveryId) || []) send(socket, message)
+  }
+
+  // Status changes are pushed so viewers do not wait for the next poll; terminal states close the stream.
+  broadcastStatus(deliveryId, status) {
+    const clients = this.clients.get(deliveryId)
+    if (!clients) return
+    const message = { type: 'tracking.status', deliveryId, status, data: { status } }
+    for (const socket of clients) {
+      send(socket, message)
+      if (status === 'DELIVERED' || status === 'CANCELLED') socket.close(1000, 'delivery_complete')
+    }
   }
 }
 

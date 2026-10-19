@@ -1,7 +1,7 @@
 const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 const messages = {
-  NAVIGATION_NOT_CONFIGURED: 'Google navigation is not configured on the API. The site owner must set GOOGLE_NAVIGATION_API_KEY.',
+  NAVIGATION_NOT_CONFIGURED: 'Google navigation is not configured on the API. The site owner must set the server-side Google navigation key.',
   NAVIGATION_RATE_LIMITED: 'Too many navigation requests. Please wait a minute and try again.',
   NAVIGATION_PROVIDER_RATE_LIMITED: 'Google navigation has reached its request quota. Please try again later.',
   NAVIGATION_PROVIDER_UNAVAILABLE: 'Google could not complete this request. Check enabled APIs, key restrictions, billing, or try a different place.',

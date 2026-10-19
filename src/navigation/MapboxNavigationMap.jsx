@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { routeColors } from './navigation'
+import { createMapController } from '../map/mapCore'
+import { readPreferredStyleId, styleById } from '../map/mapStyles'
+import { LayersControl } from '../map/LayersControl'
 
 const token = import.meta.env.VITE_MAP_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
 const coordinates = (point) => [point.longitude, point.latitude]
@@ -14,6 +17,9 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
   const [state, setState] = useState('loading')
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [controller, setController] = useState(null)
+  // Bumped after every basemap change so route and GPS layers are re-added to the new style.
+  const [styleEpoch, setStyleEpoch] = useState(0)
 
   useEffect(() => {
     setState('loading')
@@ -24,13 +30,17 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
       return undefined
     }
     const map = new mapboxgl.Map({
-      container: container.current, accessToken: token, style: 'mapbox://styles/mapbox/streets-v12',
+      container: container.current, accessToken: token, style: styleById(readPreferredStyleId()).url,
       center: [5.6846, 5.8916], zoom: 14, pitch: 0, bearing: 0,
     })
     mapRef.current = map
+    const mapController = createMapController(map)
+    mapController.markInitialStyle(styleById(readPreferredStyleId()).id)
+    let firstStyle = true
+    map.on('style.load', () => { if (firstStyle) { firstStyle = false; return } setStyleEpoch((value) => value + 1) })
     map.addControl(new mapboxgl.NavigationControl(), 'bottom-right')
     map.addControl(new mapboxgl.ScaleControl(), 'bottom-left')
-    map.on('load', () => { setState('ready'); callbacks.current.onReady(true) })
+    map.on('load', () => { setState('ready'); setController(mapController); callbacks.current.onReady(true) })
     map.on('error', (event) => {
       console.warn('[navigation-map] map_resource_error', { status: event.error?.status })
       setError('A map resource could not load. Check your connection and the existing Mapbox token or plan limits.')
@@ -43,7 +53,7 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
     })
     const observer = new ResizeObserver(() => map.resize())
     observer.observe(container.current)
-    return () => { observer.disconnect(); callbacks.current.onReady(false); mapRef.current = null; map.remove() }
+    return () => { observer.disconnect(); callbacks.current.onReady(false); mapRef.current = null; mapController.destroy(); setController(null); map.remove() }
   }, [attempt])
 
   useEffect(() => {
@@ -69,7 +79,7 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
         if (map.getSource(`nav-route-${index}`)) map.removeSource(`nav-route-${index}`)
       }
     }
-  }, [routes, selectedRoute, state])
+  }, [routes, selectedRoute, state, styleEpoch])
 
   useEffect(() => {
     if (state !== 'ready' || !mapRef.current) return undefined
@@ -119,7 +129,7 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
       if (map.getLayer('nav-gps-accuracy')) map.removeLayer('nav-gps-accuracy')
       if (map.getSource('nav-gps-accuracy')) map.removeSource('nav-gps-accuracy')
     }
-  }, [position, following, state])
+  }, [position, following, state, styleEpoch])
 
   useEffect(() => {
     const map = mapRef.current
@@ -150,5 +160,6 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
       {state === 'error' && <button type="button" onClick={() => { setError(''); setAttempt((value) => value + 1) }}>Retry map</button>}
     </div>}
     {state === 'ready' && error && <p className="nav-map-resource-warning" role="status">{error}</p>}
+    {state === 'ready' && <LayersControl controller={controller} className="nav-map-layers" />}
   </div>
 }

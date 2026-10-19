@@ -10,6 +10,8 @@ import './authModern.css'
 import './logoCreative.css'
 import './visualDepth.css'
 import './accountEntry.css'
+import './map/mapExperience.css'
+import './parcel/parcel.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

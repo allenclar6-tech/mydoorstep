@@ -25,6 +25,30 @@ export async function initializePayment({ email, amountMinor, reference, callbac
   return { provider: providerName, reference, authorizationUrl: body.data.authorization_url, accessCode: body.data.access_code }
 }
 
+// Server-to-server confirmation used by the callback page and payment retries.
+// Webhooks remain the primary signal; this never trusts anything the browser says.
+export async function verifyPaystackTransaction(reference, { fetchImpl = globalThis.fetch } = {}) {
+  const secret = process.env.PAYSTACK_SECRET_KEY
+  if (!secret) throw new PaymentError('PAYMENT_PROVIDER_NOT_CONFIGURED', 'paystack credentials are missing.', 503)
+  let response
+  try {
+    response = await fetchImpl(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, { headers: { Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(10000) })
+  } catch {
+    throw new PaymentError('PAYMENT_VERIFICATION_UNAVAILABLE', 'Payment provider could not be reached.', 502)
+  }
+  let body = null
+  try { body = await response.json() } catch { body = null }
+  if (response.status === 404 || (body && body.status === false && /not found/i.test(body.message || ''))) return { status: 'not_found', reference }
+  if (!response.ok || !body?.status || !body.data) throw new PaymentError('PAYMENT_VERIFICATION_UNAVAILABLE', 'Payment provider did not confirm this transaction.', 502)
+  const data = body.data
+  return { status: data.status, reference: data.reference, amount: data.amount, currency: data.currency, id: data.id, gatewayResponse: data.gateway_response || null, paidAt: data.paid_at || null }
+}
+
+export function paystackMode() {
+  const secret = process.env.PAYSTACK_SECRET_KEY || ''
+  return secret.startsWith('sk_live_') ? 'live' : secret.startsWith('sk_test_') ? 'test' : secret ? 'unknown' : 'not_configured'
+}
+
 export function verifyWebhookSignature(rawBody, signature) {
   const secret = process.env.PAYSTACK_SECRET_KEY
   if (!secret || !signature || !Buffer.isBuffer(rawBody)) return false
