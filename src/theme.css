@@ -103,7 +103,7 @@ html body .category-pill-send .category-icon { background: var(--t-gold-100); co
 html body .restaurant-image, html body .grocery-store-image { box-shadow: none; }
 html body .restaurant-image { background: var(--t-mint-100); }
 html body .restaurant-monogram { color: var(--t-forest-700); opacity: 1; }
-html body .open-label { background: var(--t-surface); color: var(--t-forest-800); }
+html body .open-label { background: var(--t-forest-800); color: var(--t-on-dark); }
 
 /* Restaurant list sits directly on the page rather than in a tinted box. */
 html body .restaurant-section { background: none; border: 0; border-radius: 0; box-shadow: none; }
