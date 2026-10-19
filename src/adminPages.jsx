@@ -4,6 +4,8 @@ import { formatNaira } from './data'
 import { PasswordField } from './PasswordField'
 import { ApplicationManagement } from './ApplicationManagement'
 import { AdminParcels } from './admin/AdminParcels'
+import { WorkspaceTabBar } from './mobile/WorkspaceTabBar'
+import { NotificationBell } from './notifications/NotificationCenter'
 import { SessionSignOutButton, SignOutNotice } from './authControls'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
@@ -42,10 +44,12 @@ function AdminShell({ path, children }) {
 			<header className="admin-header">
 				<button className="admin-menu-toggle" onClick={() => setOpen(!open)} aria-label="Open admin menu"><Menu size={21} /></button>
 				<div><span className="section-kicker">ADMIN CONTROL CENTER</span><h1>Marketplace operations</h1></div>
-				<div className="admin-header-actions"><span className="admin-live-status"><i /> Systems live</span><button className="admin-alert" aria-label="4 pending alerts"><Bell size={18} /><b>4</b></button></div>
+				<div className="admin-header-actions"><NotificationBell tokenKey="doorstep-admin-token" className="admin-alert" label="Admin notifications" /></div>
 			</header>
 			{children}
 		</main>
+		{open && <button type="button" className="ws-sheet-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />}
+		<WorkspaceTabBar label="Admin navigation" path={path} onMore={() => setOpen(true)} items={[{ label: 'Overview', href: '/admin/dashboard', icon: LayoutDashboard }, { label: 'Orders', href: '/admin/orders', icon: ClipboardList }, { label: 'Packages', href: '/admin/parcels', icon: Truck }, { label: 'Live', href: '/admin/deliveries', icon: MapPin }]} />
 	</div>
 }
 function AdminIntro({ eyebrow, title, action }) { return <div className="admin-intro"><div><span className="section-kicker">{eyebrow}</span><h2>{title}</h2></div>{action}</div> }

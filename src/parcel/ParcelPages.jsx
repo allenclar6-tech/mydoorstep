@@ -5,6 +5,7 @@ import { DeliveryTrackingMap } from '../DeliveryTrackingMap'
 import { useDeliveryTracking } from '../tracking/useDeliveryTracking'
 import { formatDistance, formatDuration } from '../map/addressSearch'
 import { api, ApiError, naira, newIdempotencyKey, statusLabels, statusOrder, token } from './api'
+import { cardLabel, SavedCardChoices, useSavedCards } from '../account/SavedCards'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 const DRAFT_KEY = 'doorstep-parcel-draft-v1'
@@ -66,6 +67,13 @@ export function SendPackagePage() {
   const [submitting, setSubmitting] = useState(false)
   const [previewRoutes, setPreviewRoutes] = useState([])
   const signedIn = Boolean(token())
+  const savedCards = useSavedCards()
+  const [cardChoice, setCardChoice] = useState('NEW')
+  const [saveCard, setSaveCard] = useState(false)
+  useEffect(() => {
+    const first = savedCards.cards.find((card) => !card.expired)
+    if (first) setCardChoice((current) => current === 'NEW' ? first.id : current)
+  }, [savedCards.cards.length])
 
   // The booking flow has its own sticky action bar; lift the chat bubble above it.
   useEffect(() => {
@@ -164,8 +172,14 @@ export function SendPackagePage() {
       })
       clearDraft()
       if (booking.payment?.method === 'PAYSTACK' && booking.status === 'PENDING_PAYMENT') {
+        if (cardChoice !== 'NEW' && savedCards.enabled) {
+          // Saved card: charged on the server; the booking page shows the verified result.
+          await api('/api/payments/charge-saved-card', { method: 'POST', body: { kind: 'parcel', id: booking.id, cardId: cardChoice } }).catch(() => undefined)
+          navigate(`/parcels/${booking.id}`)
+          return
+        }
         try {
-          const payment = await api(`/api/parcels/${booking.id}/pay`, { method: 'POST' })
+          const payment = await api(`/api/parcels/${booking.id}/pay`, { method: 'POST', body: { saveCard: savedCards.enabled && saveCard } })
           if (payment.authorizationUrl) { window.location.assign(payment.authorizationUrl); return }
         } catch { /* the booking page offers a retry */ }
       }
@@ -273,6 +287,7 @@ export function SendPackagePage() {
         <fieldset className="parcel-payment">
           <legend>Payment method</legend>
           {config?.payments.paystack.enabled && <label className={draft.paymentMethod === 'PAYSTACK' ? 'is-selected' : ''}><input type="radio" name="payment" checked={draft.paymentMethod === 'PAYSTACK'} onChange={() => setDraft({ paymentMethod: 'PAYSTACK' })} /><CreditCard size={18} /><span><strong>Card or bank via Paystack</strong><small>Paystack shows the channels enabled for DOORSTEP’s account.{config.payments.paystack.mode === 'test' ? ' TEST MODE: no real money is charged.' : ''}</small></span></label>}
+          {draft.paymentMethod === 'PAYSTACK' && savedCards.enabled && <SavedCardChoices cards={savedCards.cards} value={cardChoice} onChange={setCardChoice} saveCard={saveCard} onSaveCardChange={setSaveCard} enabled={savedCards.enabled} name="parcel-card" />}
           {config?.payments.bankTransfer.enabled && <label className={draft.paymentMethod === 'BANK_TRANSFER' ? 'is-selected' : ''}><input type="radio" name="payment" checked={draft.paymentMethod === 'BANK_TRANSFER'} onChange={() => setDraft({ paymentMethod: 'BANK_TRANSFER' })} /><Landmark size={18} /><span><strong>Direct bank transfer</strong><small>Transfer to DOORSTEP’s account; confirmed manually by our team before a rider is assigned.</small></span></label>}
           {config && !config.payments.paystack.enabled && !config.payments.bankTransfer.enabled && <p className="parcel-hint">No payment method is available right now.</p>}
         </fieldset>
@@ -345,6 +360,11 @@ export function ParcelDetailPage({ bookingId }) {
     try { const result = await api(path, { method: 'POST', body }); if (result.booking) setBooking(result.booking); else await load(); if (success) setNotice(typeof success === 'function' ? success(result) : success); return result } catch (actionError) { setError(actionError.message); return null } finally { setBusy('') }
   }
 
+  const payWithCard = async (cardId) => {
+    const result = await act('card', '/api/payments/charge-saved-card', { kind: 'parcel', id: booking.id, cardId })
+    if (result) setNotice(result.status === 'SUCCESSFUL' ? 'Payment confirmed.' : result.message || 'The card payment did not go through. Try another card or pay on Paystack.')
+    load()
+  }
   const pay = async () => {
     const result = await act('pay', `/api/parcels/${booking.id}/pay`)
     if (result?.authorizationUrl) window.location.assign(result.authorizationUrl)
@@ -392,7 +412,7 @@ export function ParcelDetailPage({ bookingId }) {
             {booking.price.serviceFeeMinor > 0 && <div><dt>Service fee</dt><dd>{naira(booking.price.serviceFeeMinor)}</dd></div>}
             <div className="parcel-price-total"><dt>Total</dt><dd>{naira(booking.price.totalMinor)}</dd></div>
           </dl>
-          {booking.payment && <PaymentPanel booking={booking} busy={busy} onPay={pay} onRefresh={load} />}
+          {booking.payment && <PaymentPanel booking={booking} busy={busy} onPay={pay} onPayWithCard={payWithCard} onRefresh={load} />}
         </div>
 
         {booking.status === 'SEARCHING_FOR_RIDER' && <RiderChooser booking={booking} onChanged={(updated) => setBooking(updated)} />}
@@ -422,8 +442,10 @@ export function ParcelDetailPage({ bookingId }) {
   </main>
 }
 
-function PaymentPanel({ booking, busy, onPay, onRefresh }) {
+function PaymentPanel({ booking, busy, onPay, onPayWithCard, onRefresh }) {
   const [copied, setCopied] = useState('')
+  const savedCards = useSavedCards()
+  const usableCards = savedCards.enabled ? savedCards.cards.filter((card) => !card.expired) : []
   const payment = booking.payment
   const copy = async (label, value) => { try { await navigator.clipboard.writeText(value); setCopied(label) } catch { setCopied('') } }
   const statusText = { PENDING: 'Waiting for payment', PENDING_VERIFICATION: 'Waiting for DOORSTEP to confirm your transfer', SUCCESSFUL: 'Paid and verified', FAILED: 'Payment failed', ABANDONED: 'Payment not completed', EXPIRED: 'Payment window expired', AMOUNT_MISMATCH: 'Payment amount did not match. Contact support.', REFUNDED: 'Refunded' }
@@ -438,6 +460,7 @@ function PaymentPanel({ booking, busy, onPay, onRefresh }) {
       {payment.instructions.message && <p className="parcel-hint">{payment.instructions.message}</p>}
       {payment.expiresAt && <p className="parcel-hint">Transfer before {new Date(payment.expiresAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}.</p>}
     </div>}
+    {booking.permissions.canPay && payment.method === 'PAYSTACK' && usableCards.map((card) => <button type="button" key={card.id} className="quiet-button saved-card-pay" disabled={Boolean(busy)} onClick={() => onPayWithCard(card.id)}><CreditCard size={15} /> {busy === 'card' ? 'Charging card…' : `Pay with ${cardLabel(card)}`}</button>)}
     {booking.permissions.canPay && payment.method === 'PAYSTACK' && <button type="button" className="primary-button" disabled={busy === 'pay'} onClick={onPay}><CreditCard size={16} /> {busy === 'pay' ? 'Opening Paystack…' : ['FAILED', 'ABANDONED', 'EXPIRED'].includes(payment.status) ? 'Retry payment' : 'Pay now'}</button>}
     {booking.permissions.canPay && <button type="button" className="quiet-button" onClick={onRefresh}><RefreshCw size={13} /> Refresh status</button>}
   </div>
@@ -530,6 +553,11 @@ export function PaymentResultPage() {
     try {
       const body = await api('/api/payments/verify', { method: 'POST', body: { reference } })
       setResult(body)
+      if (body.kind === 'card') {
+        setState(body.status === 'SUCCEEDED' ? 'card-saved' : body.status === 'NOT_REUSABLE' ? 'card-not-reusable' : body.status === 'FAILED' ? 'failed' : body.status === 'MISMATCH' ? 'error' : 'pending')
+        if (body.status === 'PENDING' && attempts.current < 6) { attempts.current += 1; window.setTimeout(verify, 5000) }
+        return
+      }
       if (body.status === 'SUCCESSFUL') setState('success')
       else if (body.status === 'FAILED') setState('failed')
       else if (body.providerStatus === 'ongoing' || body.providerStatus === 'pending' || body.providerStatus === 'processing') {
@@ -540,8 +568,10 @@ export function PaymentResultPage() {
   }, [reference])
   useEffect(() => { if (token()) verify() }, [verify])
   if (!token()) return <SignInPrompt returnTo={`${window.location.pathname}${window.location.search}`} />
-  const target = result?.kind === 'parcel' ? `/parcels/${result.id}` : '/account/orders'
+  const target = result?.kind === 'parcel' ? `/parcels/${result.id}` : result?.kind === 'card' ? '/account/cards' : '/account/orders'
   const copy = {
+    'card-saved': ['Card saved', `Your card is ready for faster checkout. The verification charge is being refunded${result?.refundStatus === 'failed' ? '; our team has been asked to refund it manually' : ''}.`],
+    'card-not-reusable': ['This card can’t be saved', 'Paystack did not allow this card to be reused. The verification charge is being refunded. You can still pay with it on Paystack each time.'],
     checking: ['Confirming your payment', 'Asking Paystack directly. Please don’t pay again while this is in progress.'],
     success: ['Payment confirmed', result?.kind === 'parcel' ? 'Your package booking is paid. Next, a rider will be assigned.' : 'Your order is paid and the restaurant has been notified.'],
     pending: ['Payment still processing', 'Paystack has not finished processing this payment. We will keep checking for a short while.'],
@@ -551,13 +581,13 @@ export function PaymentResultPage() {
     missing: ['No payment reference', 'Open your bookings to see the latest payment status.'],
   }[state]
   return <main className="route-page parcel-page"><section className="parcel-card parcel-empty">
-    {state === 'success' ? <Check size={28} /> : <Clock3 size={28} />}
+    {state === 'success' || state === 'card-saved' ? <Check size={28} /> : <Clock3 size={28} />}
     <h2>{copy[0]}</h2>
     <p>{copy[1]}</p>
     {reference && <p className="parcel-hint">Reference: {reference}</p>}
     <div className="parcel-inline-actions">
       {(state === 'error' || state === 'pending') && <button className="quiet-button" type="button" onClick={verify}><RefreshCw size={14} /> Check again</button>}
-      <button className="primary-button" type="button" onClick={() => navigate(result ? target : '/parcels')}>{result?.kind === 'order' ? 'View my orders' : 'View my booking'} <ArrowRight size={16} /></button>
+      <button className="primary-button" type="button" onClick={() => navigate(result ? target : '/parcels')}>{result?.kind === 'order' ? 'View my orders' : result?.kind === 'card' ? 'Payment methods' : 'View my booking'} <ArrowRight size={16} /></button>
     </div>
   </section></main>
 }

@@ -15,6 +15,9 @@ import './parcel/parcel.css'
 import './polish.css'
 import './theme.css'
 import './home/mobileHome.css'
+import './mobile/mobileApp.css'
+import './mobile/authMobile.css'
+import './notifications/notifications.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

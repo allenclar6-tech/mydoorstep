@@ -18,7 +18,10 @@ import { menuMediaUrl, publicMenuItems, publicRestaurantImage, registerPartnerMe
 import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
 import { buildAiReply } from './aiBrain.js'
 import { createNavigationRouter } from './navigation.js'
-import { applyPaystackVerification, confirmParcelPayment, createParcelRouter } from './parcelRoutes.js'
+import { applyPaystackVerification, confirmParcelPayment, createParcelRouter, rotatePaymentReference } from './parcelRoutes.js'
+import { completeCardVerification, createCardRouter } from './cardRoutes.js'
+import { saveCardFromAuthorization } from './cardService.js'
+import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
 
 const app = express()
 const port = Number(process.env.PORT || process.env.API_PORT || 4000)
@@ -462,6 +465,8 @@ app.post('/api/partner-applications', async (request, response) => {
       const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
       const restaurant = await transaction.restaurant.create({ data: { name: data.restaurantName, slug, description: data.businessDescription, cuisineCategory: data.cuisineCategory, openingTime: data.openingTime, closingTime: data.closingTime, daysOpen: data.openingDays, prepTimeMinutes: data.prepTimeMinutes, minimumOrderMinor: Math.round((data.minimumOrder || 0) * 100), address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, businessCategory: data.businessType, registrationNumber: data.registrationNumber, whatsApp: data.whatsApp, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, deliveryPreference: data.deliveryPreference } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: restaurant.id } })
+      await sendWelcome(transaction, user, { businessName: restaurant.name, storeType: 'RESTAURANT' })
+      await notifyAdmins(transaction, { type: 'ACCOUNT', title: 'New restaurant application', body: `${restaurant.name} (${data.cityName}) applied to sell on DOORSTEP.`, link: '/admin/restaurants' })
       return { restaurantId: restaurant.id, status: 'PENDING_APPROVAL' }
     })
     return response.status(201).json(created)
@@ -489,6 +494,8 @@ app.post('/api/partner-applications/multipart', onboardingLimiter, upload.array(
       const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
       const restaurant = await transaction.restaurant.create({ data: { name: data.restaurantName, slug, description: data.businessDescription, cuisineCategory: data.cuisineCategory, openingTime: data.openingTime, closingTime: data.closingTime, daysOpen: data.openingDays, prepTimeMinutes: data.prepTimeMinutes, minimumOrderMinor: Math.round((data.minimumOrder || 0) * 100), address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, businessCategory: data.businessType, registrationNumber: data.registrationNumber, whatsApp: data.whatsApp, identityType: data.ownerIdentityType, identityNumber: data.ownerIdentityNumber, deliveryPreference: data.deliveryPreference, documents: { create: documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: restaurant.id } })
+      await sendWelcome(transaction, user, { businessName: restaurant.name, storeType: 'RESTAURANT' })
+      await notifyAdmins(transaction, { type: 'ACCOUNT', title: 'New restaurant application', body: `${restaurant.name} (${data.cityName}) applied to sell on DOORSTEP.`, link: '/admin/restaurants' })
       return { restaurantId: restaurant.id, status: 'PENDING_APPROVAL' }
     })
     return response.status(201).json(created)
@@ -516,7 +523,8 @@ app.post('/api/grocery-applications/multipart', onboardingLimiter, upload.array(
       const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
       const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${(data.businessType || 'grocery store').replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', openingTime: data.openingTime, closingTime: data.closingTime, daysOpen: data.openingDays, address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, businessCategory: data.businessType, registrationNumber: data.registrationNumber, deliveryPreference: data.deliveryPreference, documents: { create: documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: grocery.id } })
-      await transaction.notification.create({ data: { userId: user.id, type: 'ACCOUNT', title: 'Grocery store application received', body: `${grocery.name} is pending DOORSTEP review. We will notify you when your store is approved or if more information is needed.` } })
+      await sendWelcome(transaction, user, { businessName: grocery.name, storeType: 'GROCERY' })
+      await notifyAdmins(transaction, { type: 'ACCOUNT', title: 'New grocery application', body: `${grocery.name} (${data.cityName}) applied to sell on DOORSTEP.`, link: '/admin/groceries' })
       return { groceryId: grocery.id, status: 'PENDING_APPROVAL' }
     })
     console.info('[grocery-application] submitted', JSON.stringify({ groceryId: created.groceryId }))
@@ -537,6 +545,8 @@ app.post('/api/rider-applications', async (request, response) => {
     const created = await prisma.$transaction(async (transaction) => {
       const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, preferredLanguage: data.preferredLanguage, emailVerifiedAt: new Date(), role: 'RIDER' } })
       const rider = await transaction.rider.create({ data: { userId: user.id, vehicleType: data.vehicleType, vehicleDetails: data.vehicleRegistration, application: { create: { identityType: data.identityType, identityNumber: data.identityNumber, emergencyName: data.emergencyName, emergencyPhone: data.emergencyPhone, preferredArea: data.preferredArea, typicalAvailability: data.typicalAvailability, vehicleOwnership: data.vehicleOwnership, identityDocuments: { create: data.documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      await sendWelcome(transaction, user)
+      await notifyAdmins(transaction, { type: 'ACCOUNT', title: 'New rider application', body: `${data.firstName} ${data.lastName} applied to ride (${String(data.vehicleType).toLowerCase()}).`, link: '/admin/riders' })
       return { riderId: rider.id, status: 'PENDING_APPROVAL' }
     })
     return response.status(201).json(created)
@@ -560,6 +570,8 @@ app.post('/api/rider-applications/multipart', onboardingLimiter, upload.array('d
     const created = await prisma.$transaction(async (transaction) => {
       const user = await transaction.user.create({ data: { email: data.email, phone: data.phone, passwordHash: await hashPassword(data.password), firstName: data.firstName, lastName: data.lastName, preferredLanguage: data.preferredLanguage, emailVerifiedAt: new Date(), role: 'RIDER' } })
       const rider = await transaction.rider.create({ data: { userId: user.id, vehicleType: data.vehicleType, vehicleDetails: data.vehicleRegistration, application: { create: { identityType: data.identityType, identityNumber: data.identityNumber, emergencyName: data.emergencyName, emergencyPhone: data.emergencyPhone, preferredArea: data.preferredArea, typicalAvailability: data.typicalAvailability, vehicleOwnership: data.vehicleOwnership, identityDocuments: { create: documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      await sendWelcome(transaction, user)
+      await notifyAdmins(transaction, { type: 'ACCOUNT', title: 'New rider application', body: `${data.firstName} ${data.lastName} applied to ride (${String(data.vehicleType).toLowerCase()}).`, link: '/admin/riders' })
       return { riderId: rider.id, status: 'PENDING_APPROVAL' }
     })
     return response.status(201).json(created)
@@ -576,6 +588,7 @@ app.post('/api/auth/register', async (request, response) => {
     const verification = await prisma.verificationCode.findFirst({ where: { id: result.data.verificationId, verifiedAt: { not: null }, expiresAt: { gt: new Date() } } })
     if (!verification || (verification.destination !== result.data.email && verification.destination !== result.data.phone?.toLowerCase())) return response.status(400).json({ error: 'ACCOUNT_VERIFICATION_REQUIRED' })
     const user = await prisma.user.create({ data: { email: result.data.email, phone: result.data.phone, passwordHash: await hashPassword(result.data.password), firstName: result.data.firstName, lastName: result.data.lastName, emailVerifiedAt: verification.channel === 'email' ? new Date() : null, phoneVerifiedAt: verification.channel === 'phone' ? new Date() : null, role: 'CUSTOMER', customer: { create: {} } } })
+    await sendWelcome(prisma, user).catch(() => undefined)
     const token = await createSession(user.id)
     return response.status(201).json({ token, user: publicUser(user) })
   } catch (error) {
@@ -592,6 +605,9 @@ app.post('/api/auth/login', async (request, response) => {
     if (!user || !(await verifyPassword(result.data.password, user.passwordHash)) || user.status !== 'ACTIVE') return response.status(401).json({ error: 'INVALID_CREDENTIALS' })
     if ((user.role === 'RIDER' && user.rider?.status !== 'APPROVED') || (user.role === 'RESTAURANT' && !user.restaurantUsers.some(({ restaurant }) => restaurant.status === 'APPROVED'))) return response.status(403).json({ error: 'ACCOUNT_PENDING_APPROVAL' })
     const token = await createSession(user.id)
+    // Admins are never created through sign-up, and accounts made before welcome messages existed
+    // missed theirs; both get it on their next sign-in (once).
+    if (user.role === 'ADMIN' || Date.now() - new Date(user.createdAt).getTime() < 30 * 86_400_000) await sendWelcome(prisma, user, { businessName: user.restaurantUsers?.[0]?.restaurant?.name, storeType: user.restaurantUsers?.[0]?.restaurant?.storeType }).catch(() => undefined)
     return response.json({ token, user: publicUser(user) })
   } catch {
     return response.status(503).json({ error: 'AUTH_SERVICE_UNAVAILABLE' })
@@ -700,7 +716,20 @@ app.get('/api/notifications', requireUser, async (request, response) => {
     const rows = await prisma.notification.findMany({ where: { userId: request.user.id }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
     const hasNextPage = rows.length > result.data.limit
     if (hasNextPage) rows.pop()
-    return response.json({ notifications: rows, nextCursor: hasNextPage ? rows.at(-1)?.id || null : null })
+    const unreadCount = await prisma.notification.count({ where: { userId: request.user.id, readAt: null } })
+    return response.json({ notifications: rows, unreadCount, nextCursor: hasNextPage ? rows.at(-1)?.id || null : null })
+  } catch { return response.status(503).json({ error: 'NOTIFICATION_SERVICE_UNAVAILABLE' }) }
+})
+// Cheap poll for the bell: the unread count plus anything newer than the client's last seen id.
+app.get('/api/notifications/summary', requireUser, async (request, response) => {
+  try {
+    const since = typeof request.query.since === 'string' && request.query.since.length <= 64 ? request.query.since : null
+    const anchor = since ? await prisma.notification.findFirst({ where: { id: since, userId: request.user.id }, select: { createdAt: true } }) : null
+    const [unreadCount, latest] = await Promise.all([
+      prisma.notification.count({ where: { userId: request.user.id, readAt: null } }),
+      prisma.notification.findMany({ where: { userId: request.user.id, ...(anchor ? { createdAt: { gt: anchor.createdAt } } : {}) }, orderBy: { createdAt: 'desc' }, take: anchor ? 10 : 1 }),
+    ])
+    return response.json({ unreadCount, latest })
   } catch { return response.status(503).json({ error: 'NOTIFICATION_SERVICE_UNAVAILABLE' }) }
 })
 app.patch('/api/notifications/:notificationId/read', requireUser, async (request, response) => {
@@ -723,6 +752,7 @@ app.post('/api/support/tickets', requireUser, async (request, response) => {
   if (request.user.role === 'CUSTOMER' && result.data.attachments?.some((key) => !key.startsWith(`private/users/${request.user.id}/`))) return response.status(403).json({ error: 'ATTACHMENT_OWNERSHIP_REQUIRED' })
   try {
     const ticket = await prisma.supportTicket.create({ data: { ticketNumber: `DSP-SUP-${Date.now().toString(36).toUpperCase()}`, userId: request.user.id, category: result.data.category, description: result.data.description, attachments: result.data.attachments || [], messages: { create: [{ senderId: request.user.id, senderType: 'CUSTOMER', body: result.data.description }, { senderType: 'AI', body: automatedSupportReply(result.data.category, result.data.description) }] } }, include: { messages: true } })
+    if (request.user.role !== 'ADMIN') await notifyAdmins(prisma, { type: 'SYSTEM', title: `New support ticket · ${result.data.category.replaceAll('_', ' ').toLowerCase()}`, body: `${ticket.ticketNumber}: ${result.data.description}`, link: '/admin/support' }).catch(() => undefined)
     return response.status(201).json({ ticket, aiReply: ticket.messages.at(-1) })
   } catch { return response.status(503).json({ error: 'SUPPORT_SERVICE_UNAVAILABLE' }) }
 })
@@ -744,6 +774,13 @@ app.post('/api/support/tickets/:ticketId/messages', requireUser, async (request,
     const ticket = await prisma.supportTicket.findUnique({ where: { id: request.params.ticketId } })
     if (!ticket || (request.user.role !== 'ADMIN' && ticket.userId !== request.user.id)) return response.status(404).json({ error: 'TICKET_NOT_FOUND' })
     const message = await prisma.supportMessage.create({ data: { ticketId: ticket.id, senderId: request.user.id, senderType: request.user.role === 'ADMIN' ? 'ADMIN' : 'CUSTOMER', body: result.data.body } })
+    const supportLink = { CUSTOMER: '/account/support', RESTAURANT: '/restaurant/profile', RIDER: '/rider/account' }
+    if (request.user.role === 'ADMIN') {
+      const owner = ticket.userId !== request.user.id ? await prisma.user.findUnique({ where: { id: ticket.userId }, select: { id: true, role: true } }) : null
+      if (owner) await notifyUsers(prisma, [owner.id], { type: 'SYSTEM', title: 'DOORSTEP support replied', body: `${ticket.ticketNumber}: ${result.data.body}`, link: supportLink[owner.role] || '/account/support' }).catch(() => undefined)
+    } else {
+      await notifyAdmins(prisma, { type: 'SYSTEM', title: `New reply on ${ticket.ticketNumber}`, body: result.data.body, link: '/admin/support' }).catch(() => undefined)
+    }
     return response.status(201).json({ message })
   } catch { return response.status(503).json({ error: 'SUPPORT_SERVICE_UNAVAILABLE' }) }
 })
@@ -976,6 +1013,7 @@ app.post('/api/orders', requireUser, async (request, response) => {
       const transferExpiry = result.data.paymentMethod === 'BANK_TRANSFER' && paymentSettings.bankTransfer.expiryMinutes ? new Date(Date.now() + paymentSettings.bankTransfer.expiryMinutes * 60_000) : null
       const transferInstructions = result.data.paymentMethod === 'BANK_TRANSFER' ? { bankName: paymentSettings.bankTransfer.bankName, accountName: paymentSettings.bankTransfer.accountName, accountNumber: paymentSettings.bankTransfer.accountNumber, message: paymentSettings.bankTransfer.instructions } : null
       const created = await transaction.order.create({ data: { orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
+      if (created.payment.method === 'BANK_TRANSFER') await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Bank transfer to confirm', body: `Order ${created.orderNumber} (${'₦'}${(created.totalMinor / 100).toLocaleString('en-NG')}) will be paid by bank transfer, reference ${created.payment.reference}. Confirm it once the money arrives.`, link: '/admin/payments' })
       return created
     })
     return response.status(201).json({ order })
@@ -1005,7 +1043,7 @@ app.post('/api/reviews', requireUser, async (request, response) => {
 })
 
 app.post('/api/payments/initialize', requireUser, async (request, response) => {
-  const result = z.object({ orderId: z.string().min(1) }).safeParse(request.body)
+  const result = z.object({ orderId: z.string().min(1), saveCard: z.boolean().optional() }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_PAYMENT_REQUEST' })
   try {
     const order = await prisma.order.findFirst({ where: { id: result.data.orderId, customerId: request.user.id }, include: { payment: true } })
@@ -1020,7 +1058,7 @@ app.post('/api/payments/initialize', requireUser, async (request, response) => {
     }
     if (order.payment.method === 'CASH_ON_DELIVERY') return response.status(409).json({ error: 'CASH_ON_DELIVERY_NOT_SUPPORTED' })
     if (order.payment.status !== 'PENDING') return response.status(409).json({ error: 'PAYMENT_NOT_PENDING' })
-    const payment = await initializePayment({ email: request.user.email, amountMinor: order.totalMinor, reference: order.payment.reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { orderId: order.id, orderNumber: order.orderNumber } })
+    const payment = await initializePayment({ email: request.user.email, amountMinor: order.totalMinor, reference: order.payment.reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { orderId: order.id, orderNumber: order.orderNumber, saveCard: Boolean(result.data.saveCard) } })
     return response.json(payment)
   } catch (error) {
     const paymentError = error instanceof PaymentError ? error : new PaymentError('PAYMENT_SERVICE_UNAVAILABLE', 'Payment service is unavailable.', 503)
@@ -1075,7 +1113,8 @@ app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdm
       await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
       await transaction.transaction.create({ data: { paymentId: payment.id, type: 'BANK_TRANSFER_MANUALLY_CONFIRMED', amountMinor: payment.amountMinor, providerReference: result.data.bankTransactionId, metadata: { note: result.data.note, transferReference: payment.reference } } })
       await transaction.auditLog.create({ data: { actorId: request.user.id, action: 'CONFIRM_BANK_TRANSFER', entityType: 'Payment', entityId: payment.id, metadata: { bankTransactionId: result.data.bankTransactionId, orderId: payment.orderId } } })
-      await transaction.notification.create({ data: { userId: payment.order.customerId, type: 'PAYMENT', title: 'Bank transfer confirmed', body: `Your payment for ${payment.order.orderNumber} was confirmed.` } })
+      await transaction.notification.create({ data: { userId: payment.order.customerId, type: 'PAYMENT', title: 'Bank transfer confirmed', body: `Your payment for ${payment.order.orderNumber} was confirmed. The restaurant will start on it shortly.`, link: `/account/orders/${payment.orderId}` } })
+      await notifyUsers(transaction, await restaurantTeamIds(transaction, payment.order.restaurantId), { type: 'ORDER', title: 'New paid order', body: `Order ${payment.order.orderNumber} is paid and waiting for you to accept it.`, link: '/restaurant/orders' })
     })
     return response.json({ confirmed: true })
   } catch (error) {
@@ -1095,8 +1134,8 @@ async function confirmOrderPayment(transaction, payment, { providerReference, me
   const commissionMinor = Math.round(order.subtotalMinor * 0.15)
   await transaction.commission.upsert({ where: { orderId: order.id }, update: {}, create: { orderId: order.id, percentage: 15, amountMinor: commissionMinor } })
   await transaction.restaurantPayout.upsert({ where: { orderId: order.id }, update: {}, create: { restaurantId: order.restaurantId, orderId: order.id, amountMinor: order.subtotalMinor - commissionMinor } })
-  await transaction.notification.create({ data: { userId: order.customerId, type: 'PAYMENT', title: 'Payment confirmed', body: `Your payment for ${order.orderNumber} was confirmed. The restaurant is preparing your order.` } })
-  for (const member of order.restaurant.users) await transaction.notification.create({ data: { userId: member.userId, type: 'ORDER', title: 'New paid order', body: `Order ${order.orderNumber} is ready for your restaurant to accept.` } })
+  await transaction.notification.create({ data: { userId: order.customerId, type: 'PAYMENT', title: 'Payment confirmed', body: `Your payment for ${order.orderNumber} was confirmed. The restaurant will start on it shortly.`, link: `/account/orders/${order.id}` } })
+  await notifyUsers(transaction, order.restaurant.users.map((member) => member.userId), { type: 'ORDER', title: 'New paid order', body: `Order ${order.orderNumber} is paid and waiting for you to accept it.`, link: '/restaurant/orders' })
   await transaction.transaction.create({ data: { paymentId: payment.id, type: 'PAYMENT_SUCCESS', amountMinor: payment.amountMinor, providerReference, metadata } })
   return { confirmed: true }
 }
@@ -1109,23 +1148,63 @@ async function findPaymentByReference(reference) {
   return rotated?.payment ? { payment: rotated.payment, expectedReference: reference } : { payment: null, expectedReference: reference }
 }
 
+// Normalises a Paystack transaction (webhook payload or verify response) into one shape.
+function paystackResult(data, status = data?.status) {
+  return { status, reference: data?.reference, amount: data?.amount, currency: data?.currency, id: data?.id, gatewayResponse: data?.gateway_response || data?.gatewayResponse || null, paidAt: data?.paid_at || data?.paidAt || null, authorization: data?.authorization || null, channel: data?.channel || null, customerEmail: data?.customer?.email || data?.customerEmail || null, metadata: typeof data?.metadata === 'object' && data.metadata ? data.metadata : null }
+}
+
+async function paymentOwnerId(payment) {
+  if (payment.parcelBookingId) return (await prisma.parcelBooking.findUnique({ where: { id: payment.parcelBookingId }, select: { customerId: true } }))?.customerId || null
+  if (payment.orderId) return (await prisma.order.findUnique({ where: { id: payment.orderId }, select: { customerId: true } }))?.customerId || null
+  return null
+}
+
+/**
+ * Applies a provider-verified Paystack result to an order or parcel payment.
+ * Used by the webhook, the callback verify endpoint and saved-card charges, so every path
+ * reconciles reference, amount and currency the same way and confirms at most once.
+ */
+async function applyVerifiedPayment(payment, verified, source, expectedReference = payment.reference) {
+  let outcome
+  if (payment.parcelBookingId) {
+    outcome = await applyPaystackVerification(prisma, payment, verified, source, { expectedReference })
+  } else if (verified.status !== 'success') {
+    if (verified.status === 'failed') await prisma.payment.updateMany({ where: { id: payment.id, status: 'PENDING' }, data: { status: 'FAILED' } })
+    outcome = { status: verified.status }
+  } else if (!matchesPaystackPayment({ ...payment, reference: expectedReference }, { data: verified })) {
+    await prisma.payment.updateMany({ where: { id: payment.id, status: { not: 'SUCCESSFUL' } }, data: { status: 'AMOUNT_MISMATCH' } })
+    outcome = { status: 'mismatch' }
+  } else {
+    outcome = await prisma.$transaction((transaction) => confirmOrderPayment(transaction, payment, { providerReference: verified.reference, metadata: { source, gatewayResponse: verified.gatewayResponse, paidAt: verified.paidAt } }))
+  }
+  // Save the card only when the customer ticked "save this card" and Paystack marks it reusable.
+  const wantsSave = verified.status === 'success' && (verified.metadata?.saveCard === true || verified.metadata?.saveCard === 'true')
+  if (wantsSave && outcome?.status !== 'mismatch') {
+    const ownerId = await paymentOwnerId(payment)
+    if (ownerId) await saveCardFromAuthorization(prisma, ownerId, { authorization: verified.authorization, customerEmail: verified.customerEmail, channel: verified.channel }).catch((error) => console.error('[cards] save_failed', JSON.stringify({ code: error?.code })))
+  }
+  return outcome
+}
+
 app.post('/api/payments/webhook', async (request, response) => {
   if (!verifyWebhookSignature(request.rawBody, request.get('x-paystack-signature'))) return response.status(401).json({ error: 'INVALID_WEBHOOK_SIGNATURE' })
   const event = request.body
   if (event.event !== 'charge.success' || !event.data?.reference) return response.status(200).json({ received: true })
   try {
+    const verified = paystackResult(event.data, 'success')
+    const verification = await prisma.cardVerification.findUnique({ where: { reference: event.data.reference } })
+    if (verification) {
+      await completeCardVerification(prisma, verification, verified, 'webhook')
+      return response.status(200).json({ received: true })
+    }
     const { payment, expectedReference } = await findPaymentByReference(event.data.reference)
     if (!payment) return response.status(200).json({ received: true })
-    if (payment.parcelBookingId) {
-      const outcome = await applyPaystackVerification(prisma, payment, { status: 'success', reference: event.data.reference, amount: event.data.amount, currency: event.data.currency, id: event.data.id, gatewayResponse: event.data.gateway_response || null, paidAt: event.data.paid_at || null }, 'webhook', { expectedReference })
-      if (outcome.status === 'mismatch') return response.status(400).json({ error: 'PAYMENT_RECONCILIATION_FAILED' })
-      return response.status(200).json({ received: true, ...(outcome.duplicate ? { duplicate: true } : {}) })
-    }
-    if (payment.status === 'SUCCESSFUL') return response.status(200).json({ received: true, duplicate: true })
-    if (!matchesPaystackPayment({ ...payment, reference: expectedReference }, event)) return response.status(400).json({ error: 'PAYMENT_RECONCILIATION_FAILED' })
-    await prisma.$transaction((transaction) => confirmOrderPayment(transaction, payment, { providerReference: event.data.reference, metadata: event.data }))
-    return response.status(200).json({ received: true })
-  } catch {
+    if (!payment.parcelBookingId && payment.status === 'SUCCESSFUL') return response.status(200).json({ received: true, duplicate: true })
+    const outcome = await applyVerifiedPayment(payment, verified, 'webhook', expectedReference)
+    if (outcome?.status === 'mismatch') return response.status(400).json({ error: 'PAYMENT_RECONCILIATION_FAILED' })
+    return response.status(200).json({ received: true, ...(outcome?.duplicate ? { duplicate: true } : {}) })
+  } catch (error) {
+    if (error?.code === 'ORDER_NOT_PAYABLE') return response.status(200).json({ received: true, notPayable: true })
     return response.status(503).json({ error: 'PAYMENT_WEBHOOK_RETRY' })
   }
 })
@@ -1135,6 +1214,13 @@ app.post('/api/payments/verify', requireUser, rateLimit({ windowMs: 60_000, limi
   const result = z.object({ reference: z.string().trim().min(6).max(120) }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_PAYMENT_REFERENCE' })
   try {
+    const verification = await prisma.cardVerification.findUnique({ where: { reference: result.data.reference } })
+    if (verification) {
+      if (verification.userId !== request.user.id) return response.status(404).json({ error: 'PAYMENT_NOT_FOUND' })
+      const verified = await verifyPaystackTransaction(result.data.reference)
+      const outcome = await completeCardVerification(prisma, verification, verified, 'verify')
+      return response.json({ kind: 'card', status: outcome.status, providerStatus: verified.status, refundStatus: outcome.refundStatus || null })
+    }
     const { payment, expectedReference } = await findPaymentByReference(result.data.reference)
     if (!payment) return response.status(404).json({ error: 'PAYMENT_NOT_FOUND' })
     const owner = payment.parcelBookingId
@@ -1145,25 +1231,18 @@ app.post('/api/payments/verify', requireUser, rateLimit({ windowMs: 60_000, limi
     if (payment.status === 'SUCCESSFUL') return response.json({ ...target, status: 'SUCCESSFUL' })
     if (payment.method !== 'PAYSTACK') return response.json({ ...target, status: payment.status })
     const verified = await verifyPaystackTransaction(result.data.reference)
-    if (payment.parcelBookingId) {
-      const outcome = await applyPaystackVerification(prisma, payment, verified, 'verify', { expectedReference })
-      const refreshed = await prisma.payment.findUnique({ where: { id: payment.id }, select: { status: true } })
-      return response.json({ ...target, status: refreshed.status, providerStatus: verified.status, ...(outcome.refundRequired ? { refundReview: true } : {}) })
-    }
-    if (verified.status === 'success') {
-      if (!matchesPaystackPayment({ ...payment, reference: expectedReference }, { data: verified })) return response.status(409).json({ ...target, error: 'PAYMENT_RECONCILIATION_FAILED' })
-      await prisma.$transaction((transaction) => confirmOrderPayment(transaction, payment, { providerReference: verified.reference, metadata: { source: 'verify', gatewayResponse: verified.gatewayResponse } }))
-      return response.json({ ...target, status: 'SUCCESSFUL', providerStatus: verified.status })
-    }
-    if (verified.status === 'failed') await prisma.payment.updateMany({ where: { id: payment.id, status: 'PENDING' }, data: { status: 'FAILED' } })
+    const outcome = await applyVerifiedPayment(payment, verified, 'verify', expectedReference)
+    if (outcome?.status === 'mismatch') return response.status(409).json({ ...target, error: 'PAYMENT_RECONCILIATION_FAILED' })
     const refreshed = await prisma.payment.findUnique({ where: { id: payment.id }, select: { status: true } })
-    return response.json({ ...target, status: refreshed.status, providerStatus: verified.status })
+    return response.json({ ...target, status: refreshed.status, providerStatus: verified.status, ...(outcome?.refundRequired ? { refundReview: true } : {}) })
   } catch (error) {
-    const paymentError = error instanceof PaymentError ? error : null
-    if (!paymentError) console.error('[payments] verify_failed', JSON.stringify({ name: error?.name, code: error?.code }))
-    return response.status(paymentError?.status || 503).json({ error: paymentError?.code || 'PAYMENT_VERIFICATION_UNAVAILABLE' })
+    const known = error instanceof PaymentError || error?.code === 'ORDER_NOT_PAYABLE' ? error : null
+    if (!known) console.error('[payments] verify_failed', JSON.stringify({ name: error?.name, code: error?.code }))
+    return response.status(known?.status || 503).json({ error: known?.code || 'PAYMENT_VERIFICATION_UNAVAILABLE' })
   }
 })
+
+app.use('/api', createCardRouter({ prisma, requireUser, applyVerifiedPayment, rotatePaymentReference }))
 
 async function getRestaurantMembership(userId) {
   return prisma.restaurantUser.findFirst({ where: { userId }, select: { restaurantId: true, role: true } })
@@ -1477,7 +1556,18 @@ app.post('/api/orders/:orderId/status', requireUser, async (request, response) =
       if (changedCount.count !== 1) throw Object.assign(new Error('Order state changed while this request was processing.'), { status: 409, code: 'ORDER_STATE_CHANGED' })
       const changed = await transaction.order.findUnique({ where: { id: order.id } })
       const labels = { RESTAURANT_ACCEPTED: 'Restaurant accepted your order', PREPARING: 'Your order is being prepared', READY_FOR_PICKUP: 'Your order is ready for pickup', RIDER_ASSIGNED: 'A rider has been assigned to your order', PICKED_UP: 'Your order has been picked up', OUT_FOR_DELIVERY: 'Your order is out for delivery', DELIVERED: 'Your order has arrived', CANCELLED: 'Your order was cancelled' }
-      await transaction.notification.create({ data: { userId: order.customerId, type: result.data.status === 'CANCELLED' ? 'ORDER' : 'DELIVERY', title: labels[result.data.status] || 'Order status updated', body: `Order ${order.orderNumber} is now ${result.data.status.replaceAll('_', ' ').toLowerCase()}.` } })
+      await transaction.notification.create({ data: { userId: order.customerId, type: result.data.status === 'CANCELLED' ? 'ORDER' : 'DELIVERY', title: labels[result.data.status] || 'Order status updated', body: `Order ${order.orderNumber} is now ${result.data.status.replaceAll('_', ' ').toLowerCase()}.`, link: `/account/orders/${order.id}` } })
+      if (result.data.status === 'READY_FOR_PICKUP' && !order.riderId) {
+        // Let online riders know there is a pickup waiting.
+        await notifyUsers(transaction, await availableRiderUserIds(transaction, { restaurantId: order.restaurantId }), { type: 'DELIVERY', title: 'New pickup nearby', body: `${order.restaurant.name} has order ${order.orderNumber} ready for collection.`, link: '/rider/deliveries' })
+      }
+      if (result.data.status === 'CANCELLED') {
+        await notifyUsers(transaction, order.restaurant.users.map((member) => member.userId), { type: 'ORDER', title: 'Order cancelled', body: `DOORSTEP cancelled order ${order.orderNumber}. Stop preparing it.`, link: '/restaurant/orders' })
+        if (order.riderId) {
+          const rider = await transaction.rider.findUnique({ where: { id: order.riderId }, select: { userId: true } })
+          if (rider) await notifyUsers(transaction, [rider.userId], { type: 'DELIVERY', title: 'Delivery cancelled', body: `Order ${order.orderNumber} was cancelled. You do not need to collect it.`, link: '/rider/dashboard' })
+        }
+      }
       return changed
     })
     return response.json({ order: updated })

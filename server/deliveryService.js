@@ -1,5 +1,6 @@
 import { prisma } from './prisma.js'
 import { parcelStatusByDeliveryStatus, RIDER_REQUEST_TTL_MS } from './parcelService.js'
+import { notifyUsers, restaurantTeamIds } from './notify.js'
 
 export const deliveryTransitions = {
   AVAILABLE: ['REQUESTED', 'CANCELLED'],
@@ -50,7 +51,25 @@ async function recordParcelEvent(transaction, bookingId, status, { actorId = nul
 }
 
 async function notifyParcelCustomer(transaction, booking, title, body) {
-  await transaction.notification.create({ data: { userId: booking.customerId, type: 'DELIVERY', title, body } })
+  await transaction.notification.create({ data: { userId: booking.customerId, type: 'DELIVERY', title, body, link: `/parcels/${booking.id}` } })
+}
+
+const foodOrderMessages = {
+  ACCEPTED: (order, riderName) => ({ customer: ['Rider assigned', `${riderName} is collecting your order ${order.orderNumber}.`], team: ['Rider on the way', `${riderName} accepted order ${order.orderNumber} and is heading to you.`] }),
+  ARRIVED_AT_RESTAURANT: (order, riderName) => ({ team: ['Rider has arrived', `${riderName} is at your counter for order ${order.orderNumber}.`] }),
+  PICKED_UP: (order) => ({ customer: ['Order picked up', `Your order ${order.orderNumber} has left the restaurant.`], team: ['Order collected', `Order ${order.orderNumber} was picked up.`] }),
+  GOING_TO_CUSTOMER: (order) => ({ customer: ['Your rider is on the way', `Order ${order.orderNumber} is heading to you. Keep your phone close.`] }),
+  DELIVERED: (order) => ({ customer: ['Delivered. Enjoy!', `Order ${order.orderNumber} was delivered. Tap to rate your order.`], team: ['Order delivered', `Order ${order.orderNumber} reached the customer.`] }),
+}
+
+async function notifyFoodOrder(transaction, orderId, deliveryStatus, riderName = 'Your rider') {
+  const build = foodOrderMessages[deliveryStatus]
+  if (!build) return
+  const order = await transaction.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, customerId: true, restaurantId: true } })
+  if (!order) return
+  const messages = build(order, riderName)
+  if (messages.customer) await notifyUsers(transaction, [order.customerId], { type: 'DELIVERY', title: messages.customer[0], body: messages.customer[1], link: `/account/orders/${order.id}` })
+  if (messages.team) await notifyUsers(transaction, await restaurantTeamIds(transaction, order.restaurantId), { type: 'DELIVERY', title: messages.team[0], body: messages.team[1], link: '/restaurant/orders' })
 }
 
 export async function claimDelivery(deliveryId, riderId, now = new Date()) {
@@ -70,6 +89,7 @@ export async function claimDelivery(deliveryId, riderId, now = new Date()) {
     if (claimed.count !== 1) throw serviceError('DELIVERY_ALREADY_CLAIMED', 'Another rider has already accepted this delivery.', 409)
     if (deliveryBeforeClaim.orderId) {
       await transaction.order.update({ where: { id: deliveryBeforeClaim.orderId }, data: { riderId, status: 'RIDER_ASSIGNED' } })
+      await notifyFoodOrder(transaction, deliveryBeforeClaim.orderId, 'ACCEPTED', rider.user.firstName)
     } else if (deliveryBeforeClaim.parcelBooking) {
       const booking = deliveryBeforeClaim.parcelBooking
       const changed = await transaction.parcelBooking.updateMany({ where: { id: booking.id, status: 'SEARCHING_FOR_RIDER' }, data: { riderId, status: 'RIDER_ASSIGNED', assignedAt: now } })
@@ -129,6 +149,7 @@ export async function advanceDelivery(deliveryId, riderId, nextStatus) {
     if (delivery.orderId) {
       const orderStatus = orderStatusByDeliveryStatus[nextStatus]
       if (orderStatus) await transaction.order.update({ where: { id: delivery.orderId }, data: { status: orderStatus, ...(nextStatus === 'PICKED_UP' ? { pickedUpAt: now } : {}), ...(nextStatus === 'DELIVERED' ? { deliveredAt: now } : {}) } })
+      await notifyFoodOrder(transaction, delivery.orderId, nextStatus)
     } else if (delivery.parcelBooking) {
       const booking = delivery.parcelBooking
       const parcelStatus = parcelStatusByDeliveryStatus[nextStatus]

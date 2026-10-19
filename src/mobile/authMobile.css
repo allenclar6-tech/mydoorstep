@@ -1,0 +1,162 @@
+/* App-style phone layer for sign-in, sign-up, onboarding applications, password recovery
+   and admin login. Phones only; loaded after every other stylesheet. */
+@media (max-width: 700px) {
+  :root { --a-forest: #0e4f3c; --a-green: #007c63; --a-sun: #ffc244; --a-mint: #e6f2eb; --a-ink: #14231d; --a-muted: #5b6b63; --a-line: #dfe7e1; }
+
+  /* ---------- page header: one short title, no marketing block ---------- */
+  html body .auth-entry-page > .route-hero,
+  html body .route-page:has(.onboarding-card) > .route-hero,
+  html body .route-page:has(.registration-choice) > .route-hero {
+    background: var(--a-sun); border: 0; border-radius: 0 0 24px 24px; margin: 0; padding: 18px 20px 26px;
+  }
+  html body .auth-entry-page > .route-hero .section-kicker,
+  html body .route-page:has(.onboarding-card) > .route-hero .section-kicker,
+  html body .route-page:has(.registration-choice) > .route-hero .section-kicker { color: var(--a-forest); font-size: .7rem; letter-spacing: .06em; }
+  html body .auth-entry-page > .route-hero h1,
+  html body .route-page:has(.onboarding-card) > .route-hero h1,
+  html body .route-page:has(.registration-choice) > .route-hero h1 { color: var(--a-forest); font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; margin: 6px 0 6px; max-width: none; }
+  html body .auth-entry-page > .route-hero p,
+  html body .route-page:has(.onboarding-card) > .route-hero p,
+  html body .route-page:has(.registration-choice) > .route-hero p { color: var(--t-forest-700); font-size: .84rem; line-height: 1.45; margin: 0; }
+  /* Partners and riders keep their own colour so people can tell the doors apart. */
+  html body .auth-entry-page:has(.auth-layout-restaurant) > .route-hero { background: #f6d6c4; }
+  html body .auth-entry-page:has(.auth-layout-rider) > .route-hero { background: #cfe6ef; }
+
+  /* ---------- "Customer / Partner / Rider" switcher as a segmented control ---------- */
+  html body nav.partner-registration-login.partner-registration-login {
+    /* flex, not grid: the ' · ' separators in the markup would otherwise become grid cells. */
+    background: #eef3ef; border-radius: 999px; display: flex; font-size: 0; gap: 4px;
+    margin: 16px 16px 0; padding: 4px;
+  }
+  html body .partner-registration-login a {
+    align-items: center; border-radius: 999px; color: var(--a-muted); display: flex; flex: 1 1 0; font-size: .76rem; font-weight: 800; justify-content: center; min-width: 0;
+    min-height: 40px; padding: 0 6px; text-align: center; text-decoration: none;
+  }
+  html body .partner-registration-login a[href="/login"]:is(.auth-entry-page:has(.auth-layout-customer) *),
+  html body .partner-registration-login a[href="/partner/login"]:is(.auth-entry-page:has(.auth-layout-restaurant) *),
+  html body .partner-registration-login a[href="/rider/login"]:is(.auth-entry-page:has(.auth-layout-rider) *) { background: #fff; box-shadow: 0 2px 8px rgba(20, 35, 29, .1); color: var(--a-ink); }
+
+  /* ---------- sign-in / sign-up form ---------- */
+  html body .auth-entry-page .auth-layout { display: block; margin: 0; padding: 0 16px; }
+  html body .auth-entry-page .partner-cta { display: none; }
+  html body .auth-entry-page .auth-form,
+  html body .onboarding-card,
+  html body .recovery-card,
+  html body .admin-login-card {
+    background: #fff; border: 0; border-radius: 0; box-shadow: none; margin: 0; max-width: none; padding: 22px 0 0;
+  }
+  html body .auth-entry-page .auth-form > h2,
+  html body .onboarding-card h2,
+  html body .recovery-card h1, html body .recovery-card h2,
+  html body .admin-login-card h1 { color: var(--a-ink); font-size: 1.3rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; margin: 0 0 6px; }
+  html body .auth-entry-page .auth-form,
+  html body .onboarding-card section,
+  html body .recovery-card form,
+  html body .admin-login-card form { display: flex; flex-direction: column; gap: 14px; }
+  html body .auth-entry-page .form-row,
+  html body .onboarding-card .form-row { display: grid; gap: 14px; grid-template-columns: 1fr; }
+
+  html body .auth-entry-page label,
+  html body .onboarding-card label,
+  html body .recovery-card label,
+  html body .admin-login-card label { color: var(--a-ink); display: flex; flex-direction: column; font-size: .8rem; font-weight: 750; gap: 6px; }
+  html body .auth-entry-page input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  html body .onboarding-card input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  html body .onboarding-card select, html body .onboarding-card textarea,
+  html body .recovery-card input, html body .admin-login-card input {
+    background: #f6f8f6; border: 1.5px solid transparent; border-radius: 14px; color: var(--a-ink); font: inherit; font-size: 16px; font-weight: 600;
+    min-height: 52px; padding: 12px 14px; width: 100%; box-sizing: border-box;
+  }
+  html body .auth-entry-page input:focus, html body .onboarding-card input:focus, html body .onboarding-card select:focus,
+  html body .onboarding-card textarea:focus, html body .recovery-card input:focus, html body .admin-login-card input:focus {
+    background: #fff; border-color: var(--a-green); box-shadow: 0 0 0 3px rgba(0, 124, 99, .14); outline: none;
+  }
+  html body .onboarding-card input:user-invalid, html body .auth-entry-page input:user-invalid { border-color: #c4472a; }
+  /* One-time codes: big, spaced digits. */
+  html body input[autocomplete="one-time-code"] { font-size: 1.5rem; font-variant-numeric: tabular-nums; letter-spacing: .5em; text-align: center; }
+
+  html body .terms-check { align-items: flex-start; flex-direction: row !important; font-weight: 600 !important; gap: 10px !important; line-height: 1.45; }
+  html body .terms-check input { accent-color: var(--a-green); flex: 0 0 auto; height: 20px; margin: 1px 0 0; width: 20px; }
+
+  /* Primary buttons: full width, thumb height. */
+  html body .auth-entry-page .checkout-button,
+  html body .onboarding-card .checkout-button,
+  html body .recovery-card .checkout-button,
+  html body .registration-action .checkout-button,
+  html body .admin-login-card .admin-primary {
+    align-items: center; background: var(--a-green); border: 0; border-radius: 14px; box-shadow: none; color: #fff; display: flex; font-size: .95rem;
+    font-weight: 800; gap: 8px; justify-content: center; min-height: 54px; width: 100%;
+  }
+  html body .auth-entry-page .checkout-button:disabled, html body .onboarding-card .checkout-button:disabled { opacity: .6; }
+  html body .forgot-password-link { align-self: center; background: none; border: 0; color: var(--a-green); font-size: .86rem; font-weight: 800; min-height: 44px; text-decoration: none; }
+  html body .form-footnote { color: var(--a-muted); font-size: .86rem; margin: 4px 0 0; text-align: center; }
+  html body .form-footnote button { background: none; border: 0; color: var(--a-green); font: inherit; font-weight: 800; min-height: 44px; padding: 0 4px; }
+  html body .admin-login-error { border-radius: 12px; font-size: .84rem; line-height: 1.45; padding: 12px 14px; }
+
+  /* Older layers box each field and the whole form; on phones the screen itself is the card. */
+  html body form.onboarding-card.onboarding-card, html body .auth-entry-page form.auth-form.auth-form { border: 0; border-radius: 0; box-shadow: none; background: #fff; }
+  html body .onboarding-card label.onboarding-card label, html body .onboarding-card label, html body .auth-entry-page .auth-form label {
+    background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0;
+  }
+  html body .onboarding-card .onboarding-progress.onboarding-progress { background: #fff; border: 0; border-radius: 0; box-shadow: none; padding: 4px 0 10px; }
+  html body .onboarding-card .onboarding-progress li span { border: 0; box-shadow: none; background: #e3e9e5; }
+  html body .onboarding-card .onboarding-progress li.active span { background: var(--a-sun); }
+  html body .onboarding-card .onboarding-progress li.complete span { background: var(--a-green); }
+  html body .onboarding-card .partner-registration-login { margin: 4px 0 8px; }
+
+  /* ---------- account type chooser ---------- */
+  html body .registration-choice { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 18px 16px 0; }
+  html body .registration-choice .role-card {
+    align-items: flex-start; background: #fff; border: 1.5px solid var(--a-line); border-radius: 18px; display: flex; flex-direction: column; gap: 6px;
+    min-height: 132px; padding: 14px; text-align: left;
+  }
+  html body .registration-choice .role-card svg { background: var(--a-mint); border-radius: 50%; box-sizing: content-box; color: var(--a-forest); margin: 0 0 4px; padding: 10px; }
+  html body .registration-choice .role-card strong { color: var(--a-ink); font-size: .9rem; font-weight: 800; line-height: 1.25; }
+  html body .registration-choice .role-card span { color: var(--a-muted); font-size: .74rem; line-height: 1.35; }
+  html body .registration-choice .role-card.selected { background: #fffaf0; border-color: var(--a-sun); box-shadow: 0 0 0 2px var(--a-sun); }
+  html body .registration-choice .role-card.selected svg { background: var(--a-sun); }
+  html body .registration-choice > :not(.role-card) { grid-column: 1 / -1; }
+  html body .registration-action { background: #fff; border: 0; padding: 8px 0 0; }
+  html body .registration-action h2 { font-size: 1.15rem; margin: 0 0 6px; }
+
+  /* ---------- multi-step applications ---------- */
+  html body .route-page:has(.onboarding-card) > form, html body .route-page > .onboarding-card, html body .registration-choice .onboarding-card { padding-left: 16px; padding-right: 16px; }
+  html body .registration-choice .onboarding-card { padding-left: 0; padding-right: 0; }
+  html body .onboarding-progress { background: #fff; gap: 6px; margin: 0 0 6px; padding: 4px 0 8px; position: sticky; top: 0; z-index: 4; }
+  html body .onboarding-progress li { flex: 1; min-width: 0; }
+  html body .onboarding-progress li::after { display: none; }
+  html body .onboarding-progress li span { border-radius: 999px; font-size: 0; height: 6px; width: 100%; }
+  html body .onboarding-progress li span svg { display: none; }
+  html body .onboarding-progress li.active span { background: var(--a-sun); }
+  html body .onboarding-progress li.complete span { background: var(--a-green); }
+  html body .onboarding-progress li:not(.active) small { display: none; }
+  html body .onboarding-progress li.active { flex: 2.4; flex-direction: column; align-items: flex-start; gap: 6px; }
+  html body .onboarding-progress li.active small { color: var(--a-forest); display: block; font-size: .72rem; font-weight: 800; }
+  html body .onboarding-card .section-kicker { color: var(--a-green); font-size: .68rem; letter-spacing: .05em; }
+  html body .onboarding-copy, html body .onboarding-draft-notice { color: var(--a-muted); font-size: .8rem; line-height: 1.5; }
+  /* Back / Continue stay within reach at the bottom of the screen. */
+  html body .onboarding-actions {
+    background: linear-gradient(to top, #fff 80%, rgba(255, 255, 255, 0)); bottom: 0; display: grid; gap: 10px; grid-template-columns: auto 1fr;
+    margin: 4px -16px 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); position: sticky; z-index: 5;
+  }
+  html body .onboarding-actions .quiet-button { border-radius: 14px; min-height: 54px; padding: 0 18px; }
+  html body .onboarding-save-exit { align-self: center; margin: 6px auto 0; min-height: 44px; }
+  html body .opening-days-field div { display: flex; flex-wrap: wrap; gap: 8px; }
+  html body .opening-days-field label { align-items: center; background: #f6f8f6; border-radius: 999px; flex-direction: row !important; font-size: .78rem !important; gap: 6px !important; min-height: 40px; padding: 0 12px; }
+  html body .document-upload { background: #f6f8f6; border: 1.5px dashed #c9d6ce; border-radius: 16px; padding: 14px; }
+  html body .onboarding-success, html body .verification-success-screen { text-align: center; }
+  html body .verification-success-mark { margin: 0 auto 10px; }
+
+  /* ---------- recovery + admin login ---------- */
+  html body .account-recovery-page { padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
+  html body .recovery-icon { background: var(--a-mint); border-radius: 50%; color: var(--a-forest); }
+  html body .recovery-back { min-height: 44px; }
+  html body .admin-login-page { align-items: stretch; background: #fff; display: block; min-height: 100dvh; padding: 0; }
+  html body .admin-login-page .admin-login-card { padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); }
+  html body .admin-login-page .admin-brand { background: var(--a-forest); border-radius: 0 0 24px 24px; color: #fff; margin: -24px -16px 18px; padding: 22px 20px; }
+}
+
+@media (max-width: 360px) {
+  html body .registration-choice { grid-template-columns: 1fr; }
+  html body .registration-choice .role-card { min-height: 0; }
+}

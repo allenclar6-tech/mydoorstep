@@ -1,0 +1,146 @@
+/* App-style phone layer for accounts and workspaces (customer, partner, rider, admin).
+   Loaded last. Desktop layouts are untouched except the customer account screen,
+   which is a centred single column at every size. */
+
+/* ---------- customer account (all sizes) ---------- */
+.account-app { margin: 0 auto; max-width: 720px; padding: 20px 16px calc(120px + env(safe-area-inset-bottom)); }
+.account-app-head { align-items: center; display: flex; gap: 14px; padding: 8px 0 18px; }
+.account-app-head > div { flex: 1; min-width: 0; }
+.account-app-head h1 { color: #14231d; font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; margin: 0; overflow-wrap: anywhere; }
+.account-app-head p { color: #5b6b63; font-size: .84rem; margin: 3px 0 0; overflow-wrap: anywhere; }
+.account-app-avatar { border-radius: 50%; flex: 0 0 56px; height: 56px; overflow: hidden; width: 56px; }
+.account-app-edit { background: #fff3d4; border: 0; border-radius: 999px; color: #0f2e23; cursor: pointer; font: inherit; font-size: .82rem; font-weight: 800; min-height: 40px; padding: 0 16px; }
+.account-app-stats { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px; }
+.account-app-stats button { background: #fff; border: 1px solid #e3e8e2; border-radius: 16px; color: #14231d; cursor: pointer; display: flex; flex-direction: column; font: inherit; gap: 2px; padding: 14px 12px; text-align: left; }
+.account-app-stats strong { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.account-app-stats span { color: #5b6b63; font-size: .74rem; font-weight: 700; line-height: 1.25; }
+.account-app-live { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.account-app-live button { align-items: center; background: #0e4f3c; border: 0; border-radius: 16px; color: #fff; cursor: pointer; display: flex; font: inherit; gap: 12px; min-height: 64px; padding: 12px 16px; text-align: left; }
+.account-app-live button > svg:first-child { color: #ffc244; flex: 0 0 auto; }
+.account-app-live span { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.account-app-live strong { color: #fff; font-size: .92rem; font-weight: 800; }
+.account-app-live small { color: var(--t-on-dark-soft); font-size: .76rem; text-transform: capitalize; }
+.account-app-list { background: #fff; border: 1px solid #e3e8e2; border-radius: 18px; display: flex; flex-direction: column; overflow: hidden; }
+.account-app-list button { align-items: center; background: none; border: 0; border-bottom: 1px solid #eef2ef; color: #14231d; cursor: pointer; display: flex; font: inherit; gap: 14px; min-height: 64px; padding: 10px 16px; text-align: left; }
+.account-app-list button:last-child { border-bottom: 0; }
+.account-app-list button:hover { background: #f6faf7; }
+.account-app-list button > svg:last-child { color: #9aa8a1; flex: 0 0 auto; }
+.account-app-list span:nth-child(2) { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.account-app-list strong { font-size: .95rem; font-weight: 750; }
+.account-app-list small { color: #5b6b63; font-size: .76rem; }
+.account-app-icon { align-items: center; background: #e6f2eb; border-radius: 12px; color: #0e4f3c; display: inline-flex; flex: 0 0 40px; height: 40px; justify-content: center; }
+.account-app-signout { display: flex; justify-content: center; padding: 20px 0 0; }
+/* Older route-page rules pad every section heavily; the account screen sets its own rhythm. */
+html body main.account-app.route-page > :is(section, nav, div):not(.route-hero) { margin: 0 0 16px; max-width: none; min-height: 0; padding: 0; }
+html body main.account-app.route-page > .account-app-head:not(.route-hero) { margin-bottom: 4px; padding: 8px 0 18px; }
+html body main.account-app.route-page > .account-app-signout:not(.route-hero) { padding-top: 4px; }
+.account-app button:focus-visible { outline: 3px solid #007c63; outline-offset: 2px; }
+
+/* ---------- workspace tab bar (phones only) ---------- */
+.ws-tabbar, .ws-sheet-backdrop { display: none; }
+
+@media (max-width: 700px) {
+  /* Generic route pages: compact, app-like page headers. */
+  html body .route-hero { padding: 18px 16px 14px; }
+  html body .route-hero h1 { font-size: 1.5rem; letter-spacing: -.02em; line-height: 1.2; margin: 4px 0; }
+  html body .route-hero p { font-size: .84rem; }
+  html body .route-page input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  html body .route-page select,
+  html body .route-page textarea { font-size: 16px; min-height: 48px; }
+
+  /* Workspaces become a single column with a sticky header and a bottom tab bar. */
+  html body .portal-shell, html body .admin-shell { display: block; min-height: 100dvh; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  html body .portal-header, html body .admin-header {
+    align-items: center; display: flex; gap: 12px; min-height: 0; padding: 12px 16px; position: sticky; top: 0; z-index: 30;
+  }
+  html body .portal-header .section-kicker, html body .admin-header .section-kicker { display: none; }
+  html body .portal-header h1, html body .admin-header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  html body .portal-header > div, html body .admin-header > div:not(.admin-header-actions) { flex: 1; min-width: 0; }
+  html body .portal-menu-toggle, html body .admin-menu-toggle { display: none; }
+
+  /* Side menus open as a bottom sheet from the "More" tab. */
+  html body .portal-shell .portal-sidebar, html body .admin-shell .admin-sidebar {
+    border-radius: 22px 22px 0 0; bottom: 0; box-shadow: 0 -16px 40px rgba(4, 27, 19, .3); left: 0; max-height: 82dvh; overflow-y: auto;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); position: fixed; right: 0; top: auto; transform: translateY(105%);
+    transition: transform .22s ease; width: auto; z-index: 90;
+  }
+  html body .portal-shell .portal-sidebar.is-open, html body .admin-shell .admin-sidebar.is-open { transform: translateY(0); }
+  html body .portal-shell .portal-sidebar::before, html body .admin-shell .admin-sidebar::after {
+    background: #5f8a76; border-radius: 999px; content: ''; display: block; height: 4px; margin: 0 auto 12px; width: 40px;
+  }
+  .portal-sidebar .portal-nav, .admin-sidebar .admin-nav { min-height: 48px; }
+  .ws-sheet-backdrop { background: rgba(10, 30, 22, .45); border: 0; display: block; inset: 0; position: fixed; z-index: 85; }
+
+  .ws-tabbar {
+    background: #fff; border-top: 1px solid #e3e8e2; bottom: 0; box-shadow: 0 -8px 24px rgba(13, 55, 39, .1); display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr)); left: 0; min-height: 64px;
+    padding: 6px max(6px, env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-right));
+    position: fixed; right: 0; z-index: 80;
+  }
+  .ws-tabbar a, .ws-tabbar button {
+    align-items: center; background: none; border: 0; color: #66756f; cursor: pointer; display: flex; flex-direction: column; font: inherit;
+    font-size: .66rem; font-weight: 750; gap: 3px; justify-content: center; min-height: 52px; text-decoration: none;
+  }
+  .ws-tabbar .is-active { color: #0e4f3c; }
+  .ws-tabbar .is-active svg { background: #ffc244; border-radius: 999px; box-sizing: content-box; padding: 3px 12px; }
+  .ws-tabbar a:focus-visible, .ws-tabbar button:focus-visible { outline: 3px solid #007c63; outline-offset: -3px; }
+
+  /* Content blocks: full-bleed cards with consistent 16px gutters. */
+  html body .portal-main > *:not(.portal-header), html body .admin-main > *:not(.admin-header) { margin-left: 16px; margin-right: 16px; max-width: none; }
+  html body .portal-intro, html body .admin-intro { align-items: flex-start; flex-direction: column; gap: 10px; padding-top: 16px; }
+  html body .portal-intro h2, html body .admin-intro h2 { font-size: 1.3rem; letter-spacing: -.02em; line-height: 1.25; }
+  html body .portal-intro .portal-primary, html body .online-toggle { min-height: 46px; }
+  html body .metric-grid, html body .admin-stat-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html body .metric-grid > div, html body .admin-stat-grid > div, html body .admin-stat { border-radius: 16px; padding: 14px; }
+  html body .metric-grid strong, html body .admin-stat strong { font-size: 1.35rem; }
+  html body .portal-panel, html body .admin-panel, html body .orders-panel, html body .rider-delivery-card { border-radius: 18px; padding: 16px; }
+  html body .portal-columns, html body .rider-layout { display: flex; flex-direction: column; gap: 14px; }
+
+  /* Table rows turn into stacked cards. */
+  html body .portal-order-row, html body .admin-table-row, html body .order-admin-row {
+    align-items: center; background: #fff; border: 1px solid #e3e8e2; border-radius: 14px; display: flex; flex-wrap: wrap; gap: 6px 12px;
+    margin: 0 0 8px; padding: 12px 14px;
+  }
+  html body .portal-order-row > *, html body .admin-table-row > * { min-width: 0; overflow-wrap: anywhere; }
+  html body .portal-order-row .order-id, html body .portal-order-row .order-items { flex: 1 1 100%; }
+  html body .portal-order-row .order-items { color: #3d4f47; font-size: .84rem; }
+  html body .portal-order-row > .small-action, html body .portal-order-row > button { margin-left: auto; padding: 0 18px; }
+  html body .rider-layout .orders-panel, html body .rider-work-column > *, html body .portal-columns > * { margin-left: 0; margin-right: 0; }
+  html body .admin-table-head { display: none; }
+  html body .small-action, html body .portal-primary, html body .portal-secondary, html body .admin-primary { min-height: 44px; }
+  html body .rider-request-actions button, html body .rider-delivery-card > .portal-primary { width: 100%; }
+
+  /* The floating chat bubble sits above the tab bar inside workspaces. */
+  .app-shell:has(.ws-tabbar) .chat-widget, body:has(.ws-tabbar) .chat-widget { bottom: calc(80px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
+  html body .portal-shell .portal-sidebar, html body .admin-shell .admin-sidebar { transition: none; }
+}
+
+/* ---------- saved cards (all sizes) ---------- */
+.account-subhead { align-items: center; display: flex; gap: 12px; margin: 0 0 16px; }
+.account-subhead h1 { color: #14231d; font-size: 1.4rem; font-weight: 800; letter-spacing: -.02em; margin: 0; }
+.saved-card-list { background: #fff; border: 1px solid #e3e8e2; border-radius: 18px; display: flex; flex-direction: column; overflow: hidden; }
+.saved-card { align-items: center; border-bottom: 1px solid #eef2ef; display: flex; gap: 12px; min-height: 68px; padding: 10px 12px 10px 16px; }
+.saved-card:last-child { border-bottom: 0; }
+.saved-card.is-expired { opacity: .6; }
+.saved-card-chip { align-items: center; background: #0e4f3c; border-radius: 10px; color: #ffc244; display: inline-flex; flex: 0 0 48px; height: 34px; justify-content: center; }
+.saved-card-main { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.saved-card-main strong { color: #14231d; font-size: .95rem; font-weight: 800; }
+.saved-card-main small { color: #5b6b63; font-size: .76rem; }
+.saved-card-confirm { display: flex; gap: 6px; }
+.saved-card-empty { align-items: center; color: #3d4f47; display: flex; flex-direction: column; gap: 8px; padding: 24px 18px; text-align: center; }
+.saved-card-empty p { font-size: .86rem; margin: 0; max-width: 34ch; }
+.saved-card-add { align-items: center; display: flex; gap: 8px; justify-content: center; margin: 16px 0 8px; min-height: 52px; width: 100%; }
+.saved-card-security { align-items: flex-start; color: #5b6b63; display: flex; font-size: .78rem; gap: 8px; line-height: 1.5; margin-top: 18px; }
+.saved-card-security svg { color: #007c63; flex: 0 0 auto; margin-top: 2px; }
+.saved-card-choices { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.saved-card-choices > label:not(.saved-card-save) { align-items: center; background: #fff; border: 1.5px solid #e1ebe5; border-radius: 14px; cursor: pointer; display: flex; gap: 12px; min-height: 56px; padding: 10px 14px; }
+.saved-card-choices > label.is-selected { background: #f3f9f5; border-color: #007c63; }
+.saved-card-choices input[type="radio"], .saved-card-save input { accent-color: #007c63; height: 18px; margin: 0; width: 18px; }
+.saved-card-choices span { display: flex; flex-direction: column; min-width: 0; }
+.saved-card-choices strong { color: #14231d; font-size: .88rem; }
+.saved-card-choices small { color: #5b6b63; font-size: .74rem; }
+.saved-card-save { align-items: center; color: #14231d; display: flex; font-size: .84rem; font-weight: 700; gap: 10px; padding: 4px 4px 0; }
+.saved-card-pay { align-items: center; display: inline-flex; gap: 6px; justify-content: center; min-height: 44px; }

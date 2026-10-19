@@ -7,7 +7,7 @@ const providers = {
   },
 }
 
-export async function initializePayment({ email, amountMinor, reference, callbackUrl, metadata = {} }) {
+export async function initializePayment({ email, amountMinor, reference, callbackUrl, metadata = {}, channels }) {
   const providerName = process.env.PAYMENT_PROVIDER || process.env.PAYMENTS_PROVIDER || 'paystack'
   const provider = providers[providerName]
   if (!provider) throw new PaymentError('PAYMENT_PROVIDER_UNSUPPORTED', `No adapter is configured for ${providerName}.`, 503)
@@ -17,7 +17,7 @@ export async function initializePayment({ email, amountMinor, reference, callbac
   const response = await fetch(provider.initializeUrl, {
     method: 'POST',
     headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, amount: amountMinor, reference, callback_url: callbackUrl, metadata }),
+    body: JSON.stringify({ email, amount: amountMinor, reference, callback_url: callbackUrl, metadata, ...(channels ? { channels } : {}) }),
     signal: AbortSignal.timeout(10000),
   })
   const body = await response.json()
@@ -41,7 +41,7 @@ export async function verifyPaystackTransaction(reference, { fetchImpl = globalT
   if (response.status === 404 || (body && body.status === false && /not found/i.test(body.message || ''))) return { status: 'not_found', reference }
   if (!response.ok || !body?.status || !body.data) throw new PaymentError('PAYMENT_VERIFICATION_UNAVAILABLE', 'Payment provider did not confirm this transaction.', 502)
   const data = body.data
-  return { status: data.status, reference: data.reference, amount: data.amount, currency: data.currency, id: data.id, gatewayResponse: data.gateway_response || null, paidAt: data.paid_at || null }
+  return { status: data.status, reference: data.reference, amount: data.amount, currency: data.currency, id: data.id, gatewayResponse: data.gateway_response || null, paidAt: data.paid_at || null, authorization: data.authorization || null, channel: data.channel || null, customerEmail: data.customer?.email || null, metadata: typeof data.metadata === 'object' && data.metadata ? data.metadata : null }
 }
 
 export function paystackMode() {

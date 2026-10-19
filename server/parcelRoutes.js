@@ -9,6 +9,7 @@ import {
 } from './parcelService.js'
 import { initializePayment, PaymentError, paystackMode, verifyPaystackTransaction } from './paymentService.js'
 import { activeLocationStatuses, claimDelivery, rejectDeliveryRequest, releaseDelivery } from './deliveryService.js'
+import { notifyAdmins } from './notify.js'
 
 const phone = z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/, 'Enter a valid phone number')
 const text = (max) => z.string().trim().min(1).max(max)
@@ -127,9 +128,9 @@ export async function confirmParcelPayment(transaction, payment, { providerRefer
   await transaction.parcelEvent.create({ data: { bookingId: booking.id, status: 'PAYMENT_CONFIRMED', actorRole: 'SYSTEM', note: `Verified by ${source}` } })
   await transaction.parcelEvent.create({ data: { bookingId: booking.id, status: 'SEARCHING_FOR_RIDER', actorRole: 'SYSTEM' } })
   await transaction.delivery.upsert({ where: { parcelBookingId: booking.id }, update: {}, create: { parcelBookingId: booking.id, status: 'AVAILABLE', requestedAt: now } })
-  await transaction.notification.create({ data: { userId: booking.customerId, type: 'PAYMENT', title: 'Payment confirmed', body: `Payment for ${booking.reference} was confirmed. Choose a rider or wait for the next available rider.` } })
+  await transaction.notification.create({ data: { userId: booking.customerId, type: 'PAYMENT', title: 'Payment confirmed', body: `Payment for ${booking.reference} was confirmed. Choose a rider or wait for the next available rider.`, link: `/parcels/${booking.id}` } })
   const riders = await transaction.rider.findMany({ where: { status: 'APPROVED', availability: 'ONLINE', network: 'DOORSTEP_POOL' }, select: { userId: true }, take: 25 })
-  if (riders.length) await transaction.notification.createMany({ data: riders.map((rider) => ({ userId: rider.userId, type: 'DELIVERY', title: 'New package delivery available', body: `A ${booking.packageSize.toLowerCase()} package delivery (${(booking.distanceMeters / 1000).toFixed(1)} km by road) is waiting for a rider.` })) })
+  if (riders.length) await transaction.notification.createMany({ data: riders.map((rider) => ({ userId: rider.userId, type: 'DELIVERY', title: 'New package delivery available', body: `A ${booking.packageSize.toLowerCase()} package delivery (${(booking.distanceMeters / 1000).toFixed(1)} km by road) is waiting for a rider.`, link: '/rider/dashboard' })) })
   return { confirmed: true, bookingId: booking.id }
 }
 
@@ -249,6 +250,7 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
           },
           include: bookingInclude,
         })
+        if (input.paymentMethod === 'BANK_TRANSFER') await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Bank transfer to confirm', body: `Package ${created.reference} (${'₦'}${(created.totalMinor / 100).toLocaleString('en-NG')}) will be paid by bank transfer. Confirm it once the money arrives.`, link: '/admin/payments' })
         return created
       })
       return response.status(201).json({ booking: serializeParcel(booking, request.user) })
@@ -305,6 +307,7 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
   })
 
   router.post('/parcels/:bookingId/pay', requireUser, requireCustomer, async (request, response) => {
+    const saveCard = request.body?.saveCard === true
     try {
       const booking = await loadOwned(request)
       const payment = booking.payment
@@ -331,7 +334,7 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
         if (verified.status !== 'failed' && fresh) return response.json({ method: 'PAYSTACK', authorizationUrl: stored.authorizationUrl, reference: payment.reference, mode: paystackMode() })
         current = await rotatePaymentReference(prisma, payment, verified.status)
       }
-      const initialized = await initializePayment({ email: request.user.email, amountMinor: current.amountMinor, reference: current.reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { parcelBookingId: booking.id, parcelReference: booking.reference, kind: 'parcel' } })
+      const initialized = await initializePayment({ email: request.user.email, amountMinor: current.amountMinor, reference: current.reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { parcelBookingId: booking.id, parcelReference: booking.reference, kind: 'parcel', saveCard } })
       await prisma.payment.update({ where: { id: current.id }, data: { instructionsSnapshot: { authorizationUrl: initialized.authorizationUrl, initializedAt: new Date().toISOString() } } })
       return response.json({ method: 'PAYSTACK', authorizationUrl: initialized.authorizationUrl, reference: current.reference, mode: paystackMode() })
     } catch (error) { return fail(response, error, 'PAYMENT_SERVICE_UNAVAILABLE') }
@@ -350,12 +353,12 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
         if (booking.delivery && booking.delivery.status !== 'DELIVERED') {
           await transaction.delivery.update({ where: { id: booking.delivery.id }, data: { status: 'CANCELLED', cancelledAt: new Date(), requestedRiderId: null, requestExpiresAt: null } })
           const riderUserId = booking.riderId ? (await transaction.rider.findUnique({ where: { id: booking.riderId }, select: { userId: true } }))?.userId : null
-          if (riderUserId) await transaction.notification.create({ data: { userId: riderUserId, type: 'DELIVERY', title: 'Delivery cancelled', body: `The customer cancelled ${booking.reference}. Do not travel to the pickup point.` } })
+          if (riderUserId) await transaction.notification.create({ data: { userId: riderUserId, type: 'DELIVERY', title: 'Delivery cancelled', body: `The customer cancelled ${booking.reference}. Do not travel to the pickup point.`, link: '/rider/dashboard' } })
         }
         if (booking.payment?.status === 'SUCCESSFUL') {
           await transaction.transaction.create({ data: { paymentId: booking.payment.id, type: 'REFUND_REQUIRED', amountMinor: booking.payment.amountMinor, providerReference: booking.payment.reference, metadata: { reason: 'Customer cancelled a paid parcel booking' } } })
           const admins = await transaction.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, select: { id: true }, take: 20 })
-          if (admins.length) await transaction.notification.createMany({ data: admins.map((admin) => ({ userId: admin.id, type: 'PAYMENT', title: 'Parcel refund required', body: `Paid booking ${booking.reference} was cancelled by the customer and needs a refund review.` })) })
+          if (admins.length) await transaction.notification.createMany({ data: admins.map((admin) => ({ userId: admin.id, type: 'PAYMENT', title: 'Parcel refund required', body: `Paid booking ${booking.reference} was cancelled by the customer and needs a refund review.`, link: '/admin/parcels' })) })
         } else if (booking.payment && ['PENDING', 'PENDING_VERIFICATION'].includes(booking.payment.status)) {
           await transaction.payment.update({ where: { id: booking.payment.id }, data: { status: 'ABANDONED' } })
         }
@@ -420,7 +423,7 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
         })
         if (changed.count !== 1) throw new ParcelError('RIDER_REQUEST_PENDING', 'A rider is already considering this delivery. Wait for their answer.', 409)
         await transaction.parcelEvent.create({ data: { bookingId: booking.id, status: 'SEARCHING_FOR_RIDER', actorId: request.user.id, actorRole: 'CUSTOMER', note: 'Customer requested a specific rider' } })
-        await transaction.notification.create({ data: { userId: rider.userId, type: 'DELIVERY', title: 'Delivery request for you', body: `A customer requested you for ${booking.reference}. Respond within 2 minutes.` } })
+        await transaction.notification.create({ data: { userId: rider.userId, type: 'DELIVERY', title: 'Delivery request for you', body: `A customer requested you for ${booking.reference}. Respond within 2 minutes.`, link: '/rider/dashboard' } })
         return transaction.parcelBooking.findUnique({ where: { id: booking.id }, include: bookingInclude })
       })
       return response.json({ booking: serializeParcel(updated, request.user) })
@@ -554,8 +557,8 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
 }
 
 /** Retire a reference Paystack can no longer use, keeping it on record so a late webhook can still be reconciled. */
-export async function rotatePaymentReference(prisma, payment, providerStatus) {
-  const nextReference = `DSPPKG-${randomUUID()}`
+export async function rotatePaymentReference(prisma, payment, providerStatus, prefix = 'DSPPKG') {
+  const nextReference = `${prefix}-${randomUUID()}`
   return prisma.$transaction(async (transaction) => {
     await transaction.transaction.create({ data: { paymentId: payment.id, type: 'PAYMENT_REFERENCE_ROTATED', amountMinor: payment.amountMinor, providerReference: payment.reference, metadata: { providerStatus, replacedBy: nextReference } } })
     return transaction.payment.update({ where: { id: payment.id }, data: { reference: nextReference, status: 'PENDING', instructionsSnapshot: null } })

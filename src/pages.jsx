@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
+import { ArrowRight, CreditCard, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
 import { categories, formatNaira, sapeleLocations } from './data'
 import { PasswordField } from './PasswordField'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -8,12 +8,15 @@ import { GroceryOwnerApplication } from './GroceryOwnerApplication'
 import { ApplicationReviewSummary, clearApplicationDraft, getApplicationReview, restoreApplicationDraft, saveApplicationDraft } from './ApplicationReview'
 import { applicationSubmissionError, validateOpeningHours } from './applicationValidation'
 import { useDeliveryTracking } from './tracking/useDeliveryTracking'
+import { SavedCardChoices, useSavedCards } from './account/SavedCards'
 import { readConfirmedLocation } from './location'
 import { signOut as endSession } from './services/authService'
 import { loadCart } from './services/orderService'
 import { SignInLinks, SignOutNotice } from './authControls'
+import { NotificationsScreen, useNotifications } from './notifications/NotificationCenter'
 
 const NavigationPage = lazy(() => import('./navigation/NavigationPage'))
+const PaymentMethodsPage = lazy(() => import('./account/SavedCards').then((module) => ({ default: module.PaymentMethodsPage })))
 // Map components pull in mapbox-gl, so they load only on the pages that show a map.
 const LocationMap = lazy(() => import('./LocationMap').then((module) => ({ default: module.LocationMap })))
 const DeliveryTrackingMap = lazy(() => import('./DeliveryTrackingMap').then((module) => ({ default: module.DeliveryTrackingMap })))
@@ -27,7 +30,6 @@ const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : imp
 export function MobileStoreDock() {
   const path = window.location.pathname
   const [cartCount, setCartCount] = useState(() => loadCart().reduce((count, item) => count + item.quantity, 0))
-  const [unreadCount, setUnreadCount] = useState(0)
   const isExcludedRoute = ['/login', '/register', '/forgot-password', '/reset-password', '/location', '/send'].includes(path) || path.startsWith('/partners/') || path.startsWith('/riders/') || path.startsWith('/partner/') || path === '/rider/register'
   const isSignedIn = Boolean(localStorage.getItem('doorstep-token'))
 
@@ -41,23 +43,7 @@ export function MobileStoreDock() {
     }
   }, [])
 
-  useEffect(() => {
-    const token = localStorage.getItem('doorstep-token')
-    if (!token || isExcludedRoute) return undefined
-    let active = true
-    const refreshNotifications = async () => {
-      const response = await fetch(`${apiBase}/api/notifications`, { headers: authHeaders() })
-      if (!response.ok) throw new Error('Could not refresh notifications.')
-      const body = await response.json()
-      if (active) setUnreadCount((body.notifications || []).filter((notification) => !notification.readAt).length)
-    }
-    refreshNotifications().catch((error) => console.error(error))
-    window.addEventListener('doorstep-notifications-change', refreshNotifications)
-    return () => {
-      active = false
-      window.removeEventListener('doorstep-notifications-change', refreshNotifications)
-    }
-  }, [])
+  const { unreadCount } = useNotifications('doorstep-token', Boolean(localStorage.getItem('doorstep-token')) && !isExcludedRoute)
 
   // Hooks above must run on every render; only now is it safe to bail out.
   if (!isSignedIn || isExcludedRoute) return null
@@ -463,10 +449,58 @@ function VerifiedCustomerRegistration() {
 
 function AccountDashboard() {
   const [user, setUser] = useState(null)
-  const [orders, setOrders] = useState([])
-  const recentOrders = orders.slice(0, 2)
-  useEffect(() => { const token = localStorage.getItem('doorstep-token'); if (!token) return; const headers = { Authorization: `Bearer ${token}` }; fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/me`, { headers }).then((response) => response.json()).then((body) => setUser(body.user)).catch(() => undefined); fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/orders`, { headers }).then((response) => response.ok ? response.json() : null).then((body) => body?.orders && setOrders(body.orders)).catch(() => undefined) }, [])
-  return <PageFrame eyebrow="YOUR DOORSTEP" title={user ? `Good to see you, ${user.firstName}.` : 'Your account dashboard.'} intro="Your orders, addresses, and support in one place."><section className="account-dashboard"><div className="account-profile-card"><ProfileAvatar className="account-profile-avatar" size={39} /><div><span className="section-kicker">CUSTOMER PROFILE</span><h2>{user ? `${user.firstName} ${user.lastName}` : 'Loading profile...'}</h2><p>{user?.email || 'Authenticated DOORSTEP customer'}</p></div><button className="quiet-button">Edit profile</button></div><div className="account-welcome-band"><div><span className="section-kicker">YOUR NEXT BITE</span><h2>Hungry?</h2><p>See which kitchens near you are open right now.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Explore restaurants <ArrowRight size={16} /></button></div><div className="account-food-orbit"><span>🍚</span><span>🍗</span><span>🥤</span></div></div><div className="account-confidence-row"><div><span className="confidence-number">0</span><div><strong>Active deliveries</strong><small>Nothing to chase right now</small></div></div><div><span className="confidence-number">1</span><div><strong>Saved location</strong><small>Amukpe, Sapele</small></div></div><div><span className="confidence-number">∞</span><div><strong>Good choices</strong><small>Always worth discovering</small></div></div></div><div className="account-active-order"><div className="active-order-icon"><Clock3 size={22} /></div><div><span className="section-kicker">ORDER AT A GLANCE</span><h3>{recentOrders.length ? 'Your latest order is close at hand.' : 'Ready when you are'}</h3><p>{recentOrders.length ? `${recentOrders[0].restaurantName} · ${recentOrders[0].status.replaceAll('_', ' ')}` : 'No active delivery right now. Your next order will appear here with live kitchen and rider updates.'}</p></div><button className="text-link" onClick={() => navigate(recentOrders.length ? '/account/orders' : '/restaurants')}>{recentOrders.length ? 'View orders' : 'Find food'} <ArrowRight size={15} /></button></div>{recentOrders.length > 0 && <div className="account-recent"><div className="account-discover-row"><div><span className="section-kicker">RECENTLY ORDERED</span><h2>Order again.</h2></div><button className="text-link" onClick={() => navigate('/account/orders')}>All orders <ArrowRight size={15} /></button></div>{recentOrders.map((recentOrder) => <div className="recent-order-row" key={recentOrder.id}><div className="recent-order-mark"><ShoppingBag size={17} /></div><div><strong>{recentOrder.restaurantName}</strong><small>{recentOrder.items.map((item) => `${item.quantity}× ${item.name}`).join(', ')}</small></div><button className="add-button" onClick={() => navigate('/restaurants')}>Order again</button></div>)}</div>}<div className="account-dashboard-grid"><button onClick={() => navigate('/account/orders')}><PackageIcon /><strong>Orders</strong><span>Track and reorder food</span></button><button><MapPin size={24} /><strong>Addresses</strong><span>Save delivery locations</span></button><button><HeartIcon /><strong>Favorites</strong><span>Your go-to kitchens</span></button><button onClick={() => navigate('/help')}><HelpCircle size={24} /><strong>Support</strong><span>Get help with an order</span></button></div><div className="account-discover-row"><div><span className="section-kicker">DISCOVER SAPELE</span><h2>What are you in the mood for?</h2></div><button className="text-link" onClick={() => navigate('/offers')}>See offers <ArrowRight size={15} /></button></div><div className="mood-grid"><button onClick={() => navigate('/restaurants')}><span>🍚</span><strong>Comfort food</strong><small>Warm, familiar, local</small></button><button onClick={() => navigate('/restaurants')}><span>🔥</span><strong>Something bold</strong><small>Grills, suya and spice</small></button><button onClick={() => navigate('/offers')}><span>✦</span><strong>Good deal</strong><small>Make tonight go further</small></button></div></section></PageFrame>
+  const [orders, setOrders] = useState(null)
+  const [parcels, setParcels] = useState(null)
+  const [addresses, setAddresses] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!localStorage.getItem('doorstep-token')) return
+    const get = (path) => fetch(`${apiBase}${path}`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : Promise.reject(new Error(String(response.status))))
+    get('/api/auth/me').then((body) => setUser(body.user)).catch(() => setError('We could not load your profile. Pull to refresh or try again shortly.'))
+    get('/api/orders?limit=20').then((body) => setOrders(body.orders || [])).catch(() => setOrders([]))
+    get('/api/parcels?limit=20').then((body) => setParcels(body.bookings || [])).catch(() => setParcels([]))
+    get('/api/addresses').then((body) => setAddresses(body.addresses || [])).catch(() => setAddresses([]))
+  }, [])
+  const finished = ['DELIVERED', 'CANCELLED', 'REFUNDED', 'REJECTED']
+  const activeOrders = orders?.filter((order) => !finished.includes(order.status)) || []
+  const activeParcels = parcels?.filter((parcel) => !finished.includes(parcel.status)) || []
+  const count = (list) => list === null ? '…' : list.length
+  const rows = [
+    { label: 'Orders', detail: orders === null ? 'Loading…' : activeOrders.length ? `${activeOrders.length} in progress` : 'Your food and grocery orders', href: '/account/orders', icon: ShoppingBag },
+    { label: 'Packages', detail: parcels === null ? 'Loading…' : activeParcels.length ? `${activeParcels.length} on the way` : 'Send and track packages', href: '/parcels', icon: Truck },
+    { label: 'Addresses', detail: addresses === null ? 'Loading…' : addresses.length ? `${addresses.length} saved` : 'Save Home, Work and more', href: '/account/addresses', icon: MapPin },
+    { label: 'Payment methods', detail: 'Saved debit and credit cards', href: '/account/cards', icon: CreditCard },
+    { label: 'Favourites', detail: 'Kitchens and dishes you saved', href: '/account/favorites', icon: Star },
+    { label: 'Notifications', detail: 'Order, payment and delivery updates', href: '/account/notifications', icon: Bell },
+    { label: 'Help', detail: 'Chat with support or raise a ticket', href: '/account/support', icon: HelpCircle },
+    { label: 'Profile and security', detail: 'Name, phone, photo and password', href: '/account/profile', icon: Settings },
+  ]
+  const latest = activeOrders[0]
+  const latestParcel = activeParcels[0]
+  return <main className="route-page account-app">
+    <section className="account-app-head">
+      <ProfileAvatar className="account-app-avatar" size={56} />
+      <div>
+        <h1>{user ? `${user.firstName} ${user.lastName}`.trim() : 'Your account'}</h1>
+        <p>{user ? [user.phone, user.email].filter(Boolean).join(' · ') : error || 'Loading your profile…'}</p>
+      </div>
+      <button type="button" className="account-app-edit" onClick={() => navigate('/account/profile')}>Edit</button>
+    </section>
+    <section className="account-app-stats" aria-label="Your activity">
+      <button type="button" onClick={() => navigate('/account/orders')}><strong>{orders === null ? '…' : activeOrders.length}</strong><span>Active orders</span></button>
+      <button type="button" onClick={() => navigate('/parcels')}><strong>{parcels === null ? '…' : activeParcels.length}</strong><span>Packages moving</span></button>
+      <button type="button" onClick={() => navigate('/account/addresses')}><strong>{count(addresses)}</strong><span>Saved addresses</span></button>
+    </section>
+    {(latest || latestParcel) && <section className="account-app-live" aria-label="In progress">
+      {latest && <button type="button" onClick={() => navigate(`/account/orders/${latest.id}`)}><Clock3 size={20} aria-hidden="true" /><span><strong>{latest.restaurant?.name || 'Your order'}</strong><small>{latest.status.replaceAll('_', ' ').toLowerCase()} · {latest.orderNumber}</small></span><ArrowRight size={18} aria-hidden="true" /></button>}
+      {latestParcel && <button type="button" onClick={() => navigate(`/parcels/${latestParcel.id}`)}><Truck size={20} aria-hidden="true" /><span><strong>Package {latestParcel.reference}</strong><small>{latestParcel.statusLabel}</small></span><ArrowRight size={18} aria-hidden="true" /></button>}
+    </section>}
+    <nav className="account-app-list" aria-label="Account">
+      {rows.map(({ label, detail, href, icon: Icon }) => <button type="button" key={href} onClick={() => navigate(href)}><span className="account-app-icon" aria-hidden="true"><Icon size={20} /></span><span><strong>{label}</strong><small>{detail}</small></span><ArrowRight size={17} aria-hidden="true" /></button>)}
+    </nav>
+    <div className="account-app-signout"><SignOutButton /></div>
+    <MobileStoreDock />
+  </main>
 }
 
 function PackageIcon() { return <ShoppingBag size={24} /> }
@@ -695,13 +729,8 @@ function LocationPage() {
 function FavoritesPage() { const [favorites, setFavorites] = useState([]); useEffect(() => { fetch(`${apiBase}/api/favorites`, { headers: authHeaders() }).then((response) => response.json()).then((body) => setFavorites(body.favorites || [])) }, []); return <PageFrame eyebrow="YOUR FAVORITES" title="Your favourites." intro="The restaurants and dishes you come back to."><section className="favorites-page">{favorites.length === 0 ? <div className="notification-empty"><HeartIcon /><h2>No favourites yet.</h2><p>Tap the heart on a restaurant or food item to build your personal Sapele shortlist.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Discover restaurants <ArrowRight size={16} /></button></div> : <div className="favorite-grid">{favorites.map((favorite) => <article className="favorite-card" key={favorite.id}><div className="favorite-image" /><div><span className="section-kicker">{favorite.restaurant ? 'RESTAURANT' : 'FOOD'}</span><h2>{favorite.restaurant?.name || favorite.menuItem?.name}</h2><p>{favorite.restaurant?.description || favorite.menuItem?.description || 'Saved for your next order.'}</p></div></article>)}</div>}</section></PageFrame> }
 
 function NotificationsPage() {
-  const [notifications, setNotifications] = useState([])
-  const [loading, setLoading] = useState(true)
-  const load = () => fetch(`${apiBase}/api/notifications`, { headers: authHeaders() }).then((response) => response.json()).then((body) => setNotifications(body.notifications || [])).finally(() => setLoading(false))
-  useEffect(() => { load() }, [])
-  const markAll = async () => { await fetch(`${apiBase}/api/notifications/read-all`, { method: 'POST', headers: authHeaders() }); window.dispatchEvent(new Event('doorstep-notifications-change')); load() }
-  const markOne = async (id) => { await fetch(`${apiBase}/api/notifications/${id}/read`, { method: 'PATCH', headers: authHeaders() }); window.dispatchEvent(new Event('doorstep-notifications-change')); load() }
-  return <PageFrame eyebrow="NOTIFICATION CENTER" title="Notifications." intro="Updates about your orders, payments, and account."><section className="notification-page"><div className="notification-toolbar"><div><span className="section-kicker">INBOX</span><h2>{notifications.filter((item) => !item.readAt).length} unread updates</h2></div><button className="text-link" onClick={markAll}>Mark all as read <Check size={15} /></button></div>{loading ? <div className="empty-state">Loading your notifications...</div> : notifications.length === 0 ? <div className="notification-empty"><Bell size={30} /><h2>No notifications yet.</h2><p>Payment confirmations, rider updates, and support replies will appear here.</p></div> : <div className="notification-list">{notifications.map((notification) => <button className={notification.readAt ? 'notification-row read' : 'notification-row'} key={notification.id} onClick={() => markOne(notification.id)}><span className="notification-type"><Bell size={16} /></span><div><strong>{notification.title}</strong><p>{notification.body}</p><small>{new Date(notification.createdAt).toLocaleString('en-NG')}</small></div>{!notification.readAt && <i />}</button>)}</div>}</section></PageFrame>
+  if (!localStorage.getItem('doorstep-token')) return <PageFrame eyebrow="NOTIFICATIONS" title="Sign in to see your updates." intro="Order, delivery and payment updates appear here once you are signed in."><button className="checkout-button" onClick={() => navigate('/login?return=/account/notifications')}>Sign in</button></PageFrame>
+  return <NotificationsScreen><MobileStoreDock /></NotificationsScreen>
 }
 
 function SupportPage() {
@@ -812,6 +841,10 @@ function CheckoutPage({ cart, onComplete, error }) {
   const service = Math.round(subtotal * 0.03)
   const [gateway, setGateway] = useState({ provider: 'paystack', configured: false, methods: {} })
   const [paymentMethod, setPaymentMethod] = useState('PAYSTACK')
+  const savedCards = useSavedCards()
+  const [cardChoice, setCardChoice] = useState('NEW')
+  const [saveCard, setSaveCard] = useState(false)
+  useEffect(() => { const first = savedCards.cards.find((card) => !card.expired); if (first) setCardChoice((current) => current === 'NEW' ? first.id : current) }, [savedCards.cards.length])
   const [deliveryPoint, setDeliveryPoint] = useState(() => readConfirmedLocation())
   const [address, setAddress] = useState(() => readConfirmedLocation()?.label || 'Amukpe, Sapele')
   useEffect(() => {
@@ -846,6 +879,9 @@ function CheckoutPage({ cart, onComplete, error }) {
         <label>Delivery instructions<textarea name="instructions" rows="3" placeholder="Apartment, gate access, or rider notes" /></label>
         <label>Phone number<input required name="phone" inputMode="tel" placeholder="080 0000 0000" /></label>
         <fieldset className="payment-methods"><legend>Payment method</legend>{choices.map((choice) => <label className={paymentMethod === choice.value ? 'payment-method is-selected' : 'payment-method'} key={choice.value}><input type="radio" name="paymentMethod" value={choice.value} checked={paymentMethod === choice.value} onChange={() => setPaymentMethod(choice.value)} /><span className="payment-logo">{choice.value === 'PAYSTACK' ? 'P' : choice.value === 'BANK_TRANSFER' ? '₦' : 'C'}</span><span><strong>{choice.label}</strong><small>{choice.detail}</small></span></label>)}</fieldset>
+        {paymentMethod === 'PAYSTACK' && savedCards.enabled && <SavedCardChoices cards={savedCards.cards} value={cardChoice} onChange={setCardChoice} saveCard={saveCard} onSaveCardChange={setSaveCard} enabled={savedCards.enabled} name="checkout-card" />}
+        <input type="hidden" name="savedCardId" value={paymentMethod === 'PAYSTACK' && savedCards.enabled && cardChoice !== 'NEW' ? cardChoice : ''} />
+        <input type="hidden" name="saveCard" value={paymentMethod === 'PAYSTACK' && savedCards.enabled && cardChoice === 'NEW' && saveCard ? 'yes' : ''} />
         {choices.length === 0 && <div className="checkout-note" role="alert"><ShieldCheck size={17} /> No payment method is currently configured. Contact DOORSTEP support.</div>}
       </div>
       <div className="cart-page-summary"><span className="section-kicker">PAYMENT SUMMARY</span><div><span>Subtotal</span><strong>{formatNaira(subtotal)}</strong></div><div><span>Delivery</span><strong>{formatNaira(delivery)}</strong></div><div><span>Service fee</span><strong>{formatNaira(service)}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(subtotal + delivery + service)}</strong></div>{error && <p className="profile-message" role="alert">{error}</p>}<button className="checkout-button" type="submit" disabled={choices.length === 0}>{buttonLabel} <ArrowRight size={17} /></button><small className="payment-disclaimer">DOORSTEP recalculates this order on the server before creating a payment.</small></div>
@@ -1053,6 +1089,7 @@ export function RoutePage({ path, cart = [], checkoutError = '', onAddToCart = (
   if (path === '/login') return <AuthPage />
   if (path === '/register') return <RegistrationPage />
   if (path === '/account') return <AccountDashboard />
+  if (path === '/account/cards') return <Suspense fallback={<main className="route-page" role="status">Loading payment methods…</main>}><PaymentMethodsPage /></Suspense>
   if (path === '/account/profile') return <ProfilePage />
   if (path === '/account/addresses') return <AddressesPage />
   if (path === '/location') return <LocationPage />

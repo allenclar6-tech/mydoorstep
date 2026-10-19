@@ -150,6 +150,8 @@ model User {
   referralsReceived Referral[]       @relation("Referred")
   orders            Order[]          @relation("CustomerOrders")
   parcelBookings    ParcelBooking[]  @relation("CustomerParcels")
+  savedCards        SavedCard[]
+  cardVerifications CardVerification[]
   sessions          Session[]
   profileImageKey   String?
 }
@@ -750,10 +752,12 @@ model Notification {
   type      NotificationType
   title     String
   body      String
+  link      String?
   readAt    DateTime?
   createdAt DateTime         @default(now())
 
   @@index([userId, readAt])
+  @@index([userId, createdAt])
 }
 
 model SupportTicket {
@@ -812,4 +816,42 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([actorId, createdAt])
+}
+
+// Reusable Paystack card authorizations. DOORSTEP never sees or stores card numbers;
+// the authorization code is encrypted at rest and only usable with the Paystack secret key.
+model SavedCard {
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  authorizationCipher   String
+  signature             String
+  email                 String
+  brand                 String?
+  bank                  String?
+  last4                 String
+  expMonth              String
+  expYear               String
+  createdAt             DateTime  @default(now())
+  lastUsedAt            DateTime?
+  removedAt             DateTime?
+
+  @@unique([userId, signature])
+  @@index([userId, removedAt])
+}
+
+// Small verification charge used to add a card from the account page; refunded automatically.
+model CardVerification {
+  id           String    @id @default(cuid())
+  reference    String    @unique
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountMinor  Int
+  status       String    @default("PENDING")
+  refundStatus String?
+  savedCardId  String?
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  @@index([userId, createdAt])
 }
