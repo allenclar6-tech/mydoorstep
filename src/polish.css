@@ -1,0 +1,68 @@
+/* Final presentation layer, loaded last. Keeps the brand palette but favours readable type,
+   restrained depth and honest placeholders over decorative effects. */
+
+/* Type: readable base size and natural heading spacing. */
+body { font-size: 15px; line-height: 1.55; }
+p { line-height: 1.6; }
+.section-kicker, .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
+
+/* Headings and bold text on dark surfaces inherit their light colour instead of the global ink. */
+.grocery-showcase-copy h2, .logistics-copy h2, .spotlight-copy h2, footer strong { color: #fff; }
+.logistics-copy h2 em { color: #b8e1b7; }
+/* Route page headers sit on a light panel; an older rule painted their titles white. */
+.route-hero h1 { color: var(--ink); }
+
+/* Hero address bar: desktop action buttons showed dark icons on a dark fill. */
+@media (min-width: 701px) {
+  .hero-location-box button { background: var(--green); color: #fff; }
+  .hero-location-box button svg { color: currentColor; }
+  .hero-location-box .hero-current-location { background: #e9f4ee; color: var(--green); }
+}
+
+/* Category tiles: light cards with an icon, label and one-line description. */
+.category-pill { background: #fff; border: 1px solid #e3e9e2; box-shadow: 0 1px 2px rgba(16, 47, 39, .05); color: var(--ink); gap: 14px; justify-content: space-between; min-height: 150px; padding: 18px; }
+.category-pill::after { display: none; }
+.category-pill:hover, .category-pill.selected { background: #fff; border-color: var(--green); box-shadow: 0 6px 18px rgba(16, 47, 39, .08); transform: none; }
+.category-icon { align-items: center; background: #e9f4ee; border-radius: 12px; color: var(--green); display: inline-flex; height: 44px; justify-content: center; width: 44px; }
+.category-pill-send .category-icon { background: #fff4d6; color: #9a6a00; }
+.category-picture-label { align-items: flex-start !important; bottom: auto; color: var(--ink); flex-direction: column !important; gap: 4px; left: auto; position: static; right: auto; }
+.category-picture-label strong { color: var(--ink) !important; font-size: 15px !important; text-shadow: none; }
+.category-picture-label small { color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.4; }
+
+/* Restaurant cards: initials on a tinted panel when a partner has not uploaded a photo yet. */
+.restaurant-image { background: #eef4ef; }
+.restaurant-image::before, .restaurant-image::after { display: none; }
+.restaurant-monogram { align-items: center; color: var(--green); display: flex; font-size: 44px; font-weight: 800; height: 100%; justify-content: center; letter-spacing: -0.02em; opacity: .55; width: 100%; }
+.restaurant-meta { font-size: 13px; }
+.restaurant-info p { font-size: 14px; }
+.restaurant-card { box-shadow: 0 1px 3px rgba(16, 47, 39, .06); }
+.restaurant-card:hover { box-shadow: 0 8px 22px rgba(16, 47, 39, .09); }
+
+/* Spotlight without a photo: a single centred column instead of an empty half. */
+.spotlight-section.spotlight-no-photo { grid-template-columns: 1fr; min-height: 0; }
+.spotlight-no-photo .spotlight-copy { max-width: 720px; padding: 64px 8vw; }
+
+/* Logistics: a straight, framed photo instead of a tilted card with a sticker. */
+.logistics-orbit, .logistics-badge { display: none; }
+.logistics-visual img, .logistics-visual { transform: none !important; }
+.logistics-visual::before, .logistics-visual::after { display: none; }
+.logistics-visual img { border-radius: 14px; box-shadow: 0 18px 36px rgba(1, 25, 18, .3); }
+
+/* Grocery showcase: a readable empty state on the dark panel. */
+.grocery-showcase-products .empty-state { border: 1px solid rgba(255, 255, 255, .22); border-radius: 14px; color: rgba(255, 255, 255, .82); font-size: 15px; }
+.restaurant-info p { text-align: left; }
+
+/* Cookie banner: compact and plain. */
+.cookie-consent { background: #fff; border: 1px solid #e3e9e2; box-shadow: 0 12px 32px rgba(16, 47, 39, .14); color: var(--ink); }
+.cookie-consent::before, .cookie-consent::after { display: none; }
+.cookie-consent strong { color: var(--ink); font-size: 16px; }
+.cookie-consent p, .cookie-consent li { color: var(--muted); font-size: 13px; }
+.cookie-consent-kicker { color: var(--green); font-size: 12px; letter-spacing: 0.08em; }
+.cookie-consent .quiet-button { background: transparent; border: 1px solid #cfd9d2; border-radius: 12px; color: var(--ink); min-height: 40px; }
+.cookie-consent .quiet-button:hover { background: #f2f6f3; }
+@media (max-width: 600px) {
+  .cookie-consent { gap: 10px; padding: 14px 16px; }
+  .cookie-consent ul, .cookie-consent-kicker { display: none; }
+  .cookie-consent strong { font-size: 15px; }
+  .cookie-consent p { margin: 4px 0 0; }
+}

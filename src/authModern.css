@@ -9,13 +9,13 @@
 .auth-layout .partner-cta h2 { color: #fff; font-size: clamp(28px, 3vw, 43px); margin: 12px 0 10px; max-width: 360px; }
 .auth-layout .partner-cta p { color: #e4eee6; font-size: 12px; line-height: 1.7; max-width: 360px; }
 .auth-trust-points { border-top: 1px solid #ffffff33; display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; padding-top: 15px; }
-.auth-trust-points span { align-items: center; color: #f1f7ef; display: inline-flex; font-size: 9px; gap: 4px; }
+.auth-trust-points span { align-items: center; color: #f1f7ef; display: inline-flex; font-size: 12px; gap: 4px; }
 .auth-trust-points svg { color: #f4c66f; }
 .auth-layout .auth-form { box-shadow: 0 18px 44px #1c342a14; }
 @media (max-width: 600px) { .auth-layout .partner-cta { min-height: 300px; } .auth-layout .partner-cta h2 { font-size: 32px; } .auth-trust-points { gap: 8px; } }
 .onboarding-card { margin: 0 auto; max-width: 720px; width: 100%; }
 .onboarding-progress { display: flex; gap: 8px; list-style: none; margin: 0 0 12px; padding: 0; }
-.onboarding-progress li { align-items: center; color: var(--muted); display: flex; flex: 1; font-size: 9px; font-weight: 800; gap: 6px; min-width: 0; }
+.onboarding-progress li { align-items: center; color: var(--muted); display: flex; flex: 1; font-size: 12px; font-weight: 800; gap: 6px; min-width: 0; }
 .onboarding-progress li::after { background: var(--line); content: ''; flex: 1; height: 2px; margin-left: 3px; }
 .onboarding-progress li:last-child::after { display: none; }
 .onboarding-progress li span { align-items: center; background: #e8ece7; border-radius: 50%; display: inline-flex; flex: 0 0 auto; height: 23px; justify-content: center; width: 23px; }
@@ -24,7 +24,7 @@
 .onboarding-progress li.complete span, .onboarding-progress li.complete::after { background: var(--green); color: #fff; }
 .onboarding-progress small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .onboarding-card section { display: flex; flex-direction: column; gap: 17px; }
-.onboarding-copy, .field-hint { color: var(--muted); font-size: 11px; line-height: 1.6; margin: 0; }
+.onboarding-copy, .field-hint { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0; }
 .field-hint { margin-top: -4px; }
 .onboarding-actions { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
 .onboarding-actions .checkout-button { margin-left: auto; }

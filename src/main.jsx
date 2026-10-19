@@ -12,6 +12,7 @@ import './visualDepth.css'
 import './accountEntry.css'
 import './map/mapExperience.css'
 import './parcel/parcel.css'
+import './polish.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
