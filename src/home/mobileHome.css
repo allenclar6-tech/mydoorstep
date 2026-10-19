@@ -79,7 +79,9 @@
 
   .m-store { background: none; border: 0; color: var(--m-ink); cursor: pointer; display: flex; flex-direction: column; gap: 6px; padding: 0; scroll-snap-align: start; text-align: left; }
   .m-store-media { aspect-ratio: 16 / 10; background: #dfe8e2; border-radius: 16px; display: block; overflow: hidden; position: relative; width: 100%; }
-  .m-store-media img { height: 100%; object-fit: cover; width: 100%; }
+  /* Partners mostly upload logos, so show the whole image on white rather than cropping it. */
+  .m-store-media:has(img) { background: #fff; border: 1px solid var(--t-line); }
+  .m-store-media img { box-sizing: border-box; height: 100%; object-fit: contain; padding: 10px; width: 100%; }
   .m-store-initial { align-items: center; color: var(--m-forest); display: flex; font-size: 2.2rem; font-weight: 800; height: 100%; justify-content: center; }
   .m-store-closed { background: var(--t-forest-900); border-radius: 999px; bottom: 8px; color: #fff; font-size: .7rem; font-weight: 800; left: 8px; padding: 4px 9px; position: absolute; }
   .m-store-name { font-size: .95rem; font-weight: 800; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

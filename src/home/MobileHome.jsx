@@ -18,7 +18,7 @@ function StoreCard({ partner, onOpen }) {
     </span>
     <span className="m-store-name">{partner.name}</span>
     <span className="m-store-meta">
-      {partner.rating && <span className="m-store-rating"><Star size={12} fill="currentColor" aria-hidden="true" />{partner.rating}</span>}
+      {partner.rating > 0 && <span className="m-store-rating"><Star size={12} fill="currentColor" aria-hidden="true" />{partner.rating}</span>}
       {meta.length > 0 && <span>{meta.join(' · ')}</span>}
     </span>
   </button>

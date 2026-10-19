@@ -191,3 +191,13 @@ html body .spotlight-section, html body .home-offer { border-color: var(--t-fore
 
 /* Visually hidden text for screen readers (used by the phone home search label). */
 .sr-only { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+
+/* Featured kitchen: a contained panel like the others, with the partner image shown whole on white. */
+html body .spotlight-section { border: 1px solid var(--t-forest-950); border-radius: 24px; box-shadow: var(--t-shadow-lg); margin-left: auto; margin-right: auto; max-width: none; overflow: hidden; width: calc(min(1280px, 100%) - 11.2vw); }
+html body .spotlight-photo { align-items: center; background: var(--t-surface); display: flex; justify-content: center; min-height: 340px; padding: 32px; }
+html body .spotlight-photo img { height: auto; max-height: 300px; max-width: 100%; object-fit: contain; width: auto; }
+html body .restaurant-image img { object-fit: contain; }
+html body .restaurant-image:has(img) { background: var(--t-surface); }
+@media (max-width: 700px) {
+  html body .spotlight-section { width: calc(100% - 40px); }
+}
