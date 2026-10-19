@@ -201,3 +201,13 @@ html body .restaurant-image:has(img) { background: var(--t-surface); }
 @media (max-width: 700px) {
   html body .spotlight-section { width: calc(100% - 40px); }
 }
+
+/* Password recovery: plain mint backdrop and a solid card, matching the sign-in pages. */
+html body .account-recovery-page { background: var(--t-mint-100); }
+html body .recovery-card { background: var(--t-surface); border: 1px solid var(--t-mint-200); box-shadow: var(--t-shadow-lg); }
+html body .recovery-icon { background: var(--t-gold-400); box-shadow: none; color: var(--t-forest-800); transform: none; }
+
+/* Restaurant and store search bar: one compact white bar aligned with the cards below it. */
+html body .route-page > .discovery-toolbar { gap: 16px; margin: 28px auto 0; max-width: 958px; min-height: 0; padding: 12px 16px; }
+@media (max-width: 1000px) { html body .route-page > .discovery-toolbar { margin-left: 16px; margin-right: 16px; } }
+html body .discovery-toolbar .route-search { border: 1px solid var(--t-line); box-shadow: none; flex: 1 1 auto; margin: 0; }
