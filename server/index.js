@@ -30,6 +30,7 @@ import { fetchRoadRoutes } from './parcelService.js'
 import { applyTransferResult, createFinanceRouter } from './financeRoutes.js'
 import { createVerificationRouter } from './verificationRoutes.js'
 import { createDeliveryPricingRouter } from './deliveryPricingRoutes.js'
+import { resolveAccount } from './paystackPayouts.js'
 import { orderPricingSnapshot, quoteOrderDelivery } from './deliveryQuote.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -302,6 +303,7 @@ const paymentSettingsSchema = z.object({
     bankName: z.string().trim().max(120),
     accountName: z.string().trim().max(160),
     accountNumber: z.string().trim().max(24),
+    bankCode: z.string().trim().max(10).optional(),
     currency: z.literal('NGN'),
     instructions: z.string().trim().max(1000),
     expiryMinutes: z.number().int().min(5).max(10080).nullable(),
@@ -319,7 +321,7 @@ app.get('/api/payments/config', async (_request, response) => {
   }
 })
 
-app.get('/api/admin/payment-settings', requireUser, requireAdmin, async (_request, response) => {
+app.get('/api/admin/payment-settings', requireUser, requireAdmin, async (request, response) => {
   try {
     const settings = await getPaymentSettings()
     return response.json({
@@ -327,6 +329,11 @@ app.get('/api/admin/payment-settings', requireUser, requireAdmin, async (_reques
       paystack: {
         configured: Boolean(process.env.PAYSTACK_SECRET_KEY),
         mode: process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_live_') ? 'live' : process.env.PAYSTACK_SECRET_KEY ? 'test' : 'not_configured',
+        publicKeyConfigured: Boolean(process.env.PAYSTACK_PUBLIC_KEY || process.env.VITE_PAYSTACK_PUBLIC_KEY),
+        webhookUrl: `https://${request.get('x-forwarded-host') || request.get('host')}/api/payments/webhook`,
+      },
+      transfers: {
+        waiting: await prisma.payment.count({ where: { method: 'BANK_TRANSFER', status: 'PENDING_VERIFICATION' } }),
       },
     })
   } catch {
@@ -339,15 +346,47 @@ app.patch('/api/admin/payment-settings', requireUser, requireAdmin, async (reque
   if (!result.success) return response.status(400).json({ error: 'INVALID_PAYMENT_SETTINGS', details: result.error.flatten() })
   const { bankTransfer } = result.data
   if (bankTransfer.enabled && !hasValidBankTransferConfig(bankTransfer)) return response.status(409).json({ error: 'BANK_TRANSFER_CONFIGURATION_REQUIRED', message: 'Bank name, account name, account number, NGN currency, and manual verification are required before enabling bank transfer.' })
+  bankTransfer.accountNumber = bankTransfer.accountNumber.replace(/\s/g, '')
+  // Nigerian (NUBAN) account numbers are exactly 10 digits. An 11-digit phone number is not an account number:
+  // customers' transfers to it fail, so it is refused rather than shown at checkout.
+  if (bankTransfer.enabled && !/^\d{10}$/.test(bankTransfer.accountNumber)) {
+    const phoneLike = /^0\d{10}$/.test(bankTransfer.accountNumber)
+    return response.status(409).json({ error: 'ACCOUNT_NUMBER_INVALID', message: phoneLike ? `Account numbers have 10 digits. For OPay, PalmPay and Moniepoint it is usually your phone number without the first 0 (${bankTransfer.accountNumber.slice(1)}).` : 'Nigerian account numbers have exactly 10 digits.' })
+  }
+  let verification = { accountVerifiedAt: null, nameCorrected: false }
+  if (bankTransfer.enabled && bankTransfer.bankCode && process.env.PAYSTACK_SECRET_KEY) {
+    try {
+      const resolved = await resolveAccount({ accountNumber: bankTransfer.accountNumber, bankCode: bankTransfer.bankCode })
+      verification = { accountVerifiedAt: new Date().toISOString(), nameCorrected: resolved.accountName.trim().toUpperCase() !== bankTransfer.accountName.trim().toUpperCase() }
+      bankTransfer.accountName = resolved.accountName.trim()
+    } catch (error) {
+      if (error?.code === 'ACCOUNT_NOT_FOUND' || error?.code === 'ACCOUNT_NUMBER_INVALID' || error?.code === 'BANK_INVALID') return response.status(409).json({ error: error.code, message: `${error.message} Customers would not be able to pay into it.` })
+      // Paystack unreachable: save anyway, unverified, so a Paystack outage never blocks the admin.
+    }
+  }
+  result.data.bankTransfer = { ...bankTransfer, accountVerifiedAt: verification.accountVerifiedAt }
   try {
     const settings = await prisma.$transaction(async (transaction) => {
       const saved = await transaction.platformSetting.upsert({ where: { key: 'payment_settings' }, update: { value: result.data }, create: { key: 'payment_settings', value: result.data } })
       await transaction.auditLog.create({ data: { actorId: request.user.id, action: 'UPDATE_PAYMENT_SETTINGS', entityType: 'PlatformSetting', entityId: saved.id, metadata: { bankTransferEnabled: bankTransfer.enabled, automaticVerification: false, cashOnDeliveryEnabled: result.data.cashOnDelivery.enabled } } })
       return saved.value
     })
-    return response.json({ settings })
+    return response.json({ settings, nameCorrected: verification.nameCorrected })
   } catch {
     return response.status(503).json({ error: 'PAYMENT_CONFIGURATION_UNAVAILABLE' })
+  }
+})
+
+// Looks up the name the bank holds for an account, so the admin can check it before customers pay into it.
+app.post('/api/admin/payment-settings/resolve-account', requireUser, requireAdmin, rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false }), async (request, response) => {
+  const result = z.object({ bankCode: z.string().trim().min(3).max(10), accountNumber: z.string().trim().regex(/^\d{10}$/, 'Account numbers have 10 digits.') }).safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_ACCOUNT', message: result.error.issues[0]?.message })
+  if (!process.env.PAYSTACK_SECRET_KEY) return response.status(503).json({ error: 'PAYSTACK_NOT_CONFIGURED', message: 'Paystack is needed to check account names.' })
+  try {
+    const resolved = await resolveAccount(result.data)
+    return response.json({ accountName: resolved.accountName })
+  } catch (error) {
+    return response.status(error?.code === 'ACCOUNT_NOT_FOUND' ? 404 : 503).json({ error: error?.code || 'ACCOUNT_LOOKUP_UNAVAILABLE', message: error?.code === 'ACCOUNT_NOT_FOUND' ? error.message : 'The bank lookup is unavailable right now. Try again shortly.' })
   }
 })
 
@@ -1164,7 +1203,7 @@ app.get('/api/admin/bank-transfers', requireUser, requireAdmin, async (request, 
   const result = z.object({ status: z.enum(['PENDING_VERIFICATION', 'SUCCESSFUL', 'FAILED', 'EXPIRED', 'AMOUNT_MISMATCH']).optional() }).safeParse(request.query)
   if (!result.success) return response.status(400).json({ error: 'INVALID_BANK_TRANSFER_FILTER' })
   try {
-    const payments = await prisma.payment.findMany({ where: { method: 'BANK_TRANSFER', ...(result.data.status ? { status: result.data.status } : {}) }, include: { order: { include: { customer: { select: { firstName: true, lastName: true, email: true } } } }, parcelBooking: { select: { id: true, reference: true, status: true, customer: { select: { firstName: true, lastName: true, email: true } } } }, transactions: { orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' }, take: 100 })
+    const payments = await prisma.payment.findMany({ where: { method: 'BANK_TRANSFER', ...(result.data.status ? { status: result.data.status } : {}) }, include: { order: { include: { customer: { select: { firstName: true, lastName: true, email: true, phone: true } }, restaurant: { select: { name: true } } } }, parcelBooking: { select: { id: true, reference: true, status: true, customer: { select: { firstName: true, lastName: true, email: true, phone: true } } } }, transactions: { orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' }, take: 100 })
     return response.json({ payments })
   } catch {
     return response.status(503).json({ error: 'BANK_TRANSFER_SERVICE_UNAVAILABLE' })
@@ -1190,7 +1229,10 @@ app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdm
       return response.json({ confirmed: true })
     }
     await prisma.$transaction(async (transaction) => {
-      await transaction.payment.update({ where: { id: payment.id }, data: { status: 'SUCCESSFUL', verifiedAt: new Date(), providerTransactionId: result.data.bankTransactionId } })
+      const claimed = await transaction.payment.updateMany({ where: { id: payment.id, status: 'PENDING_VERIFICATION' }, data: { status: 'SUCCESSFUL', verifiedAt: new Date(), providerTransactionId: result.data.bankTransactionId } })
+      if (claimed.count !== 1) throw Object.assign(new Error('Already handled'), { code: 'ALREADY_HANDLED' })
+      const current = await transaction.order.findUnique({ where: { id: payment.orderId }, select: { status: true } })
+      if (!current || !isOrderPayable(current.status)) throw Object.assign(new Error('Order closed'), { code: 'ORDER_NOT_PAYABLE' })
       await transaction.order.update({ where: { id: payment.orderId }, data: { status: 'PAID', paidAt: new Date() } })
       await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
       await transaction.transaction.create({ data: { paymentId: payment.id, type: 'BANK_TRANSFER_MANUALLY_CONFIRMED', amountMinor: payment.amountMinor, providerReference: result.data.bankTransactionId, metadata: { note: result.data.note, transferReference: payment.reference } } })
@@ -1201,7 +1243,34 @@ app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdm
     })
     return response.json({ confirmed: true })
   } catch (error) {
-    if (error.code === 'P2002') return response.status(409).json({ error: 'BANK_TRANSACTION_ALREADY_RECORDED' })
+    if (error.code === 'P2002') return response.status(409).json({ error: 'BANK_TRANSACTION_ALREADY_RECORDED', message: 'That bank transaction ID was already used for another payment.' })
+    if (error.code === 'ALREADY_HANDLED') return response.status(409).json({ error: 'BANK_TRANSFER_NOT_PENDING_VERIFICATION', message: 'Someone already handled this transfer. Refresh the list.' })
+    if (error.code === 'ORDER_NOT_PAYABLE') return response.status(409).json({ error: 'ORDER_NOT_PAYABLE', message: 'This order was cancelled. Refund the customer from your bank app instead.' })
+    return response.status(503).json({ error: 'BANK_TRANSFER_SERVICE_UNAVAILABLE' })
+  }
+})
+
+// The money never arrived (or the wrong amount did): close the payment and the order, and tell the customer.
+app.post('/api/admin/bank-transfers/:paymentId/reject', requireUser, requireAdmin, async (request, response) => {
+  const result = z.object({ reason: z.enum(['NOT_RECEIVED', 'WRONG_AMOUNT']), note: z.string().trim().min(3).max(1000) }).safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_BANK_TRANSFER_REJECTION', message: 'Add a short note about what you checked.' })
+  try {
+    const payment = await prisma.payment.findFirst({ where: { id: request.params.paymentId, method: 'BANK_TRANSFER' }, include: { order: { select: { id: true, orderNumber: true, customerId: true } }, parcelBooking: { select: { id: true, reference: true, customerId: true } } } })
+    if (!payment) return response.status(404).json({ error: 'BANK_TRANSFER_NOT_FOUND' })
+    const wrongAmount = result.data.reason === 'WRONG_AMOUNT'
+    await prisma.$transaction(async (transaction) => {
+      const claimed = await transaction.payment.updateMany({ where: { id: payment.id, status: 'PENDING_VERIFICATION' }, data: { status: wrongAmount ? 'AMOUNT_MISMATCH' : 'FAILED' } })
+      if (claimed.count !== 1) throw Object.assign(new Error('Already handled'), { code: 'ALREADY_HANDLED' })
+      if (payment.orderId) await transaction.order.updateMany({ where: { id: payment.orderId, status: 'PENDING_PAYMENT' }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: wrongAmount ? 'Bank transfer amount did not match' : 'Bank transfer not received' } })
+      await transaction.transaction.create({ data: { paymentId: payment.id, type: wrongAmount ? 'BANK_TRANSFER_AMOUNT_MISMATCH' : 'BANK_TRANSFER_NOT_RECEIVED', amountMinor: payment.amountMinor, metadata: { note: result.data.note, transferReference: payment.reference } } })
+      await transaction.auditLog.create({ data: { actorId: request.user.id, action: wrongAmount ? 'BANK_TRANSFER_AMOUNT_MISMATCH' : 'BANK_TRANSFER_NOT_RECEIVED', entityType: 'Payment', entityId: payment.id, metadata: { note: result.data.note } } })
+      const customerId = payment.order?.customerId || payment.parcelBooking?.customerId
+      const label = payment.order?.orderNumber || payment.parcelBooking?.reference || payment.reference
+      if (customerId) await transaction.notification.create({ data: { userId: customerId, type: 'PAYMENT', title: wrongAmount ? 'Transfer amount didn’t match' : 'We couldn’t find your transfer', body: wrongAmount ? `The amount we received for ${label} didn’t match the order total, so the order was closed. DOORSTEP support will contact you about returning your money.` : `We couldn’t find a transfer for ${label} with reference ${payment.reference}, so the order was closed. If you did pay, chat with DOORSTEP Help and share your receipt.`, link: '/help' } })
+    })
+    return response.json({ rejected: true })
+  } catch (error) {
+    if (error.code === 'ALREADY_HANDLED') return response.status(409).json({ error: 'BANK_TRANSFER_NOT_PENDING_VERIFICATION', message: 'Someone already handled this transfer. Refresh the list.' })
     return response.status(503).json({ error: 'BANK_TRANSFER_SERVICE_UNAVAILABLE' })
   }
 })

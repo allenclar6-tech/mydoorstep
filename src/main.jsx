@@ -24,6 +24,7 @@ import './finance/finance.css'
 import './orders/orderActions.css'
 import './orders/pricing.css'
 import './admin/deliveryPricing.css'
+import './admin/paymentSettings.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
