@@ -54,7 +54,27 @@ services:
       - key: TWILIO_FROM_NUMBER
         sync: false
       - key: SMS_PROVIDER
-        value: twilio
+        sync: false
+      - key: TERMII_API_KEY
+        sync: false
+      - key: TERMII_BASE_URL
+        sync: false
+      - key: TERMII_SENDER_ID
+        sync: false
+      - key: TERMII_CHANNEL
+        value: dnd
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_AUTH_TEMPLATE
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: NINJA_SECRET_KEY
+        sync: false
+      - key: MAPBOX_PUBLIC_TOKEN
+        sync: false
       - key: PRIVATE_UPLOAD_DIR
         value: /var/data/private-uploads
 

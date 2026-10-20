@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ArrowRight, Check, KeyRound, Mail } from 'lucide-react'
 import { PasswordField } from './PasswordField'
+import { apiBase } from './config/apiBase'
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 const recoveryMessage = (error) => ({
   EMAIL_VERIFICATION_NOT_CONFIGURED: 'Password recovery email is not configured. Please contact support.',

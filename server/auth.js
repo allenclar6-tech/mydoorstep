@@ -15,9 +15,14 @@ export async function hashPassword(password) {
   return `${salt}:${Buffer.from(derivedKey).toString('hex')}`
 }
 
+const DUMMY_HASH = '00000000000000000000000000000000:' + '0'.repeat(128)
+
 export async function verifyPassword(password, storedHash) {
-  const [salt, key] = storedHash.split(':')
+  // Accounts made with Google may have no password. Still run scrypt so the response time does not
+  // reveal whether an account (or a password) exists.
+  const [salt, key] = (storedHash || DUMMY_HASH).split(':')
   if (!salt || !key) return false
+  if (!storedHash) { await scrypt(String(password), salt, 64); return false }
   const derivedKey = await scrypt(password, salt, 64)
   const expected = Buffer.from(key, 'hex')
   return expected.length === derivedKey.length && timingSafeEqual(expected, derivedKey)

@@ -4,8 +4,8 @@ import { SessionSignOutButton } from './authControls'
 import './partnerAccount.css'
 import { PartnerImageUpload } from './PartnerImageUpload'
 import { ProfileAvatar } from './ProfileAvatar'
+import { apiBase } from './config/apiBase'
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const sections = [['business', 'Business profile', Store], ['owner', 'Account details', UserCircle], ['operations', 'Store operations', Clock3], ['notifications', 'Notifications', Bell], ['support', 'Help & security', ShieldCheck]]
 
 async function request(path, options = {}) {

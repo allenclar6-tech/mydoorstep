@@ -29,6 +29,20 @@ enum ApplicationStatus {
   DEACTIVATED
 }
 
+enum BusinessRegistrationType {
+  REGISTERED
+  NOT_REGISTERED
+}
+
+enum BusinessVerificationStatus {
+  NOT_SUBMITTED
+  PENDING_REVIEW
+  VERIFIED
+  NON_REGISTERED
+  ACTION_REQUIRED
+  REJECTED
+}
+
 enum StoreType {
   RESTAURANT
   GROCERY
@@ -122,7 +136,7 @@ model User {
   id                String           @id @default(cuid())
   email             String           @unique
   phone             String?          @unique
-  passwordHash      String
+  passwordHash      String?
   role              UserRole
   status            UserStatus       @default(ACTIVE)
   firstName         String
@@ -151,6 +165,7 @@ model User {
   orders            Order[]          @relation("CustomerOrders")
   parcelBookings    ParcelBooking[]  @relation("CustomerParcels")
   savedCards        SavedCard[]
+  authIdentities    AuthIdentity[]
   cardVerifications CardVerification[]
   sessions          Session[]
   profileImageKey   String?
@@ -242,6 +257,11 @@ model RestaurantApplication {
   identityType   String?
   identityNumber String?
   deliveryPreference String?
+  registrationType   BusinessRegistrationType?
+  businessVerificationStatus BusinessVerificationStatus @default(NOT_SUBMITTED)
+  businessVerificationNote   String?
+  businessVerifiedAt         DateTime?
+  businessVerifiedById       String?
   documents      RestaurantDocument[]
 }
 
@@ -292,6 +312,7 @@ model Rider {
   availabilityLongitude  Decimal?  @db.Decimal(10, 7)
   availabilityAccuracyM  Int?
   availabilityLocatedAt  DateTime?
+  availabilityChangedAt  DateTime?
 
   @@index([restaurantId, status])
   @@index([status, availability])
@@ -313,6 +334,7 @@ model RiderApplication {
   preferredArea     String?
   typicalAvailability String?
   vehicleOwnership String?
+  identityCheckConsentAt DateTime?
   identityDocuments RiderIdentityDocument[]
 }
 
@@ -854,4 +876,37 @@ model CardVerification {
   completedAt  DateTime?
 
   @@index([userId, createdAt])
+}
+
+/// A way of signing in that is not the account password (currently Google). `subject` is the provider's
+/// stable user id (Google `sub`), never the email.
+model AuthIdentity {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider   String
+  subject    String
+  email      String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@unique([provider, subject])
+  @@unique([userId, provider])
+}
+
+/// Result of an automated registry check (e.g. CAC lookup, NIN match) run by an admin. Stores the verdict and
+/// a minimal summary only, never the full registry record.
+model VerificationCheck {
+  id                String   @id @default(cuid())
+  subjectType       String
+  subjectId         String
+  provider          String
+  checkType         String
+  outcome           String
+  summary           Json?
+  providerReference String?
+  actorId           String?
+  createdAt         DateTime @default(now())
+
+  @@index([subjectType, subjectId, createdAt])
 }

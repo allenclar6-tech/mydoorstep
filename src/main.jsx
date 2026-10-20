@@ -18,6 +18,7 @@ import './home/mobileHome.css'
 import './mobile/mobileApp.css'
 import './mobile/authMobile.css'
 import './notifications/notifications.css'
+import './auth/altSignIn.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

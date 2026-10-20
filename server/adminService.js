@@ -1,5 +1,6 @@
 import { prisma } from './prisma.js'
 import { notifyUsers, restaurantTeamIds } from './notify.js'
+import { riderApprovalBlocker } from './businessVerification.js'
 
 export function requireAdmin(request, response, next) {
   if (request.user?.role !== 'ADMIN') return response.status(403).json({ error: 'ADMIN_ROLE_REQUIRED' })
@@ -22,6 +23,11 @@ export async function reviewApplication({ type, id, status, note, actorId }) {
 
     const application = await transaction.riderApplication.findUnique({ where: { id }, include: { rider: true, identityDocuments: true } })
     if (!application) throw serviceError('APPLICATION_NOT_FOUND', 'Rider application was not found.', 404)
+    if (status === 'APPROVED') {
+      const idMatch = await transaction.verificationCheck.count({ where: { subjectType: 'RIDER_APPLICATION', subjectId: id, checkType: 'ID_VERIFY', outcome: 'MATCH' } })
+      const blocker = riderApprovalBlocker({ documentCount: application.identityDocuments.length, hasIdMatch: idMatch > 0 })
+      if (blocker) throw serviceError('RIDER_VERIFICATION_INCOMPLETE', blocker, 409)
+    }
     const updated = await transaction.riderApplication.update({ where: { id }, data: { status, reviewNote: note, reviewedAt: new Date(), reviewedById: actorId } })
     await transaction.applicationReview.create({ data: { applicationType: 'RIDER', applicationId: id, previousStatus: application.status, status, note, actorId } })
     await transaction.rider.update({ where: { id: application.riderId }, data: { status } })

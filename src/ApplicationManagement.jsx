@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Check, FileText } from 'lucide-react'
+import { apiBase } from './config/apiBase'
+import { BUSINESS_STATUS, VerificationPanel } from './admin/VerificationPanel'
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 function AdminIntro({ eyebrow, title }) {
   return <div className="admin-intro"><div><span className="section-kicker">{eyebrow}</span><h2>{title}</h2></div></div>
@@ -111,7 +112,7 @@ export function ApplicationManagement({ kind, type }) {
         return <article className="admin-application-card" key={application.id}>
           <div className="admin-application-heading">
             <div className="admin-person"><span>{name.charAt(0)}</span><div><strong>{name}</strong><small>{isBusiness ? `${businessLabel} · ${business?.city?.name || 'Service area pending'}` : `Rider · ${application.preferredArea || 'Service area not provided'}`}</small></div></div>
-            <span className={`admin-pill ${application.status === 'NEEDS_INFORMATION' ? 'pending' : 'active'}`}>{application.status.replaceAll('_', ' ')}</span>
+            <span className="admin-pill-group">{isBusiness && <span className={`admin-pill ${(BUSINESS_STATUS[application.businessVerificationStatus] || BUSINESS_STATUS.NOT_SUBMITTED)[1]}`}>{(BUSINESS_STATUS[application.businessVerificationStatus] || BUSINESS_STATUS.NOT_SUBMITTED)[0]}</span>}<span className={`admin-pill ${application.status === 'NEEDS_INFORMATION' ? 'pending' : 'active'}`}>{application.status.replaceAll('_', ' ')}</span></span>
           </div>
           <dl className="admin-application-details">
             <div><dt>Applicant</dt><dd>{isBusiness ? application.ownerName : name}</dd></div>
@@ -126,6 +127,7 @@ export function ApplicationManagement({ kind, type }) {
             <div><dt>Submitted</dt><dd>{new Date(application.submittedAt).toLocaleString('en-NG')}</dd></div>
           </dl>
           <div className="admin-application-documents"><strong>Private documents</strong>{documents.length ? documents.map((document) => <button type="button" key={document.id} onClick={() => downloadDocument(application, document)}><FileText size={14} /> {document.type.replaceAll('_', ' ').toLowerCase()}</button>) : <small>No files supplied</small>}</div>
+          <VerificationPanel type={type} application={application} token={token} onChanged={() => setRevision((current) => current + 1)} />
           <label className="admin-review-note">Review note<textarea value={notes[application.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [application.id]: event.target.value }))} maxLength="1000" rows="2" placeholder="Explain missing information or the reason for rejection." /></label>
           <div className="admin-application-actions">
             <button className="row-more" onClick={() => review(application.id, 'NEEDS_INFORMATION')}>Request information</button>

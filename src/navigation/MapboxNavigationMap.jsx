@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { routeColors } from './navigation'
-import { createMapController } from '../map/mapCore'
+import { createMapController, useMapToken } from '../map/mapCore'
 import { readPreferredStyleId, styleById } from '../map/mapStyles'
 import { LayersControl } from '../map/LayersControl'
 
-const token = import.meta.env.VITE_MAP_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
 const coordinates = (point) => [point.longitude, point.latitude]
 
 export default function MapboxNavigationMap({ origin, stops, routes, selectedRoute, position, following, overviewKey, onSelectRoute, onPick, onReady }) {
@@ -14,6 +13,7 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
   const mapRef = useRef(null)
   const callbacks = useRef({ onSelectRoute, onPick, onReady })
   callbacks.current = { onSelectRoute, onPick, onReady }
+  const { token, resolved: tokenResolved } = useMapToken()
   const [state, setState] = useState('loading')
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
@@ -23,8 +23,9 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
 
   useEffect(() => {
     setState('loading')
+    if (!token && !tokenResolved) return undefined
     if (!token || !mapboxgl.supported()) {
-      setError(!token ? 'The public Mapbox token is missing from this build.' : 'Interactive maps are not supported by this browser. Try a browser with WebGL enabled.')
+      setError(!token ? 'The map is not set up yet.' : 'Interactive maps are not supported by this browser. Try a browser with WebGL enabled.')
       setState('error')
       callbacks.current.onReady(false)
       return undefined
@@ -54,7 +55,7 @@ export default function MapboxNavigationMap({ origin, stops, routes, selectedRou
     const observer = new ResizeObserver(() => map.resize())
     observer.observe(container.current)
     return () => { observer.disconnect(); callbacks.current.onReady(false); mapRef.current = null; mapController.destroy(); setController(null); map.remove() }
-  }, [attempt])
+  }, [attempt, token, tokenResolved])
 
   useEffect(() => {
     const map = mapRef.current

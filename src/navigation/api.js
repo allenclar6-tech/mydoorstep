@@ -1,4 +1,3 @@
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 const messages = {
   NAVIGATION_NOT_CONFIGURED: 'Google navigation is not configured on the API. The site owner must set the server-side Google navigation key.',
@@ -34,7 +33,10 @@ export async function navigationRequest(path, { signal, body } = {}) {
 
 export const routePoint = ({ latitude, longitude }) => ({ latitude, longitude })
 import { createMapboxNavigationClient } from './mapboxApi'
+import { loadMapToken } from '../map/mapConfig'
+import { apiBase } from '../config/apiBase'
 
 export const navigationProvider = import.meta.env.VITE_NAVIGATION_PROVIDER === 'google' ? 'google' : 'mapbox'
 export const navigationProviderName = navigationProvider === 'google' ? 'Google' : 'Mapbox'
-const mapboxRequest = createMapboxNavigationClient(import.meta.env.VITE_MAP_PUBLIC_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN)
+// Built per call so a public token loaded at runtime (see map/mapConfig) is picked up.
+const mapboxRequest = async (path, options) => createMapboxNavigationClient(await loadMapToken())(path, options)

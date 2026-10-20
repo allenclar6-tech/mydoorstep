@@ -510,7 +510,7 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
       const riderId = request.user.rider.id
       const since = startOfLagosDay()
       const [rider, completedToday, active, completedTotal, payoutsToday] = await Promise.all([
-        prisma.rider.findUnique({ where: { id: riderId }, select: { status: true, availability: true, vehicleType: true, ratingAverage: true, ratingCount: true, availabilityLocatedAt: true } }),
+        prisma.rider.findUnique({ where: { id: riderId }, select: { status: true, availability: true, vehicleType: true, ratingAverage: true, ratingCount: true, availabilityLocatedAt: true, availabilityChangedAt: true } }),
         prisma.delivery.count({ where: { riderId, status: 'DELIVERED', deliveredAt: { gte: since } } }),
         prisma.delivery.count({ where: { riderId, status: { in: [...activeLocationStatuses] } } }),
         prisma.delivery.count({ where: { riderId, status: 'DELIVERED' } }),
@@ -518,6 +518,7 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
       ])
       return response.json({
         availability: rider.availability,
+        onlineSince: rider.availability === 'ONLINE' ? rider.availabilityChangedAt : null,
         approval: rider.status,
         vehicleType: rider.vehicleType,
         rating: rider.ratingCount > 0 ? { average: Number(rider.ratingAverage), count: rider.ratingCount } : null,

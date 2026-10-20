@@ -60,3 +60,33 @@ test('card verification saves the card once and refunds the charge', async () =>
   const wrongAmount = await completeCardVerification(prisma, { ...state.verification, status: 'PENDING', id: 'v2' }, { ...verified, amount: 1 }, 'webhook', { fetchImpl })
   assert.equal(wrongAmount.status, 'MISMATCH')
 })
+
+test('saved-card charges report Paystack outcomes as returned and never assume success', async () => {
+  const { chargeSavedCard } = await import('../server/cardService.js')
+  const card = { email: 'a@b.co', authorizationCipher: encryptToken('AUTH_abc') }
+  const calls = []
+  const reply = (status, body) => async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: status === 200, status, json: async () => body } }
+
+  const declined = await chargeSavedCard(card, { amountMinor: 5000, reference: 'R1', metadata: {} }, { fetchImpl: reply(200, { status: true, data: { status: 'failed', reference: 'R1', amount: 5000, currency: 'NGN', gateway_response: 'Insufficient Funds' } }) })
+  assert.equal(declined.status, 'failed')
+  assert.equal(declined.gatewayResponse, 'Insufficient Funds')
+  assert.equal(calls[0].url, 'https://api.paystack.co/transaction/charge_authorization')
+  assert.equal(calls[0].body.authorization_code, 'AUTH_abc', 'token is decrypted only for the Paystack call')
+  assert.equal(calls[0].body.email, 'a@b.co', 'charges use the email the authorization was created with')
+
+  await assert.rejects(chargeSavedCard(card, { amountMinor: 5000, reference: 'R2', metadata: {} }, { fetchImpl: reply(400, { status: false, message: 'Invalid authorization' }) }), { code: 'SAVED_CARD_CHARGE_REJECTED' })
+  await assert.rejects(chargeSavedCard(card, { amountMinor: 5000, reference: 'R3', metadata: {} }, { fetchImpl: async () => { throw new Error('network down') } }), { code: 'PAYMENT_PROVIDER_UNAVAILABLE' })
+  await assert.rejects(chargeSavedCard({ ...card, authorizationCipher: 'removed' }, { amountMinor: 5000, reference: 'R4', metadata: {} }, { fetchImpl: reply(200, {}) }), { code: 'SAVED_CARD_UNREADABLE' }, 'a removed card cannot be charged')
+})
+
+test('removing a card retires the Paystack authorization and refunds report failures honestly', async () => {
+  const { deactivateAuthorization, refundTransaction } = await import('../server/cardService.js')
+  const card = { authorizationCipher: encryptToken('AUTH_xyz') }
+  let sent = null
+  assert.equal(await deactivateAuthorization(card, { fetchImpl: async (url, init) => { sent = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ status: true }) } } }), true)
+  assert.equal(sent.url, 'https://api.paystack.co/customer/deactivate_authorization')
+  assert.equal(sent.body.authorization_code, 'AUTH_xyz')
+  assert.equal(await deactivateAuthorization(card, { fetchImpl: async () => { throw new Error('down') } }), false)
+  assert.equal(await refundTransaction('R1', { fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ status: false }) }) }), 'failed')
+  assert.equal(await refundTransaction('R1', { fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: true, data: { status: 'pending' } }) }) }), 'pending')
+})

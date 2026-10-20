@@ -1,4 +1,5 @@
-export const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+import { apiBase } from '../config/apiBase'
+export { apiBase }
 
 export class ApiError extends Error {
   constructor(code, message, status, body) { super(message); this.code = code; this.status = status; this.body = body }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { apiBase } from '../config/apiBase'
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const TERMINAL = new Set(['DELIVERED', 'CANCELLED'])
 
 /**

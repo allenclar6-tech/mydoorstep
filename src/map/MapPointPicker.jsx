@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { Bookmark, Crosshair, HelpCircle, LocateFixed, Search, Trash2, X } from 'lucide-react'
-import { createDoorstepMap, describeMapError, featureOf, lineOverlay, mapToken, SAPELE_CENTER } from './mapCore'
+import { createDoorstepMap, describeMapError, featureOf, lineOverlay, SAPELE_CENTER, useMapToken } from './mapCore'
 import { LayersControl } from './LayersControl'
 import { apiBase, describeGeolocationError, fetchDrivingRoutes, formatDistance, formatDuration, getDevicePosition, resolveGooglePlace, reverseGeocode, searchAddresses } from './addressSearch'
 
@@ -93,8 +93,13 @@ export function MapPointPicker({
   routeSelectionRef.current = { selectedRouteId, onSelectRoute }
   const setActiveKey = (key) => { setInternalActive(key); onActiveKeyChange?.(key) }
   const activeTarget = targets.find((target) => target.key === activeKey) || targets[0]
-  const [mapState, setMapState] = useState(mapToken ? 'loading' : 'no-token')
-  const [mapProblem, setMapProblem] = useState(mapToken ? '' : 'The interactive map is not configured for this build (missing public Mapbox token). You can still search for an address or use GPS.')
+  const { token: mapToken, resolved: tokenResolved } = useMapToken()
+  const [mapState, setMapState] = useState('loading')
+  const [mapProblem, setMapProblem] = useState('')
+  useEffect(() => {
+    if (mapToken) { setMapState((state) => state === 'no-token' ? 'loading' : state); setMapProblem((problem) => problem.startsWith('The map is not set up') ? '' : problem) }
+    else if (tokenResolved) { setMapState('no-token'); setMapProblem('The map is not set up yet. You can still search for an address or use GPS.') }
+  }, [mapToken, tokenResolved])
   const [controller, setController] = useState(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -169,7 +174,7 @@ export function MapPointPicker({
       mapRef.current = null
       controllerRef.current = null
     }
-  }, [])
+  }, [mapToken])
 
   // ------------------------------ markers ----------------------------------
   useEffect(() => {
@@ -235,7 +240,7 @@ export function MapPointPicker({
         })
     }, 250)
     return () => { window.clearTimeout(timer); controller.abort() }
-  }, [routeKey])
+  }, [routeKey, mapToken])
 
   useEffect(() => {
     const controllerNow = controllerRef.current

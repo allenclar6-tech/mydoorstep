@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { createDoorstepMap, describeMapError, featureOf, lineOverlay, mapToken, SAPELE_CENTER } from './map/mapCore'
+import { createDoorstepMap, describeMapError, featureOf, lineOverlay, mapToken as currentMapToken, SAPELE_CENTER, useMapToken } from './map/mapCore'
 import { LayersControl } from './map/LayersControl'
 import { fetchDrivingRoutes, formatDuration } from './map/addressSearch'
 
@@ -16,6 +16,7 @@ function markerElement(className, label) {
 }
 
 async function geocodeAddress(address) {
+  const mapToken = currentMapToken
   if (!address || !mapToken) return null
   const response = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(`${address}, Nigeria`)}&country=ng&limit=1&access_token=${encodeURIComponent(mapToken)}`)
   if (!response.ok) throw new Error(`Address lookup failed with ${response.status}`)
@@ -51,10 +52,12 @@ export function DeliveryTrackingMap({ tracking, connection }) {
   const markers = useRef({})
   const lastEtaRef = useRef({ at: 0, from: null })
   const [controller, setController] = useState(null)
-  const [mapState, setMapState] = useState(mapToken ? 'loading' : 'unavailable')
+  const { token: mapToken, resolved: tokenResolved } = useMapToken()
+  const [mapState, setMapState] = useState('loading')
   const [routeInfo, setRouteInfo] = useState('')
   const [riderEta, setRiderEta] = useState(null)
-  const [mapError, setMapError] = useState(mapToken ? '' : 'Map view is not configured for this build. Your delivery status updates still work.')
+  const [mapError, setMapError] = useState('')
+  useEffect(() => { if (!mapToken && tokenResolved) { setMapState('unavailable'); setMapError('The map is not set up yet. Your delivery status updates still work.') } }, [mapToken, tokenResolved])
   const [now, setNow] = useState(Date.now())
 
   const isParcel = tracking?.kind === 'parcel' || Boolean(tracking?.parcel)
@@ -96,7 +99,7 @@ export function DeliveryTrackingMap({ tracking, connection }) {
       mapRef.current = null
       controllerRef.current = null
     }
-  }, [])
+  }, [mapToken])
 
   const setMarker = (key, position, className, label) => {
     const map = mapRef.current

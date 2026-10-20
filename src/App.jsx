@@ -10,6 +10,7 @@ import { MobileHome } from './home/MobileHome'
 import { NotificationBell } from './notifications/NotificationCenter'
 import { readConfirmedLocation } from './location'
 import { accountPathFor, loginPathFor, signOut as endSession } from './services/authService'
+import { apiBase } from './config/apiBase'
 
 function AccountAccessGate({ children }) {
   const [state, setState] = useState('loading')
@@ -39,7 +40,6 @@ const AdminPortal = lazy(() => import('./adminPages').then((module) => ({ defaul
 const workspaceFallback = <main className="route-page" role="status">Loading…</main>
 const currentPath = () => window.location.pathname.replace(/\/$/, '') || '/'
 const partnerInitials = (name = '') => name.replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter((word) => word && !/^the$/i.test(word)).slice(0, 2).map((word) => word[0]).join('').toUpperCase() || 'D'
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 function HeaderSignOut() { return <button className="header-signout" aria-label="Sign out" title="Sign out" onClick={() => endSession({ apiBase })}><LogOut size={16} /></button> }
 

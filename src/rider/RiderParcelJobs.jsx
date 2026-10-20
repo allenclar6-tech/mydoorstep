@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, MapPin, Navigation, Package, Phone, X } from 'lucide-react'
 import { formatDistance, formatDuration } from '../map/addressSearch'
+import { apiBase } from '../config/apiBase'
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const auth = () => { try { return { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` } } catch { return {} } }
 
 async function call(path, { method = 'GET', body } = {}) {

@@ -2,7 +2,7 @@ import mapboxgl from 'mapbox-gl'
 import { describeStyleStatus, readPreferredStyleId, savePreferredStyleId, styleById } from './mapStyles'
 import { mapToken, SAPELE_CENTER } from './mapConfig'
 
-export { mapToken, SAPELE_CENTER }
+export { loadMapToken, mapToken, SAPELE_CENTER, useMapToken } from './mapConfig'
 
 export function describeMapError(event) {
   const status = event?.error?.status ?? event?.status

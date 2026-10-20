@@ -3,8 +3,8 @@ import { Bell, Bike, Check, Headphones, MapPin, ShieldCheck, UserCircle } from '
 import { SessionSignOutButton } from './authControls'
 import { PartnerImageUpload } from './PartnerImageUpload'
 import './riderAccount.css'
+import { apiBase } from './config/apiBase'
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const sections = [['profile', 'Account profile', UserCircle], ['rider', 'Rider record', Bike], ['notifications', 'Notifications', Bell], ['support', 'Help & security', ShieldCheck]]
 
 async function request(path, options = {}) {

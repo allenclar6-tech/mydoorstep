@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { UserCircle } from 'lucide-react'
+import { apiBase } from './config/apiBase'
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 export function ProfileAvatar({ className = '', size = 24 }) {
   const [photoUrl, setPhotoUrl] = useState(null)

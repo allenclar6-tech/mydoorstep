@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { Bell, BellRing, Bike, Check, CheckCheck, ChevronRight, CreditCard, MessageCircle, ShieldCheck, ShoppingBag, Tag, UserCheck, X } from 'lucide-react'
+import { apiBase } from '../config/apiBase'
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const POLL_MS = 20_000
 const PAGE_SIZE = 20
 

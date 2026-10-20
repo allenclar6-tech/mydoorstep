@@ -1,7 +1,8 @@
-import { mapToken, SAPELE_CENTER } from './mapConfig'
+import { loadMapToken, SAPELE_CENTER } from './mapConfig'
 import { sapeleDeliveryDirectory } from '../data'
 
-export const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+import { apiBase } from '../config/apiBase'
+export { apiBase }
 
 export class SearchError extends Error {
   constructor(code, message) { super(message); this.code = code }
@@ -29,6 +30,7 @@ const statusError = (status, label) => status === 429
  * if neither provider knows a place, the caller is told so.
  */
 export async function searchAddresses(query, { signal, proximity = SAPELE_CENTER } = {}) {
+  const mapToken = await loadMapToken()
   const q = nigeriaQuery(query.trim())
   const [mapboxResult, googleResult, poiResult] = await Promise.allSettled([
     mapToken
@@ -91,6 +93,7 @@ export async function resolveGooglePlace(placeId) {
 }
 
 export async function reverseGeocode({ latitude, longitude }) {
+  const mapToken = await loadMapToken()
   if (!mapToken) return null
   const response = await fetch(`https://api.mapbox.com/search/geocode/v6/reverse?longitude=${encodeURIComponent(longitude)}&latitude=${encodeURIComponent(latitude)}&language=en&access_token=${encodeURIComponent(mapToken)}`)
   if (!response.ok) throw statusError(response.status, 'Address lookup')
@@ -100,6 +103,7 @@ export async function reverseGeocode({ latitude, longitude }) {
 
 /** Road routes for on-map preview only. Prices are always computed again by the DOORSTEP server. */
 export async function fetchDrivingRoutes(origin, destination, { alternatives = true, signal } = {}) {
+  const mapToken = await loadMapToken()
   if (!mapToken) throw new SearchError('CONFIG', 'Route preview needs the public Mapbox token.')
   const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?alternatives=${alternatives}&geometries=geojson&overview=full&access_token=${encodeURIComponent(mapToken)}`, { signal })
   if (!response.ok) throw statusError(response.status, 'Routing')

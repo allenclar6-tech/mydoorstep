@@ -5,7 +5,7 @@ const point = ([longitude, latitude]) => ({ latitude, longitude })
 
 export function createMapboxNavigationClient(token, fetchImpl = (...args) => fetch(...args)) {
   async function get(path, parameters, signal) {
-    if (!token || !token.startsWith('pk.')) throw new Error('Navigation needs the existing public Mapbox token. Configure VITE_MAP_PUBLIC_TOKEN and rebuild.')
+    if (!token || !token.startsWith('pk.')) throw new Error('Navigation needs the existing public Mapbox token. Set MAPBOX_PUBLIC_TOKEN on the API (or VITE_MAP_PUBLIC_TOKEN at build time).')
     const url = new URL(`https://api.mapbox.com${path}`)
     Object.entries({ ...parameters, access_token: token }).forEach(([key, value]) => url.searchParams.set(key, String(value)))
     const response = await fetchImpl(url.toString(), { signal, cache: 'no-store' })

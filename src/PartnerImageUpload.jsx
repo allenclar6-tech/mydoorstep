@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera, Check, ImagePlus, X } from 'lucide-react'
 import './partnerMedia.css'
+import { apiBase } from './config/apiBase'
 
-export const partnerApiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+export const partnerApiBase = apiBase
 export const mediaSource = source => source?.startsWith('/api/') ? `${partnerApiBase}${source}` : source
 
 export function validatePartnerImage(file) {

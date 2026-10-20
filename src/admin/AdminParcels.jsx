@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
+import { apiBase } from '../config/apiBase'
 
-const apiBase = globalThis.location?.hostname === 'mydoorstep.com.co' ? '' : import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const adminHeaders = () => { try { return { Authorization: `Bearer ${localStorage.getItem('doorstep-admin-token')}` } } catch { return {} } }
 const toNaira = (minor) => (Number(minor || 0) / 100).toString()
 const toMinor = (naira) => Math.round(Number(naira || 0) * 100)
