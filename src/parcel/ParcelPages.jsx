@@ -6,6 +6,7 @@ import { useDeliveryTracking } from '../tracking/useDeliveryTracking'
 import { formatDistance, formatDuration } from '../map/addressSearch'
 import { api, ApiError, naira, newIdempotencyKey, statusLabels, statusOrder, token } from './api'
 import { cardLabel, SavedCardChoices, useSavedCards } from '../account/SavedCards'
+import { startOrderPayment } from '../orders/OrderActions'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 const DRAFT_KEY = 'doorstep-parcel-draft-v1'
@@ -547,6 +548,7 @@ export function PaymentResultPage() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const attempts = useRef(0)
+  const [retrying, setRetrying] = useState(false)
   const verify = useCallback(async () => {
     if (!reference) return
     setState('checking'); setError('')
@@ -569,7 +571,15 @@ export function PaymentResultPage() {
   }, [reference])
   useEffect(() => { if (token()) verify() }, [verify])
   if (!token()) return <SignInPrompt returnTo={`${window.location.pathname}${window.location.search}`} />
-  const target = result?.kind === 'parcel' ? `/parcels/${result.id}` : result?.kind === 'card' ? '/account/cards' : '/account/orders'
+  const target = result?.kind === 'parcel' ? `/parcels/${result.id}` : result?.kind === 'card' ? '/account/cards' : result?.id ? `/account/orders/${result.id}` : '/account/orders'
+  const orderNotPaid = result?.kind === 'order' && (state === 'failed' || state === 'incomplete')
+  const retryOrder = async () => {
+    setRetrying(true); setError('')
+    try { const outcome = await startOrderPayment(result.id); if (outcome.paid) { attempts.current = 0; verify() } } catch (retryError) { setError(retryError.message) } finally { setRetrying(false) }
+  }
+  // What the payment provider said (e.g. "Denied by Fraud System."), shown so the customer knows it wasn't DOORSTEP.
+  const said = result?.gatewayResponse && !/^(approved|successful)/i.test(result.gatewayResponse) ? ` It said: “${result.gatewayResponse}”.` : ''
+  const orderRetryText = `No money was taken.${said} This usually comes from the payment provider’s own checks (for example OPay or your bank), not from DOORSTEP. Try again and pick a different method on the Paystack page — card, bank transfer or USSD — or a different account.`
   const copy = {
     'card-saved': ['Card saved', `Your card is ready for faster checkout. The verification charge is being refunded${result?.refundStatus === 'failed' ? '; our team has been asked to refund it manually' : ''}.`],
     'card-not-reusable': ['This card can’t be saved', 'Paystack did not allow this card to be reused. The verification charge is being refunded. You can still pay with it on Paystack each time.'],
@@ -578,8 +588,8 @@ export function PaymentResultPage() {
     checking: ['Confirming your payment', 'Asking Paystack directly. Please don’t pay again while this is in progress.'],
     success: ['Payment confirmed', result?.kind === 'parcel' ? 'Your package booking is paid. Next, a rider will be assigned.' : 'Your order is paid and the restaurant has been notified.'],
     pending: ['Payment still processing', 'Paystack has not finished processing this payment. We will keep checking for a short while.'],
-    incomplete: ['Payment not completed', 'Paystack reports this payment was not completed. You can retry from your booking.'],
-    failed: ['Payment failed', 'No payment was taken for this attempt. You can retry from your booking.'],
+    incomplete: ['Payment not completed', result?.kind === 'order' ? orderRetryText : 'Paystack reports this payment was not completed. You can retry from your booking.'],
+    failed: ['Payment failed', result?.kind === 'order' ? orderRetryText : 'No payment was taken for this attempt. You can retry from your booking.'],
     error: ['We couldn’t confirm the payment yet', error || 'Try again in a moment. If you were charged, DOORSTEP will reconcile it from Paystack’s confirmation.'],
     missing: ['No payment reference', 'Open your bookings to see the latest payment status.'],
   }[state]
@@ -588,9 +598,11 @@ export function PaymentResultPage() {
     <h2>{copy[0]}</h2>
     <p>{copy[1]}</p>
     {reference && <p className="parcel-hint">Reference: {reference}</p>}
+    {orderNotPaid && error && <p className="parcel-hint" role="alert">{error}</p>}
     <div className="parcel-inline-actions">
       {(state === 'error' || state === 'pending') && <button className="quiet-button" type="button" onClick={verify}><RefreshCw size={14} /> Check again</button>}
-      <button className="primary-button" type="button" onClick={() => navigate(result ? target : '/parcels')}>{result?.kind === 'order' ? 'View my orders' : result?.kind === 'card' ? 'Payment methods' : 'View my booking'} <ArrowRight size={16} /></button>
+      {orderNotPaid && <button className="primary-button" type="button" disabled={retrying} onClick={retryOrder}><CreditCard size={16} /> {retrying ? 'Opening Paystack…' : 'Try paying again'}</button>}
+      <button className={orderNotPaid ? 'quiet-button' : 'primary-button'} type="button" onClick={() => navigate(result ? target : '/parcels')}>{result?.kind === 'order' ? 'View my order' : result?.kind === 'card' ? 'Payment methods' : 'View my booking'} <ArrowRight size={16} /></button>
     </div>
   </section></main>
 }

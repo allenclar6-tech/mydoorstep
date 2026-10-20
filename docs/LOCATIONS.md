@@ -15,8 +15,11 @@ A location affects delivery (fees, availability, minimums, closures, rider bonus
 4. switched on (`deliveryEnabled`).
 
 `deliveryBlockers()` in `server/locations.js` returns the reasons a location fails. The same check runs on the
-server when a reviewer tries to switch deliveries on, and `deliveryZones()` is the only source of zones for
-pricing (`server/deliveryQuote.js`). Nothing reads zones from the old pricing settings any more.
+server when a reviewer tries to switch deliveries on. `deliveryZones()` returns the approved zones.
+
+When an order is priced, the approved zones are **added to** the Sapele areas an admin places in
+**Delivery pricing › Sapele areas**. Those work as before: place a centre, set the radius, surcharge and rider
+bonus, and switch active. Closures and minimum orders come only from approved Location zones.
 
 ## Statuses
 
@@ -83,12 +86,11 @@ candidate row brings it back on the next deploy; reject it instead. The admin pa
 - A typed area name with no pin is priced from an approved zone's centre as an estimate only. The order still
   asks for an exact pin, and the rider app never navigates to a community centre. If there is no customer
   pin, it shows the landmark and says so.
-- **Delivery pricing › Areas** has "Only accept addresses inside approved zones". It is off by default. While
-  no zones are approved, turning it on would refuse every checkout, so leave it off until zones exist.
-- Agreed route prices now reference location slugs.
+- The "only accept addresses inside approved zones" rule (`coverage.requireApprovedZone`) is off and has no
+  switch in the current pricing page.
 
-**Changed behaviour:** area surcharges and bonuses that were typed into the old Delivery pricing › Areas list
-no longer apply. Only approved Location zones count. Distance pricing for pinned addresses is unchanged.
+The **Delivery pricing › Sapele areas** tab is unchanged: areas placed there still affect prices, and agreed
+route prices still use those areas.
 
 ## Quality checks
 

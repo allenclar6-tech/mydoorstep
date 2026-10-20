@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Bike, Calculator, Check, CloudRain, Handshake, Map as MapIcon, MapPin, Plus, Route, Save, Scale, Store, Trash2, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { MapPointPicker } from '../map/MapPointPicker'
-import { distanceTable, isPoint, priceDelivery } from '../../server/deliveryPricing.js'
+import { distanceTable, isPoint, priceDelivery, slug, starterZones } from '../../server/deliveryPricing.js'
+import { SAPELE_DIRECTORY } from '../../server/sapeleDirectory.js'
 
+const DIRECTORY_BY_ID = new Map(SAPELE_DIRECTORY.map((area) => [area.id, area]))
 
 // Admin › Delivery pricing. One screen to balance what customers pay for delivery, what riders earn, and what
 // DOORSTEP keeps — with a Glovo-style calculator that measures real Sapele routes.
@@ -111,11 +113,11 @@ function EndPicker({ label, value, onChange, businesses, zones, allowBusiness })
   return <fieldset className="dp-end"><legend>{label}</legend>
     <div className="dp-seg" role="radiogroup">
       {allowBusiness && <button type="button" role="radio" aria-checked={kind === 'business'} className={kind === 'business' ? 'is-on' : ''} onClick={() => onChange({ restaurantId: businesses.find((entry) => entry.pinned)?.id || '' })}><Store size={14} />Business</button>}
-      <button type="button" role="radio" aria-checked={kind === 'area'} className={kind === 'area' ? 'is-on' : ''} onClick={() => onChange({ zoneId: zones.find((zone) => zone.placed)?.id || zones[0]?.id || '' })}><MapPin size={14} />Area</button>
+      <button type="button" role="radio" aria-checked={kind === 'area'} className={kind === 'area' ? 'is-on' : ''} onClick={() => onChange({ zoneId: zones.find(isPoint)?.id || zones[0]?.id || '' })}><MapPin size={14} />Area</button>
       <button type="button" role="radio" aria-checked={kind === 'pin'} className={kind === 'pin' ? 'is-on' : ''} onClick={() => onChange({})}><MapIcon size={14} />Map pin</button>
     </div>
     {kind === 'business' && <select value={value.restaurantId} onChange={(event) => onChange({ restaurantId: event.target.value })}>{businesses.map((entry) => <option key={entry.id} value={entry.id} disabled={!entry.pinned}>{entry.name}{entry.pinned ? '' : ' (no map pin)'}</option>)}</select>}
-    {kind === 'area' && <select value={value.zoneId} onChange={(event) => onChange({ zoneId: event.target.value })}>{zones.map((zone) => <option key={zone.id} value={zone.id} disabled={!zone.placed}>{zone.name}{!zone.placed ? ' (no pin yet)' : zone.zone ? ' · approved zone' : ''}</option>)}</select>}
+    {kind === 'area' && <select value={value.zoneId} onChange={(event) => onChange({ zoneId: event.target.value })}>{zones.filter((zone) => zone.active).map((zone) => <option key={zone.id} value={zone.id} disabled={!isPoint(zone)}>{zone.name}{isPoint(zone) ? '' : ' (not placed yet)'}</option>)}</select>}
     {kind === 'pin' && <p className="dp-pin">{isPoint(value) ? `${value.label || 'Pin'} · ${Number(value.latitude).toFixed(5)}, ${Number(value.longitude).toFixed(5)}` : 'Use “Set pins on map” below.'}</p>}
   </fieldset>
 }
@@ -149,8 +151,8 @@ export function DeliveryPricingAdmin() {
   // Re-price the last measured trip instantly as settings are edited, so the effect of every change is visible.
   const livePrice = useMemo(() => {
     if (!measured || !pricing || !finance) return null
-    const zone = (which) => measured[which]?.zone || null
-    try { return priceDelivery({ distance: measured.quote.distance, pickupZone: zone('pickup'), dropoffZone: zone('dropoff'), subtotalMinor, fulfilment: fulfilmentFor(measured.quote.fulfilment), pricing, finance }) } catch { return null }
+    const zone = (id) => pricing.zones.find((entry) => entry.id === id) || null
+    try { return priceDelivery({ distance: measured.quote.distance, pickupZone: zone(measured.quote.pickupZone?.id), dropoffZone: zone(measured.quote.dropoffZone?.id), subtotalMinor, fulfilment: fulfilmentFor(measured.quote.fulfilment), pricing, finance }) } catch { return null }
   }, [measured, pricing, finance, subtotalMinor, calc.fulfilment])
   const table = useMemo(() => pricing && finance ? distanceTable({ pricing, finance, subtotalMinor, fulfilment: fulfilmentFor('DOORSTEP_RIDER'), maxKm: Math.min(15, Math.ceil(pricing.distance.maxDeliveryKm)) }) : [], [pricing, finance, subtotalMinor, calc.fulfilment])
 
@@ -158,8 +160,7 @@ export function DeliveryPricingAdmin() {
   if (!loaded || !pricing || !riderPay) return <section className="dp"><div className="dp-card">Loading delivery pricing…</div></section>
 
   const setP = (path, value) => setPricing((current) => { const next = structuredClone(current); let target = next; for (const part of path.slice(0, -1)) target = target[part]; target[path.at(-1)] = value; return next })
-  const locations = loaded.locations || []
-  const zoneLocations = locations.filter((entry) => entry.zone)
+  const placedCount = pricing.zones.filter(isPoint).length
   const unpinned = loaded.businesses.filter((entry) => !entry.pinned)
   const negativeRows = table.filter((row) => row.deliveryMarginMinor != null && row.deliveryMarginMinor < 0).length
 
@@ -183,8 +184,16 @@ export function DeliveryPricingAdmin() {
   }
 
   const addRule = () => {
-    if (locations.length < 2) return setError('Add at least two locations in Admin › Locations first.')
-    setP(['routeRules'], [...pricing.routeRules, { id: `rule-${Date.now().toString(36)}`, fromZoneId: locations[0].id, toZoneId: locations[1].id, bothWays: true, customerFeeMinor: null, riderPayMinor: null, agreedWith: '', note: '', active: true }])
+    const placedZones = pricing.zones.filter((zone) => zone.active)
+    if (placedZones.length < 2) return setError('Add at least two areas first.')
+    setP(['routeRules'], [...pricing.routeRules, { id: `rule-${Date.now().toString(36)}`, fromZoneId: placedZones[0].id, toZoneId: placedZones[1].id, bothWays: true, customerFeeMinor: null, riderPayMinor: null, agreedWith: '', note: '', active: true }])
+  }
+  const addZone = (name) => {
+    const clean = name.trim()
+    if (clean.length < 2) return
+    let id = slug(clean); let n = 2
+    while (pricing.zones.some((zone) => zone.id === id)) id = `${slug(clean).slice(0, 36)}-${n++}`
+    setP(['zones'], [...pricing.zones, { id, name: clean, latitude: null, longitude: null, radiusMeters: 800, customerSurchargeMinor: 0, riderBonusMinor: 0, active: true }])
   }
 
   return <section className="dp">
@@ -203,8 +212,8 @@ export function DeliveryPricingAdmin() {
       <div className="dp-card">
         <h2><Calculator size={18} aria-hidden="true" />Trip calculator</h2>
         <div className="dp-ends">
-          <EndPicker label="From" value={calc.pickup} onChange={(pickup) => setCalc({ ...calc, pickup })} businesses={loaded.businesses} zones={locations} allowBusiness />
-          <EndPicker label="To" value={calc.dropoff} onChange={(dropoff) => setCalc({ ...calc, dropoff })} businesses={loaded.businesses} zones={locations} />
+          <EndPicker label="From" value={calc.pickup} onChange={(pickup) => setCalc({ ...calc, pickup })} businesses={loaded.businesses} zones={pricing.zones} allowBusiness />
+          <EndPicker label="To" value={calc.dropoff} onChange={(dropoff) => setCalc({ ...calc, dropoff })} businesses={loaded.businesses} zones={pricing.zones} />
         </div>
         <button type="button" className="dp-link" onClick={() => setMapSheet({ mode: 'route' })}><MapIcon size={15} aria-hidden="true" />Set pins on map</button>
         <div className="dp-grid">
@@ -280,11 +289,21 @@ export function DeliveryPricingAdmin() {
     </>}
 
     {tab === 'areas' && <>
-      <div className="dp-card"><h2><MapPin size={18} aria-hidden="true" />Delivery zones <small>{zoneLocations.length} approved</small></h2>
-        <p className="dp-muted">Areas are managed in <a href="/admin/locations" onClick={(event) => { event.preventDefault(); window.history.pushState({}, '', '/admin/locations'); window.dispatchEvent(new PopStateEvent('popstate')) }}>Admin › Locations</a>. Only a location that is verified, has reviewer-approved coverage, is active and has deliveries switched on becomes a zone here — with its surcharge, rider bonus, minimum order and closures.</p>
-        {zoneLocations.length === 0 ? <p className="dp-empty">No approved delivery zones yet. Until there are, prices use road distance only.</p> : <ul className="dp-zones">{zoneLocations.map((entry) => <li key={entry.id}><div className="dp-zone-head"><b>{entry.name}</b><span className={entry.closed ? 'dp-pill is-bad' : 'dp-pill is-ok'}>{entry.closed ? 'Paused' : 'Delivering'}</span></div><p className="dp-muted">Surcharge ₦{(entry.surchargeMinor / 100).toLocaleString('en-NG')} · rider bonus ₦{(entry.bonusMinor / 100).toLocaleString('en-NG')}</p></li>)}</ul>}
-        <Toggle checked={Boolean(pricing.coverage?.requireApprovedZone)} onChange={(value) => { if (value && zoneLocations.length === 0) { setError('Approve at least one delivery zone before limiting checkout to approved zones.'); return } setP(['coverage'], { requireApprovedZone: value }) }} label="Only accept addresses inside approved zones" />
-        <p className="dp-muted">Leave this off until your zones cover Sapele — otherwise customers outside them can’t order.</p>
+      <div className="dp-card"><h2><MapPin size={18} aria-hidden="true" />Sapele areas <small>{placedCount}/{pricing.zones.length} placed</small></h2>
+        <p className="dp-muted">Place each area’s centre on the map. Customers who choose an area instead of an exact pin are priced from it, and you can add a surcharge or rider bonus for hard-to-reach areas.</p>
+        <ul className="dp-zones">{pricing.zones.map((zone, index) => <li key={zone.id} className={zone.active ? '' : 'is-off'}>
+          <div className="dp-zone-head"><b>{zone.name}{DIRECTORY_BY_ID.get(zone.id) && <small className="dp-zone-meta">{DIRECTORY_BY_ID.get(zone.id).postcode || 'postcode to confirm'} · {(DIRECTORY_BY_ID.get(zone.id).streets?.length || 0) + (DIRECTORY_BY_ID.get(zone.id).localities?.length || 0)} streets/places</small>}</b><span className={isPoint(zone) ? 'dp-pill is-ok' : 'dp-pill'}>{isPoint(zone) ? 'Placed' : 'Not placed'}</span>
+            <button type="button" className="dp-link" onClick={() => setMapSheet({ mode: 'area', index, value: { name: zone.name, ...(isPoint(zone) ? { area: { latitude: zone.latitude, longitude: zone.longitude, label: zone.name } } : {}) } })}><MapIcon size={14} />{isPoint(zone) ? 'Move' : 'Place'}</button></div>
+          <div className="dp-grid is-tight">
+            <NumberField label="Radius" value={zone.radiusMeters} suffix="m" step="50" onChange={(v) => setP(['zones', index, 'radiusMeters'], Math.round(v))} />
+            <NairaField label="Customer surcharge" minor={zone.customerSurchargeMinor} onChange={(v) => setP(['zones', index, 'customerSurchargeMinor'], v ?? 0)} />
+            <NairaField label="Rider bonus" minor={zone.riderBonusMinor} onChange={(v) => setP(['zones', index, 'riderBonusMinor'], v ?? 0)} />
+          </div>
+          <div className="dp-row-actions"><Toggle checked={zone.active} onChange={(v) => setP(['zones', index], { ...zone, active: v })} label="Active" />
+            <button type="button" className="dp-icon" aria-label={`Delete ${zone.name}`} onClick={() => { if (pricing.routeRules.some((rule) => rule.fromZoneId === zone.id || rule.toZoneId === zone.id)) return setError(`${zone.name} is used by an agreed price. Remove that first.`); setP(['zones'], pricing.zones.filter((_, i) => i !== index)) }}><Trash2 size={16} /></button></div>
+        </li>)}</ul>
+        {(() => { const missing = starterZones().filter((seed) => !pricing.zones.some((zone) => zone.id === seed.id)); return missing.length > 0 && <button type="button" className="dp-link" onClick={() => setP(['zones'], [...pricing.zones, ...missing])}><Plus size={15} />Add {missing.length} area{missing.length > 1 ? 's' : ''} from the Sapele directory</button> })()}
+        <form className="dp-add" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem('zone'); addZone(input.value); input.value = '' }}><input name="zone" placeholder="Add an area, e.g. Okotie-Eboh" maxLength={60} /><button type="submit" className="dp-link"><Plus size={15} />Add</button></form>
       </div>
       {unpinned.length > 0 && <div className="dp-card dp-alert"><Store size={18} aria-hidden="true" /><div><b>{unpinned.length} business{unpinned.length > 1 ? 'es have' : ' has'} no map pin</b><p className="dp-muted">Orders from them are priced on an assumed {pricing.distance.assumedKm} km and the rider’s pay needs checking. Ask them to set their location in their DOORSTEP account.</p><p className="dp-muted">{unpinned.slice(0, 12).map((entry) => entry.name).join(', ')}{unpinned.length > 12 ? '…' : ''}</p></div></div>}
     </>}
@@ -297,8 +316,8 @@ export function DeliveryPricingAdmin() {
         const update = (patch) => setP(['routeRules', index], { ...rule, ...patch })
         return <li key={rule.id} className={rule.active ? '' : 'is-off'}>
           <div className="dp-grid is-tight">
-            <label className="dp-field"><span>From</span><select value={rule.fromZoneId} onChange={(event) => update({ fromZoneId: event.target.value })}>{locations.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}{zone.zone ? '' : ' (not an approved zone)'}</option>)}</select></label>
-            <label className="dp-field"><span>To</span><select value={rule.toZoneId} onChange={(event) => update({ toZoneId: event.target.value })}>{locations.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}{zone.zone ? '' : ' (not an approved zone)'}</option>)}</select></label>
+            <label className="dp-field"><span>From</span><select value={rule.fromZoneId} onChange={(event) => update({ fromZoneId: event.target.value })}>{pricing.zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</select></label>
+            <label className="dp-field"><span>To</span><select value={rule.toZoneId} onChange={(event) => update({ toZoneId: event.target.value })}>{pricing.zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</select></label>
             <NairaField label="Customer pays" minor={rule.customerFeeMinor} allowEmpty onChange={(v) => update({ customerFeeMinor: v })} />
             <NairaField label="Rider earns" minor={rule.riderPayMinor} allowEmpty onChange={(v) => update({ riderPayMinor: v })} />
             <label className="dp-field"><span>Agreed with</span><input value={rule.agreedWith} maxLength={80} placeholder="All riders, or a rider’s name" onChange={(event) => update({ agreedWith: event.target.value })} /></label>
@@ -329,6 +348,7 @@ export function DeliveryPricingAdmin() {
       onClose={() => setMapSheet(null)}
       onDone={(points) => {
         if (mapSheet.mode === 'route') setCalc({ ...calc, pickup: { latitude: points.pickup.latitude, longitude: points.pickup.longitude, label: points.pickup.label || 'Pin A' }, dropoff: { latitude: points.dropoff.latitude, longitude: points.dropoff.longitude, label: points.dropoff.label || 'Pin B' } })
+        else setP(['zones', mapSheet.index], { ...pricing.zones[mapSheet.index], latitude: Number(points.area.latitude.toFixed(7)), longitude: Number(points.area.longitude.toFixed(7)) })
         setMapSheet(null)
       }} />}
   </section>

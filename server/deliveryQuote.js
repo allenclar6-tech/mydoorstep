@@ -44,11 +44,19 @@ export function resolveDropoff({ point, addressLine }, zones) {
  * Prices the delivery for a food/grocery order. Returns null when delivery pricing is not published (the caller
  * keeps the old flat fee). Throws DeliveryQuoteError when the trip is beyond the maximum distance.
  */
+/**
+ * Every area that can affect a price: the Sapele areas an admin placed in Delivery pricing, plus delivery zones
+ * approved in Admin › Locations (verified, coverage approved, switched on). `approved` can be passed in tests.
+ */
+export async function pricingZones(db, pricing, approved) {
+  const located = approved || (db ? await deliveryZones(db).catch(() => []) : [])
+  return [...(pricing.zones || []), ...located]
+}
+
 export async function quoteOrderDelivery({ db, restaurant, destination, subtotalMinor, fetchImpl, pricing: givenPricing, finance: givenFinance, zones: givenZones }) {
   const [pricing, finance] = await Promise.all([givenPricing || getDeliveryPricing(db), givenFinance || getFinanceSettings(db)])
   if (!pricing.published) return null
-  // Only verified, coverage-approved, active, delivery-enabled locations take part in delivery decisions.
-  const zones = givenZones || await deliveryZones(db)
+  const zones = await pricingZones(db, pricing, givenZones)
   const fulfilment = plannedFulfilment(restaurant.application?.deliveryPreference)
   const pickupPoint = toPoint(restaurant)
   const pickupZone = pickupPoint ? zoneForPoint(pickupPoint, zones) : null
@@ -89,7 +97,7 @@ export function orderPricingSnapshot(priced) {
 }
 
 /** Resolves a calculator end point: a business, a Sapele area, or a map pin. */
-export async function resolveCalculatorPoint(db, input, zones, { allLocations = [] } = {}) {
+export async function resolveCalculatorPoint(db, input, zones) {
   if (input?.restaurantId) {
     const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId }, select: { id: true, name: true, latitude: true, longitude: true, application: { select: { deliveryPreference: true } } } })
     if (!restaurant) throw new DeliveryQuoteError('BUSINESS_NOT_FOUND', 'That business was not found.', 404)
@@ -98,12 +106,10 @@ export async function resolveCalculatorPoint(db, input, zones, { allLocations = 
     return { point, zone: zoneForPoint(point, zones), label: restaurant.name, fulfilment: plannedFulfilment(restaurant.application?.deliveryPreference) }
   }
   if (input?.zoneId) {
-    // Any directory location with a pin can be used to try a trip; only approved zones affect the price.
     const zone = zones.find((entry) => entry.id === input.zoneId)
-    const location = zone || allLocations.find((entry) => entry.slug === input.zoneId)
-    if (!location) throw new DeliveryQuoteError('AREA_NOT_FOUND', 'That location was not found.', 404)
-    if (!isPoint(location)) throw new DeliveryQuoteError('AREA_NOT_PLACED', `${location.name} has no map pin yet.`, 422)
-    return { point: toPoint(location), zone: zone || null, label: `${location.name}${zone ? '' : ' (not an approved zone)'}` }
+    if (!zone) throw new DeliveryQuoteError('AREA_NOT_FOUND', 'That area was not found.', 404)
+    if (!isPoint(zone)) throw new DeliveryQuoteError('AREA_NOT_PLACED', `${zone.name} has no map pin yet. Place it on the map first.`, 422)
+    return { point: toPoint(zone), zone, label: zone.name }
   }
   if (isPoint(input)) return { point: toPoint(input), zone: zoneForPoint(input, zones), label: input.label || 'Map pin' }
   throw new DeliveryQuoteError('POINT_REQUIRED', 'Choose a business, an area, or a map pin.', 400)

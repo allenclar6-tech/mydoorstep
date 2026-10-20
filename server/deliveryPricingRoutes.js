@@ -1,7 +1,7 @@
 import express from 'express'
 import { z } from 'zod'
 import { distanceTable, isPoint, measureDelivery, priceDelivery, STARTER_RIDER_BANDS, STARTER_RIDER_PER_KM_AFTER_MINOR, WARNING_TEXT } from './deliveryPricing.js'
-import { cachedRoutes, resolveCalculatorPoint } from './deliveryQuote.js'
+import { cachedRoutes, pricingZones, resolveCalculatorPoint } from './deliveryQuote.js'
 import { deliveryBlockers, deliveryZones } from './locations.js'
 import { deliveryPricingSchema, getDeliveryPricing, saveDeliveryPricing } from './deliveryPricingSettings.js'
 import { FINANCE_SETTINGS_KEY, financeSettingsSchema, getFinanceSettings } from './financeSettings.js'
@@ -49,9 +49,11 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
   router.get('/delivery/areas', async (_request, response) => {
     try {
       const pricing = await getDeliveryPricing(prisma)
-      const zones = await deliveryZones(prisma)
+      const located = await deliveryZones(prisma)
       response.set('Cache-Control', 'public, max-age=120')
-      return response.json({ published: pricing.published, requireApprovedZone: Boolean(pricing.coverage?.requireApprovedZone), areas: zones.map((zone) => ({ id: zone.id, name: zone.name, closed: zone.closed, closedReason: zone.closedReason || null, minimumOrderMinor: zone.minimumOrderMinor ?? null })) })
+      const placed = pricing.zones.filter((zone) => zone.active).map((zone) => ({ id: zone.id, name: zone.name, placed: isPoint(zone), latitude: zone.latitude, longitude: zone.longitude, closed: false }))
+      const approved = located.map((zone) => ({ id: zone.id, name: zone.name, placed: true, latitude: zone.latitude, longitude: zone.longitude, closed: zone.closed, closedReason: zone.closedReason || null, minimumOrderMinor: zone.minimumOrderMinor ?? null }))
+      return response.json({ published: pricing.published, requireApprovedZone: Boolean(pricing.coverage?.requireApprovedZone), areas: [...placed, ...approved] })
     } catch (error) { return fail(response, error) }
   })
 
@@ -89,12 +91,6 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
       return response.status(409).json({ error: 'RIDER_RATES_REQUIRED', message: 'Switch on rider rates before publishing delivery pricing, so every delivery has a rider amount and a margin check.' })
     }
     try {
-      // Agreed route prices must point at real directory locations.
-      if (parsed.data.routeRules.length) {
-        const slugs = new Set((await prisma.location.findMany({ where: { mergedIntoId: null }, select: { slug: true } })).map((row) => row.slug))
-        const missing = parsed.data.routeRules.find((rule) => !slugs.has(rule.fromZoneId) || !slugs.has(rule.toZoneId))
-        if (missing) return response.status(400).json({ error: 'INVALID_DELIVERY_PRICING', message: 'An agreed price points at a location that no longer exists (or was merged). Pick the areas again.' })
-      }
       const previous = await getDeliveryPricing(prisma)
       const saved = await prisma.$transaction(async (transaction) => {
         const value = await saveDeliveryPricing(transaction, parsed.data)
@@ -119,9 +115,9 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
     try {
       const [savedPricing, savedFinance] = await Promise.all([getDeliveryPricing(prisma), getFinanceSettings(prisma)])
       const { pricing, finance } = draftSettings(parsed.data.draft, savedPricing, savedFinance)
-      const [zones, allLocations] = await Promise.all([deliveryZones(prisma), prisma.location.findMany({ where: { mergedIntoId: null }, select: { slug: true, name: true, latitude: true, longitude: true } })])
-      const pickup = await resolveCalculatorPoint(prisma, parsed.data.pickup, zones, { allLocations })
-      const dropoff = await resolveCalculatorPoint(prisma, parsed.data.dropoff, zones, { allLocations })
+      const zones = await pricingZones(prisma, pricing)
+      const pickup = await resolveCalculatorPoint(prisma, parsed.data.pickup, zones)
+      const dropoff = await resolveCalculatorPoint(prisma, parsed.data.dropoff, zones)
       const distance = await measureDelivery(pickup.point, dropoff.point, pricing.distance, routingConfigured() ? cachedRoutes(fetchImpl) : null)
       const fulfilment = parsed.data.fulfilment || pickup.fulfilment || 'DOORSTEP_RIDER'
       const quote = priceDelivery({ distance, pickupZone: pickup.zone, dropoffZone: dropoff.zone, subtotalMinor: parsed.data.subtotalMinor, fulfilment, pricing, finance })

@@ -20,7 +20,7 @@ import { createNavigationRouter } from './navigation.js'
 import { applyPaystackVerification, confirmParcelPayment, createParcelRouter, rotatePaymentReference } from './parcelRoutes.js'
 import { completeCardVerification, createCardRouter } from './cardRoutes.js'
 import { refundTransaction, saveCardFromAuthorization } from './cardService.js'
-import { cancelBlockedMessage, orderActions } from './orderCancellation.js'
+import { cancelBlockedMessage, orderActions, removeOrderNotifications, retireOrderNotifications } from './orderCancellation.js'
 import { createAuthRouter } from './authRoutes.js'
 import { createSupportRouter } from './supportRoutes.js'
 import { recordOrderPaid, splitSettledTo, voidOrderMoney } from './financeLedger.js'
@@ -1055,14 +1055,17 @@ app.post('/api/orders/:orderId/cancel', requireUser, rateLimit({ windowMs: 60_00
     if (!actions.canCancel) return response.status(409).json({ error: 'ORDER_CANNOT_BE_CANCELLED', message: cancelBlockedMessage(order.status) })
     const reason = body.data.reason || 'Cancelled by the customer'
     const paid = order.status === 'PAID'
+    const cancelledAt = new Date()
     const done = await prisma.$transaction(async (transaction) => {
       const changed = await transaction.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason } })
       if (changed.count !== 1) return false
       await transaction.delivery.updateMany({ where: { orderId: order.id, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'CANCELLED' } })
       if (!paid && order.payment && ['PENDING', 'PENDING_VERIFICATION'].includes(order.payment.status)) await transaction.payment.update({ where: { id: order.payment.id }, data: { status: 'ABANDONED' } })
+      if (!paid) await retireOrderNotifications(transaction, order, cancelledAt)
       if (paid) {
         await voidOrderMoney(transaction, order, 'customer cancelled before the business accepted')
         await transaction.transaction.create({ data: { paymentId: order.payment.id, type: 'REFUND_REQUIRED', amountMinor: order.payment.amountMinor, providerReference: order.payment.reference, metadata: { reason: 'customer_cancelled_before_acceptance' } } })
+        await retireOrderNotifications(transaction, order, cancelledAt)
         await notifyUsers(transaction, await restaurantTeamIds(transaction, order.restaurantId), { type: 'ORDER', title: 'Order cancelled by the customer', body: `${order.orderNumber} was cancelled before you accepted it. Please don’t prepare it.`, link: '/restaurant/orders' })
       }
       return true
@@ -1107,12 +1110,14 @@ app.post('/api/restaurant/orders/:orderId/decline', requireUser, async (request,
     const order = await prisma.order.findFirst({ where: { id: request.params.orderId, restaurant: { users: { some: { userId: request.user.id } } } }, include: { payment: true, restaurant: { select: { name: true } } } })
     if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
     if (order.status !== 'PAID') return response.status(409).json({ error: 'ORDER_CANNOT_BE_DECLINED', message: 'Only new orders can be declined. Contact DOORSTEP support for orders already accepted.' })
+    const declinedAt = new Date()
     const done = await prisma.$transaction(async (transaction) => {
       const changed = await transaction.order.updateMany({ where: { id: order.id, status: 'PAID' }, data: { status: 'REJECTED', cancelledAt: new Date(), cancellationReason: `Declined by ${order.restaurant.name}: ${body.data.reason}` } })
       if (changed.count !== 1) return false
       await transaction.delivery.updateMany({ where: { orderId: order.id, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'CANCELLED', cancelledAt: new Date() } })
       await voidOrderMoney(transaction, order, 'declined by the business')
       await transaction.transaction.create({ data: { paymentId: order.payment.id, type: 'REFUND_REQUIRED', amountMinor: order.payment.amountMinor, providerReference: order.payment.reference, metadata: { reason: 'business_declined', note: body.data.reason } } })
+      await retireOrderNotifications(transaction, order, declinedAt)
       return true
     })
     if (!done) return response.status(409).json({ error: 'ORDER_STATE_CHANGED', message: 'This order just changed. Refresh to see it.' })
@@ -1138,6 +1143,10 @@ app.post('/api/orders/:orderId/remove', requireUser, async (request, response) =
         await transaction.delivery.updateMany({ where: { orderId: order.id, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'CANCELLED' } })
       }
       await transaction.order.update({ where: { id: order.id }, data: { customerHiddenAt: new Date() } })
+      // The order's notifications leave the customer's inbox with it; if it was cancelled here, other people's
+      // unread alerts about it are retired too.
+      await removeOrderNotifications(transaction, order, request.user.id)
+      if (order.status === 'PENDING_PAYMENT') await retireOrderNotifications(transaction, order, new Date())
     })
     return response.json({ removed: true })
   } catch (error) {
@@ -1198,6 +1207,12 @@ app.post('/api/reviews', requireUser, async (request, response) => {
   }
 })
 
+// A Paystack checkout link is reused for a short while (the customer can switch method on the same page);
+// after that, or after a failure, a new reference is issued.
+const ORDER_CHECKOUT_REUSE_MS = 20 * 60_000
+// Optional: limit the methods Paystack offers, e.g. PAYSTACK_CHANNELS=card,bank_transfer,ussd,bank (unset = all).
+const paystackChannels = () => { const list = String(process.env.PAYSTACK_CHANNELS || '').split(',').map((value) => value.trim()).filter(Boolean); return list.length ? list : undefined }
+
 app.post('/api/payments/initialize', requireUser, async (request, response) => {
   const result = z.object({ orderId: z.string().min(1), saveCard: z.boolean().optional() }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_PAYMENT_REQUEST' })
@@ -1213,13 +1228,31 @@ app.post('/api/payments/initialize', requireUser, async (request, response) => {
       return response.json({ method: 'BANK_TRANSFER', orderId: order.id })
     }
     if (order.payment.method === 'CASH_ON_DELIVERY') return response.status(409).json({ error: 'CASH_ON_DELIVERY_NOT_SUPPORTED' })
-    if (order.payment.status !== 'PENDING') return response.status(409).json({ error: 'PAYMENT_NOT_PENDING' })
+    if (order.payment.status === 'SUCCESSFUL') return response.json({ paid: true, orderId: order.id })
+    if (order.status !== 'PENDING_PAYMENT') return response.status(409).json({ error: 'ORDER_NOT_PAYABLE', message: 'This order can’t be paid any more. Check its status in your orders.' })
+    // A failed or abandoned attempt (e.g. "Denied by fraud system" on OPay, or a declined card) can be retried:
+    // ask Paystack what happened to the last checkout first, then start a fresh one with a new reference.
+    if (!['PENDING', 'FAILED'].includes(order.payment.status)) return response.status(409).json({ error: 'PAYMENT_NOT_PENDING' })
+    let current = order.payment
+    const stored = current.instructionsSnapshot && typeof current.instructionsSnapshot === 'object' ? current.instructionsSnapshot : null
+    if (current.status === 'FAILED' || stored?.authorizationUrl) {
+      const verified = await verifyPaystackTransaction(current.reference)
+      if (verified.status === 'success') {
+        await applyVerifiedPayment(current, verified, 'verify')
+        return response.json({ paid: true, orderId: order.id })
+      }
+      if (['ongoing', 'pending', 'processing', 'queued'].includes(verified.status)) return response.status(409).json({ error: 'PAYMENT_IN_PROGRESS', message: 'Your last payment is still being processed. Wait a minute before trying again, so you aren’t charged twice.' })
+      const fresh = stored?.initializedAt && Date.now() - new Date(stored.initializedAt).getTime() < ORDER_CHECKOUT_REUSE_MS
+      if (current.status === 'PENDING' && verified.status !== 'failed' && fresh && stored?.authorizationUrl) return response.json({ provider: 'paystack', reference: current.reference, authorizationUrl: stored.authorizationUrl })
+      if (verified.status !== 'not_found' || current.status === 'FAILED') current = await rotatePaymentReference(prisma, current, verified.status, 'DSPORD')
+    }
     // Paystack settles the business's share straight to its bank when it has a verified payout account.
     const [financeSettings, payoutAccount] = await Promise.all([getFinanceSettings(prisma), prisma.payoutAccount.findUnique({ where: { restaurantId: order.restaurantId }, select: { paystackSubaccountCode: true, status: true } })])
     const subaccountCode = payoutAccount?.status === 'ACTIVE' ? payoutAccount.paystackSubaccountCode : null
     const split = order.partnerShareMinor != null ? paystackSplit({ subaccountCode, partnerShareMinor: order.partnerShareMinor }, financeSettings) : null
     if ((order.splitSubaccountCode || null) !== (split ? subaccountCode : null)) await prisma.order.update({ where: { id: order.id }, data: { splitSubaccountCode: split ? subaccountCode : null } })
-    const payment = await initializePayment({ email: request.user.email, amountMinor: order.totalMinor, reference: order.payment.reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { orderId: order.id, orderNumber: order.orderNumber, saveCard: Boolean(result.data.saveCard) }, split })
+    const payment = await initializePayment({ email: request.user.email, amountMinor: order.totalMinor, reference: current.reference, channels: paystackChannels(), callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { orderId: order.id, orderNumber: order.orderNumber, saveCard: Boolean(result.data.saveCard) }, split })
+    await prisma.payment.update({ where: { id: current.id }, data: { instructionsSnapshot: { authorizationUrl: payment.authorizationUrl, initializedAt: new Date().toISOString() } } })
     return response.json(payment)
   } catch (error) {
     const paymentError = error instanceof PaymentError ? error : new PaymentError('PAYMENT_SERVICE_UNAVAILABLE', 'Payment service is unavailable.', 503)
@@ -1451,7 +1484,7 @@ app.post('/api/payments/verify', requireUser, rateLimit({ windowMs: 60_000, limi
     const outcome = await applyVerifiedPayment(payment, verified, 'verify', expectedReference)
     if (outcome?.status === 'mismatch') return response.status(409).json({ ...target, error: 'PAYMENT_RECONCILIATION_FAILED' })
     const refreshed = await prisma.payment.findUnique({ where: { id: payment.id }, select: { status: true } })
-    return response.json({ ...target, status: refreshed.status, providerStatus: verified.status, ...(outcome?.refundRequired ? { refundReview: true } : {}) })
+    return response.json({ ...target, status: refreshed.status, providerStatus: verified.status, gatewayResponse: verified.gatewayResponse || null, ...(outcome?.refundRequired ? { refundReview: true } : {}) })
   } catch (error) {
     const known = error instanceof PaymentError || error?.code === 'ORDER_NOT_PAYABLE' ? error : null
     if (!known) console.error('[payments] verify_failed', JSON.stringify({ name: error?.name, code: error?.code }))
@@ -1870,12 +1903,15 @@ app.post('/api/orders/:orderId/status', requireUser, async (request, response) =
     const isRider = request.user.role === 'RIDER' && order.riderId === request.user.rider?.id
     if (request.user.role === 'RESTAURANT' && !isRestaurantOwner) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
     if (request.user.role === 'RIDER' && !isRider) return response.status(403).json({ error: 'ASSIGNED_RIDER_REQUIRED' })
+    const changedAt = new Date()
     const updated = await prisma.$transaction(async (transaction) => {
       const stamp = result.data.status === 'RESTAURANT_ACCEPTED' ? { acceptedAt: new Date() } : result.data.status === 'READY_FOR_PICKUP' ? { preparedAt: new Date() } : {}
       const changedCount = await transaction.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: result.data.status, ...stamp } })
       if (changedCount.count !== 1) throw Object.assign(new Error('Order state changed while this request was processing.'), { status: 409, code: 'ORDER_STATE_CHANGED' })
       const changed = await transaction.order.findUnique({ where: { id: order.id } })
       const labels = { RESTAURANT_ACCEPTED: 'Restaurant accepted your order', PREPARING: 'Your order is being prepared', READY_FOR_PICKUP: 'Your order is ready for pickup', RIDER_ASSIGNED: 'A rider has been assigned to your order', PICKED_UP: 'Your order has been picked up', OUT_FOR_DELIVERY: 'Your order is out for delivery', DELIVERED: 'Your order has arrived', CANCELLED: 'Your order was cancelled' }
+      // Retire stale unread alerts about a cancelled order before the cancellation notices are written.
+      if (result.data.status === 'CANCELLED') await retireOrderNotifications(transaction, order, changedAt)
       await transaction.notification.create({ data: { userId: order.customerId, type: result.data.status === 'CANCELLED' ? 'ORDER' : 'DELIVERY', title: labels[result.data.status] || 'Order status updated', body: `Order ${order.orderNumber} is now ${result.data.status.replaceAll('_', ' ').toLowerCase()}.`, link: `/account/orders/${order.id}` } })
       if (result.data.status === 'READY_FOR_PICKUP' && order.riderId) {
         // The assigned rider is told the food is waiting at the counter.

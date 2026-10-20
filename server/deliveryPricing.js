@@ -32,9 +32,9 @@ export const defaultDeliveryPricing = Object.freeze({
   serviceFee: { percent: 3, minimumMinor: 0, maximumMinor: 100_000 },
   margin: { protect: true, minimumMinor: 10_000 },
   boost: { active: false, label: 'Rain / busy hours', customerExtraMinor: 20_000, riderExtraMinor: 15_000 },
-  // Areas now live in the Location directory (Admin › Locations); only verified, coverage-approved, active,
-  // delivery-enabled locations are used. This legacy list is kept empty for old saved settings.
-  zones: [],
+  // Sapele areas placed by an admin in Delivery pricing › Sapele areas. Approved delivery zones from
+  // Admin › Locations are added to these when an order is priced.
+  zones: starterZones(),
   coverage: { requireApprovedZone: false },
   routeRules: [],
 })

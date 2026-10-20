@@ -61,6 +61,7 @@ export const deliveryPricingSchema = z.object({
   for (const [index, rule] of value.routeRules.entries()) {
     if (ruleIds.has(rule.id)) context.addIssue({ code: 'custom', path: ['routeRules', index, 'id'], message: 'Two agreed prices share an id.' })
     ruleIds.add(rule.id)
+    if (!zoneIds.has(rule.fromZoneId) || !zoneIds.has(rule.toZoneId)) context.addIssue({ code: 'custom', path: ['routeRules', index], message: 'An agreed price points at an area that no longer exists.' })
   }
   if (value.customerFee.maximumMinor < value.customerFee.minimumMinor) context.addIssue({ code: 'custom', path: ['customerFee', 'maximumMinor'], message: 'The maximum fee must be at least the minimum fee.' })
   if (value.serviceFee.maximumMinor < value.serviceFee.minimumMinor) context.addIssue({ code: 'custom', path: ['serviceFee', 'maximumMinor'], message: 'The maximum service fee must be at least the minimum.' })

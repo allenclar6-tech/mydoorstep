@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Trash2, XCircle } from 'lucide-react'
+import { CreditCard, Trash2, XCircle } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 
 export const ORDER_STATUS_LABELS = {
@@ -15,6 +15,32 @@ async function post(path, body) {
   const data = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(data.message || 'That didn’t work. Try again.')
   return data
+}
+
+/**
+ * Starts (or restarts) payment for an unpaid order. The server checks the last attempt with Paystack first, so a
+ * payment that actually went through is never taken twice. Returns { paid } or redirects to checkout.
+ */
+export async function startOrderPayment(orderId) {
+  const body = await post('/api/payments/initialize', { orderId })
+  if (body.paid) return { paid: true }
+  if (body.method === 'BANK_TRANSFER') { window.location.assign(`/payment/bank-transfer/${orderId}`); return { redirected: true } }
+  if (!body.authorizationUrl) throw new Error('Payment could not be started. Try again.')
+  window.location.assign(body.authorizationUrl)
+  return { redirected: true }
+}
+
+function PayNowButton({ order, onChanged }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const pay = async () => {
+    setBusy(true); setError('')
+    try { const result = await startOrderPayment(order.id); if (result.paid) onChanged?.('paid') } catch (payError) { setError(payError.message) } finally { setBusy(false) }
+  }
+  return <>
+    <button type="button" className="oa-btn is-pay" disabled={busy} onClick={pay}><CreditCard size={15} aria-hidden="true" />{busy ? 'Opening…' : 'Pay now'}</button>
+    {error && <p className="oa-error" role="alert">{error}</p>}
+  </>
 }
 
 /** Bottom sheet asking the customer to confirm a cancel or remove. */
@@ -62,9 +88,10 @@ function ConfirmSheet({ mode, order, onClose, onDone }) {
 export function OrderActionButtons({ order, onChanged, compact = false }) {
   const [mode, setMode] = useState(null)
   const actions = order.actions || {}
-  if (!actions.canCancel && !actions.canRemove) return null
+  if (!actions.canCancel && !actions.canRemove && !actions.canPay) return null
   const unpaid = order.status === 'PENDING_PAYMENT'
   return <div className={`oa-row${compact ? ' is-compact' : ''}`} onClick={(event) => event.stopPropagation()}>
+    {actions.canPay && <PayNowButton order={order} onChanged={onChanged} />}
     {actions.canCancel && <button type="button" className="oa-btn" onClick={() => setMode('cancel')}><XCircle size={15} aria-hidden="true" />Cancel order</button>}
     {actions.canRemove && <button type="button" className="oa-btn is-quiet" onClick={() => setMode('remove')}><Trash2 size={15} aria-hidden="true" />{unpaid ? 'Delete' : 'Remove'}</button>}
     {mode && <ConfirmSheet mode={mode} order={order} onClose={() => setMode(null)} onDone={(done, result) => { setMode(null); onChanged?.(done, result) }} />}
