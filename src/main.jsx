@@ -19,6 +19,9 @@ import './mobile/mobileApp.css'
 import './mobile/authMobile.css'
 import './notifications/notifications.css'
 import './auth/altSignIn.css'
+import './support/helpChat.css'
+import './finance/finance.css'
+import './orders/orderActions.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

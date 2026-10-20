@@ -554,8 +554,9 @@ export function PaymentResultPage() {
       const body = await api('/api/payments/verify', { method: 'POST', body: { reference } })
       setResult(body)
       if (body.kind === 'card') {
-        setState(body.status === 'SUCCEEDED' ? 'card-saved' : body.status === 'NOT_REUSABLE' ? 'card-not-reusable' : body.status === 'FAILED' ? 'failed' : body.status === 'MISMATCH' ? 'error' : 'pending')
-        if (body.status === 'PENDING' && attempts.current < 6) { attempts.current += 1; window.setTimeout(verify, 5000) }
+        const stillProcessing = body.status === 'PENDING' && ['ongoing', 'pending', 'processing', 'queued'].includes(body.providerStatus)
+        setState(body.status === 'SUCCEEDED' ? 'card-saved' : body.status === 'NOT_REUSABLE' ? 'card-not-reusable' : body.status === 'FAILED' ? 'card-failed' : body.status === 'MISMATCH' ? 'error' : stillProcessing ? 'pending' : 'card-not-completed')
+        if (stillProcessing && attempts.current < 6) { attempts.current += 1; window.setTimeout(verify, 5000) }
         return
       }
       if (body.status === 'SUCCESSFUL') setState('success')
@@ -572,6 +573,8 @@ export function PaymentResultPage() {
   const copy = {
     'card-saved': ['Card saved', `Your card is ready for faster checkout. The verification charge is being refunded${result?.refundStatus === 'failed' ? '; our team has been asked to refund it manually' : ''}.`],
     'card-not-reusable': ['This card can’t be saved', 'Paystack did not allow this card to be reused. The verification charge is being refunded. You can still pay with it on Paystack each time.'],
+    'card-failed': ['Card not added', `Paystack could not take the verification charge${result?.gatewayResponse ? ` (“${result.gatewayResponse}”)` : ''}, so nothing was charged. If Paystack said “Unable to process transaction”, its fraud check has paused this card for about 24 hours after repeated tries — wait a day, check with your bank that online payments are on, or tick “Save my card” on your next order instead.`],
+    'card-not-completed': ['Card not added', 'The Paystack step was not finished, so no card was saved and nothing was kept. You can try again, or tick “Save my card” the next time you pay for an order.'],
     checking: ['Confirming your payment', 'Asking Paystack directly. Please don’t pay again while this is in progress.'],
     success: ['Payment confirmed', result?.kind === 'parcel' ? 'Your package booking is paid. Next, a rider will be assigned.' : 'Your order is paid and the restaurant has been notified.'],
     pending: ['Payment still processing', 'Paystack has not finished processing this payment. We will keep checking for a short while.'],

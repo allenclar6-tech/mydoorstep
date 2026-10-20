@@ -11,6 +11,7 @@ import { useDeliveryTracking } from './tracking/useDeliveryTracking'
 import { SavedCardChoices, useSavedCards } from './account/SavedCards'
 import { ProfileCompletenessCard } from './account/ProfileCompleteness'
 import { BusinessRegistrationField } from './partner/BusinessRegistrationField'
+import { HelpPage as SupportChatPage } from './support/HelpChat'
 import { ApplicationUpdates } from './partner/ApplicationUpdates'
 import { readConfirmedLocation } from './location'
 import { signOut as endSession } from './services/authService'
@@ -18,6 +19,7 @@ import { loadCart } from './services/orderService'
 import { SignInLinks, SignOutNotice } from './authControls'
 import { NotificationsScreen, useNotifications } from './notifications/NotificationCenter'
 import { AlternativeSignIn, PHONE_HANDOFF_KEY, SignInMethodsPage, useAuthProviders } from './auth/AltSignIn'
+import { ORDER_STATUS_LABELS, OrderActionButtons, orderStatusTone } from './orders/OrderActions'
 import { apiBase } from './config/apiBase'
 
 const NavigationPage = lazy(() => import('./navigation/NavigationPage'))
@@ -774,15 +776,6 @@ function NotificationsPage() {
   return <NotificationsScreen><MobileStoreDock /></NotificationsScreen>
 }
 
-function SupportPage() {
-  const [tickets, setTickets] = useState([])
-  const [submitted, setSubmitted] = useState(false)
-  const load = () => fetch(`${apiBase}/api/support/tickets`, { headers: authHeaders() }).then((response) => response.json()).then((body) => setTickets(body.tickets || []))
-  useEffect(() => { load() }, [])
-  useEffect(() => { const category = new URLSearchParams(window.location.search).get('category'); if (category) { const field = document.querySelector('.support-form select[name="category"]'); if (field) field.value = category } }, [])
-  return <PageFrame eyebrow="CUSTOMER SUPPORT" title="Get help with an order." intro="Tell us what happened, include the order context, and keep the ticket number for follow-up."><section className="support-page"><div className="support-layout"><form className="support-form" onSubmit={async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); const response = await fetch(`${apiBase}/api/support/tickets`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(values) }); if (response.ok) { setSubmitted(true); event.currentTarget.reset(); load() } }}><span className="section-kicker">START A CONVERSATION</span><h2>What do you need help with?</h2><label>Category<select required name="category" defaultValue="PAYMENT"><option value="PAYMENT">Payment problem</option><option value="MISSING_ORDER">Missing order</option><option value="WRONG_FOOD">Wrong food</option><option value="LATE_DELIVERY">Late delivery</option><option value="RESTAURANT">Restaurant problem</option><option value="RIDER">Rider problem</option><option value="ACCOUNT">Account problem</option><option value="REFUND">Refund request</option><option value="TECHNICAL">Technical issue</option></select></label><label>Describe the issue<textarea required minLength="10" name="description" rows="6" placeholder="Tell us what happened, what you expected, and any order number involved." /></label>{submitted && <div className="profile-message">Ticket submitted. Support will respond in the ticket thread.</div>}<button className="checkout-button" type="submit">Submit support ticket <Send size={17} /></button></form><div className="support-guidance"><span className="section-kicker">HOW WE HELP</span><h2>When something goes wrong.</h2><div><strong>Payments</strong><small>We can trace references, pending states, and failed attempts.</small></div><div><strong>Delivery</strong><small>We can review restaurant, rider, timeline, and location events.</small></div><div><strong>Account</strong><small>We can help with access, verification, and profile concerns.</small></div></div></div><div className="ticket-history"><div className="notification-toolbar"><div><span className="section-kicker">YOUR TICKETS</span><h2>Support history</h2></div></div>{tickets.length === 0 ? <div className="empty-state">No support tickets yet.</div> : tickets.map((ticket) => <div className="ticket-row" key={ticket.id}><div><strong>{ticket.ticketNumber}</strong><small>{ticket.category.replaceAll('_', ' ')} · {new Date(ticket.createdAt).toLocaleDateString('en-NG')}</small></div><span className="order-status">{ticket.status}</span></div>)}</div></section></PageFrame>
-}
-
 function ConnectedPartnerApplication() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
@@ -992,7 +985,7 @@ function OrdersPage() {
     {loading ? <div className="submitted-card"><Clock3 size={24} /><h2>Loading your orders</h2><p>Checking your secure order history.</p></div>
       : error ? <div className="submitted-card"><Clock3 size={24} /><h2>Could not load orders</h2><p>{error}</p><div className="profile-form-actions"><button className="primary-button" onClick={() => setRefreshKey((key) => key + 1)}>Try again <ArrowRight size={16} /></button><button className="quiet-button" onClick={() => navigate('/help')}>Contact support</button></div></div>
         : orders.length === 0 ? <div className="submitted-card"><Clock3 size={24} /><h2>No orders yet</h2><p>Your orders will appear here with their verified payment and delivery history.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Find food <ArrowRight size={16} /></button></div>
-          : <div className="orders-list">{orders.map((order) => <button className="order-row" key={order.id} onClick={() => navigate(`/account/orders/${order.id}`)}><div><span className="section-kicker">{order.orderNumber}</span><h2>{order.restaurant?.name || order.restaurantName}</h2><p>{order.items?.length || 0} item(s) · {new Date(order.createdAt).toLocaleDateString('en-NG')}</p></div><div><strong>{formatNaira(order.total || (order.totalMinor ? Math.round(order.totalMinor / 100) : 0))}</strong><span className="order-status">{order.status}</span></div><ArrowRight size={16} /></button>)}</div>}
+          : <div className="orders-list">{orders.map((order) => <article className="order-row order-row-card" key={order.id}><button type="button" className="order-row-main" onClick={() => navigate(`/account/orders/${order.id}`)}><div><span className="section-kicker">{order.orderNumber}</span><h2>{order.restaurant?.name || order.restaurantName}</h2><p>{order.items?.length || 0} item(s) · {new Date(order.createdAt).toLocaleDateString('en-NG')}</p></div><div><strong>{formatNaira(order.total || (order.totalMinor ? Math.round(order.totalMinor / 100) : 0))}</strong><span className={`order-status tone-${orderStatusTone(order.status)}`}>{ORDER_STATUS_LABELS[order.status] || order.status}</span></div><ArrowRight size={16} /></button><OrderActionButtons order={order} compact onChanged={() => setRefreshKey((key) => key + 1)} /></article>)}</div>}
   </PageFrame>
 }
 
@@ -1059,6 +1052,7 @@ function OrderPage({ orderId }) {
     }
   }
   return <PageFrame eyebrow="ORDER TRACKING" title={order.orderNumber} intro={`${order.restaurant || order.restaurantName} · ${order.address || 'Delivery address on file'}`}>
+    {order.actions && <OrderActionButtons order={{ ...order, restaurant: { name: order.restaurant } }} onChanged={(done) => done === 'remove' ? navigate('/account/orders') : setRefreshKey((key) => key + 1)} />}
     {error && <div className="profile-message">Status refresh failed: {error}. Showing the last server-confirmed status.</div>}
     {stages.length === 0 && <div className="submitted-card"><Clock3 size={24} /><h2>{currentStatus === 'PENDING_PAYMENT' ? 'Payment verification pending' : `Order status: ${currentStatus}`}</h2><p>{currentStatus === 'PENDING_PAYMENT' ? 'The restaurant will receive this order after the payment provider confirms your payment.' : 'Delivery tracking is not available for this order status.'}</p></div>}
     {stages.length > 0 && <section className="order-page-layout"><div className="order-timeline">{stages.map((stage, index) => { const complete = currentApiStage >= 0 && index <= currentApiStage; return <div className={complete ? 'timeline-step complete' : 'timeline-step'} key={stage}><span>{complete ? '✓' : index + 1}</span><div><strong>{stage.replaceAll('_', ' ')}</strong><small>{index === 0 ? 'Payment confirmed by the server.' : 'This stage updates from the restaurant, rider, and DOORSTEP operations API.'}</small></div></div> })}</div><div className="cart-page-summary"><span className="section-kicker">ORDER SUMMARY</span><div><span>Restaurant</span><strong>{order.restaurant || order.restaurantName}</strong></div><div><span>Status</span><strong>{currentStatus}</strong></div><div><span>Payment</span><strong>{order.payment?.status || 'Unknown'}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(total)}</strong></div>{apiOrder?.delivery?.rider?.callAllowed ? <a className="call-rider-button" href={`tel:${apiOrder.delivery.rider.phone}`}>Call assigned rider</a> : <small className="call-rider-note">Rider contact appears only during an active assigned delivery.</small>}<button className="checkout-button" onClick={() => navigate('/help')}>Contact support <ArrowRight size={17} /></button></div></section>}
@@ -1141,7 +1135,7 @@ export function RoutePage({ path, cart = [], checkoutError = '', onAddToCart = (
   if (path === '/location') return <LocationPage />
   if (path === '/account/favorites') return <FavoritesPage />
   if (path === '/account/notifications') return <NotificationsPage />
-  if (path === '/account/support') return <SupportPage />
+  if (path === '/account/support') return <><SupportChatPage /><MobileStoreDock /></>
   if (path === '/partners/restaurants') return <PartnerPage />
   if (path === '/partners/restaurants/register') return <OnboardingPartnerApplication />
   if (path === '/partners/restaurants/login') return <AuthPage portalRole="RESTAURANT" />

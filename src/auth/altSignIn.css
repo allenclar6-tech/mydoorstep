@@ -59,3 +59,11 @@
 .app-updates-form h3 { font-size: 1rem; font-weight: 800; margin: 0; }
 .app-updates-form label { display: flex; flex-direction: column; font-size: .84rem; font-weight: 700; gap: 6px; }
 .app-updates-form small { color: #5b6b63; font-size: .76rem; }
+
+/* Payment methods: guidance around adding a card */
+.saved-card-tip { background: #e2f3ea; border-radius: 16px; color: #0e4f3c; margin: 4px 0 12px; padding: 12px 14px; }
+.saved-card-tip strong { display: block; font-size: .9rem; }
+.saved-card-tip p { font-size: .82rem; line-height: 1.45; margin: 2px 0 0; }
+.saved-card-help { background: #fff8e6; border-radius: 14px; color: #5a4100; font-size: .82rem; line-height: 1.5; margin-top: 10px; padding: 10px 14px; }
+.saved-card-help summary { cursor: pointer; font-weight: 800; }
+.saved-card-help p { margin: 8px 0 2px; }

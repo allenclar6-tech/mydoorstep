@@ -1,6 +1,7 @@
 import { prisma } from './prisma.js'
 import { parcelStatusByDeliveryStatus, RIDER_REQUEST_TTL_MS } from './parcelService.js'
 import { notifyUsers, restaurantTeamIds } from './notify.js'
+import { naira, recordDeliveryCompleted } from './financeLedger.js'
 
 export const deliveryTransitions = {
   AVAILABLE: ['REQUESTED', 'CANCELLED'],
@@ -166,6 +167,16 @@ export async function advanceDelivery(deliveryId, riderId, nextStatus) {
         if (messages[parcelStatus]) await notifyParcelCustomer(transaction, booking, ...messages[parcelStatus])
       } else if (nextStatus === 'ARRIVED_AT_RESTAURANT') {
         await recordParcelEvent(transaction, booking.id, booking.status, { actorRole: 'RIDER', note: 'Rider arrived at pickup' })
+      }
+    }
+    if (nextStatus === 'DELIVERED') {
+      // Rider earning from the Sapele distance rates, and any business-share correction.
+      const earning = await recordDeliveryCompleted(transaction, deliveryId)
+      if (earning) {
+        const rider = await transaction.rider.findUnique({ where: { id: riderId }, select: { userId: true } })
+        if (rider) await notifyUsers(transaction, [rider.userId], earning.status === 'DUE'
+          ? { type: 'PAYMENT', title: `You earned ${naira(earning.amountMinor)}`, body: `${earning.description}. It is added to your next payout.`, link: '/rider/earnings' }
+          : { type: 'PAYMENT', title: 'Delivery completed', body: 'DOORSTEP will confirm the earning for this delivery shortly.', link: '/rider/earnings' })
       }
     }
     return updated

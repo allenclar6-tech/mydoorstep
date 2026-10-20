@@ -10,6 +10,7 @@ import {
 import { initializePayment, PaymentError, paystackMode, verifyPaystackTransaction } from './paymentService.js'
 import { activeLocationStatuses, claimDelivery, rejectDeliveryRequest, releaseDelivery } from './deliveryService.js'
 import { notifyAdmins } from './notify.js'
+import { recordParcelPaid } from './financeLedger.js'
 
 const phone = z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/, 'Enter a valid phone number')
 const text = (max) => z.string().trim().min(1).max(max)
@@ -125,6 +126,7 @@ export async function confirmParcelPayment(transaction, payment, { providerRefer
   }
   const now = new Date()
   await transaction.parcelBooking.update({ where: { id: booking.id }, data: { status: 'SEARCHING_FOR_RIDER', paidAt: now } })
+  await recordParcelPaid(transaction, booking)
   await transaction.parcelEvent.create({ data: { bookingId: booking.id, status: 'PAYMENT_CONFIRMED', actorRole: 'SYSTEM', note: `Verified by ${source}` } })
   await transaction.parcelEvent.create({ data: { bookingId: booking.id, status: 'SEARCHING_FOR_RIDER', actorRole: 'SYSTEM' } })
   await transaction.delivery.upsert({ where: { parcelBookingId: booking.id }, update: {}, create: { parcelBookingId: booking.id, status: 'AVAILABLE', requestedAt: now } })

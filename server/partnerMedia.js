@@ -1,11 +1,11 @@
 import multer from 'multer'
 import sharp from 'sharp'
-import { readPrivateDocument, removePrivateDocument, storePrivateDocument } from './uploadService.js'
+import { isOwnPrivateKey, readPrivateDocument, removePrivateDocument, storePrivateDocument } from './uploadService.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } }).single('image')
 const menuPrefix = 'private/restaurant-media/'
 export const menuMediaUrl = item => item.imageUrl?.startsWith(menuPrefix) ? `/api/media/menu/${encodeURIComponent(item.id)}` : item.imageUrl
-export const publicLogoOwner = restaurant => restaurant.users?.find(member => member.user?.profileImageKey?.startsWith(`private/users/${member.userId}/`))
+export const publicLogoOwner = restaurant => restaurant.users?.find(member => isOwnPrivateKey(member.userId, member.user?.profileImageKey))
 export const publicRestaurantImage = restaurant => publicLogoOwner(restaurant) ? `/api/media/restaurants/${encodeURIComponent(restaurant.id)}/logo` : restaurant.coverImageUrl || null
 
 export function publicMenuItems(restaurant) {
@@ -51,7 +51,7 @@ export function registerPartnerMedia(app, { prisma, requireUser }) {
       stored = await storePrivateDocument({ buffer, mimeType: 'image/png', originalName: 'partner-image.png', keyPrefix: kind === 'logo' ? `private/users/${request.user.id}` : `${menuPrefix}${membership.restaurantId}` })
       if (kind === 'logo') {
         await prisma.user.update({ where: { id: request.user.id }, data: { profileImageKey: stored.storageKey } })
-        if (previous?.profileImageKey?.startsWith(`private/users/${request.user.id}/`)) await removePrivateDocument(previous.profileImageKey).catch(() => console.error('[partner-media] old_image_cleanup_failed'))
+        if (isOwnPrivateKey(request.user.id, previous?.profileImageKey)) await removePrivateDocument(previous.profileImageKey).catch(() => console.error('[partner-media] old_image_cleanup_failed'))
         return response.json({ saved: true })
       }
       const result = await prisma.menuItem.updateMany({ where: { id: request.params.itemId, restaurantId: membership.restaurantId }, data: { imageUrl: stored.storageKey } })

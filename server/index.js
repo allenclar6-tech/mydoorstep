@@ -13,15 +13,21 @@ import { initializePayment, isOrderPayable, matchesPaystackPayment, PaymentError
 import { advanceDelivery, claimDelivery, getDeliveryTrackingSnapshot, recordLocation, validateLocationUpdate } from './deliveryService.js'
 import { deliveryRealtime } from './realtime.js'
 import { requireAdmin, reviewApplication } from './adminService.js'
-import { readPrivateDocument, storePrivateDocument, uploadError } from './uploadService.js'
+import { isOwnPrivateKey, readPrivateDocument, storePrivateDocument, uploadError } from './uploadService.js'
 import { menuMediaUrl, publicMenuItems, publicRestaurantImage, registerPartnerMedia } from './partnerMedia.js'
 import { issueVerificationCode, verificationFailure, verifyCode } from './verificationService.js'
-import { buildAiReply } from './aiBrain.js'
 import { createNavigationRouter } from './navigation.js'
 import { applyPaystackVerification, confirmParcelPayment, createParcelRouter, rotatePaymentReference } from './parcelRoutes.js'
 import { completeCardVerification, createCardRouter } from './cardRoutes.js'
-import { saveCardFromAuthorization } from './cardService.js'
+import { refundTransaction, saveCardFromAuthorization } from './cardService.js'
+import { cancelBlockedMessage, orderActions } from './orderCancellation.js'
 import { createAuthRouter } from './authRoutes.js'
+import { createSupportRouter } from './supportRoutes.js'
+import { recordOrderPaid, splitSettledTo, voidOrderMoney } from './financeLedger.js'
+import { orderShares, paystackSplit, plannedFulfilment } from './financeService.js'
+import { getFinanceSettings } from './financeSettings.js'
+import { fetchRoadRoutes } from './parcelService.js'
+import { applyTransferResult, createFinanceRouter } from './financeRoutes.js'
 import { createVerificationRouter } from './verificationRoutes.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -76,6 +82,8 @@ app.get('/api/map/config', (_request, response) => {
 app.use('/api/navigation', createNavigationRouter())
 app.use('/api', createAuthRouter({ prisma, requireUser, createSession, publicUser: (user) => publicUser(user), sendWelcome }))
 app.use('/api', createVerificationRouter({ prisma, requireUser, requireAdmin, upload, storeApplicationDocuments, verifyPassword }))
+app.use('/api', createFinanceRouter({ prisma, requireUser, requireAdmin, verifyPassword }))
+app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))
 app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
 
 app.get('/api/health', (_request, response) => {
@@ -717,7 +725,7 @@ app.delete('/api/addresses/:addressId', requireUser, async (request, response) =
 app.post('/api/profile/photo', requireUser, async (request, response) => {
   const result = z.object({ storageKey: z.string().startsWith('private/').max(500) }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_PROFILE_PHOTO' })
-  if (!result.data.storageKey.startsWith(`private/users/${request.user.id}/`)) return response.status(403).json({ error: 'PROFILE_PHOTO_OWNERSHIP_REQUIRED' })
+  if (!isOwnPrivateKey(request.user.id, result.data.storageKey)) return response.status(403).json({ error: 'PROFILE_PHOTO_OWNERSHIP_REQUIRED' })
   try {
     await readPrivateDocument(result.data.storageKey)
     const user = await prisma.user.update({ where: { id: request.user.id }, data: { profileImageKey: result.data.storageKey } })
@@ -727,7 +735,7 @@ app.post('/api/profile/photo', requireUser, async (request, response) => {
 app.get('/api/profile/photo', requireUser, async (request, response) => {
   if (!request.user.profileImageKey) return response.status(404).json({ error: 'PROFILE_PHOTO_NOT_FOUND' })
   try {
-    if (!request.user.profileImageKey.startsWith(`private/users/${request.user.id}/`)) return response.status(403).json({ error: 'PROFILE_PHOTO_OWNERSHIP_REQUIRED' })
+    if (!isOwnPrivateKey(request.user.id, request.user.profileImageKey)) return response.status(403).json({ error: 'PROFILE_PHOTO_OWNERSHIP_REQUIRED' })
     const photo = await readPrivateDocument(request.user.profileImageKey)
     response.set('Content-Type', photo.mimeType)
     response.set('Cache-Control', 'private, max-age=300')
@@ -777,46 +785,6 @@ app.post('/api/notifications/read-all', requireUser, async (request, response) =
     const result = await prisma.notification.updateMany({ where: { userId: request.user.id, readAt: null }, data: { readAt: new Date() } })
     return response.json({ updated: result.count })
   } catch { return response.status(503).json({ error: 'NOTIFICATION_SERVICE_UNAVAILABLE' }) }
-})
-
-const supportSchema = z.object({ category: z.enum(['PAYMENT', 'MISSING_ORDER', 'WRONG_FOOD', 'LATE_DELIVERY', 'RESTAURANT', 'RIDER', 'ACCOUNT', 'REFUND', 'TECHNICAL']), description: z.string().min(10).max(4000), attachments: z.array(z.string().startsWith('private/')).max(3).optional() })
-app.post('/api/support/tickets', requireUser, async (request, response) => {
-  const result = supportSchema.safeParse(request.body)
-  if (!result.success) return response.status(400).json({ error: 'INVALID_SUPPORT_TICKET', details: result.error.flatten() })
-  if (request.user.role === 'CUSTOMER' && result.data.attachments?.some((key) => !key.startsWith(`private/users/${request.user.id}/`))) return response.status(403).json({ error: 'ATTACHMENT_OWNERSHIP_REQUIRED' })
-  try {
-    const ticket = await prisma.supportTicket.create({ data: { ticketNumber: `DSP-SUP-${Date.now().toString(36).toUpperCase()}`, userId: request.user.id, category: result.data.category, description: result.data.description, attachments: result.data.attachments || [], messages: { create: [{ senderId: request.user.id, senderType: 'CUSTOMER', body: result.data.description }, { senderType: 'AI', body: automatedSupportReply(result.data.category, result.data.description) }] } }, include: { messages: true } })
-    if (request.user.role !== 'ADMIN') await notifyAdmins(prisma, { type: 'SYSTEM', title: `New support ticket · ${result.data.category.replaceAll('_', ' ').toLowerCase()}`, body: `${ticket.ticketNumber}: ${result.data.description}`, link: '/admin/support' }).catch(() => undefined)
-    return response.status(201).json({ ticket, aiReply: ticket.messages.at(-1) })
-  } catch { return response.status(503).json({ error: 'SUPPORT_SERVICE_UNAVAILABLE' }) }
-})
-app.post('/api/support/ai', (request, response) => {
-  const result = z.object({ message: z.string().min(1).max(4000), category: z.string().optional() }).safeParse(request.body)
-  if (!result.success) return response.status(400).json({ error: 'MESSAGE_REQUIRED' })
-  return response.json({ reply: buildAiReply(result.data.message, result.data.category) })
-})
-app.get('/api/support/tickets', requireUser, async (request, response) => {
-  try {
-    const tickets = await prisma.supportTicket.findMany({ where: request.user.role === 'ADMIN' ? {} : { userId: request.user.id }, include: { messages: { orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'desc' } })
-    return response.json({ tickets })
-  } catch { return response.status(503).json({ error: 'SUPPORT_SERVICE_UNAVAILABLE' }) }
-})
-app.post('/api/support/tickets/:ticketId/messages', requireUser, async (request, response) => {
-  const result = z.object({ body: z.string().min(1).max(4000) }).safeParse(request.body)
-  if (!result.success) return response.status(400).json({ error: 'MESSAGE_REQUIRED' })
-  try {
-    const ticket = await prisma.supportTicket.findUnique({ where: { id: request.params.ticketId } })
-    if (!ticket || (request.user.role !== 'ADMIN' && ticket.userId !== request.user.id)) return response.status(404).json({ error: 'TICKET_NOT_FOUND' })
-    const message = await prisma.supportMessage.create({ data: { ticketId: ticket.id, senderId: request.user.id, senderType: request.user.role === 'ADMIN' ? 'ADMIN' : 'CUSTOMER', body: result.data.body } })
-    const supportLink = { CUSTOMER: '/account/support', RESTAURANT: '/restaurant/profile', RIDER: '/rider/account' }
-    if (request.user.role === 'ADMIN') {
-      const owner = ticket.userId !== request.user.id ? await prisma.user.findUnique({ where: { id: ticket.userId }, select: { id: true, role: true } }) : null
-      if (owner) await notifyUsers(prisma, [owner.id], { type: 'SYSTEM', title: 'DOORSTEP support replied', body: `${ticket.ticketNumber}: ${result.data.body}`, link: supportLink[owner.role] || '/account/support' }).catch(() => undefined)
-    } else {
-      await notifyAdmins(prisma, { type: 'SYSTEM', title: `New reply on ${ticket.ticketNumber}`, body: result.data.body, link: '/admin/support' }).catch(() => undefined)
-    }
-    return response.status(201).json({ message })
-  } catch { return response.status(503).json({ error: 'SUPPORT_SERVICE_UNAVAILABLE' }) }
 })
 
 app.get('/api/admin/applications/:type', requireUser, requireAdmin, async (request, response) => {
@@ -1018,11 +986,80 @@ app.get('/api/orders', requireUser, async (request, response) => {
   const result = z.object({ cursor: z.string().min(1).optional(), limit: z.coerce.number().int().min(1).max(50).default(50) }).safeParse(request.query)
   if (!result.success) return response.status(400).json({ error: 'INVALID_ORDER_PAGINATION' })
   try {
-    const orders = await prisma.order.findMany({ where: { customerId: request.user.id }, include: { restaurant: { select: { name: true } }, items: true, payment: { select: { status: true } }, delivery: { select: { status: true } } }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
+    const orders = await prisma.order.findMany({ where: { customerId: request.user.id, customerHiddenAt: null }, include: { restaurant: { select: { name: true } }, items: true, payment: { select: { status: true } }, delivery: { select: { status: true } } }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
     const hasNextPage = orders.length > result.data.limit
     if (hasNextPage) orders.pop()
-    return response.json({ orders, nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
+    return response.json({ orders: orders.map((order) => ({ ...order, actions: orderActions(order) })), nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
   } catch { return response.status(503).json({ error: 'ORDER_SERVICE_UNAVAILABLE' }) }
+})
+
+/**
+ * Customer cancels an order. Unpaid orders are simply cancelled. Paid orders can be cancelled until the business
+ * accepts them; the payment is refunded through Paystack (bank transfers are refunded by an admin).
+ */
+app.post('/api/orders/:orderId/cancel', requireUser, rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false }), async (request, response) => {
+  if (request.user.role !== 'CUSTOMER') return response.status(403).json({ error: 'CUSTOMER_ROLE_REQUIRED' })
+  const body = z.object({ reason: z.string().trim().max(300).optional() }).safeParse(request.body || {})
+  if (!body.success) return response.status(400).json({ error: 'INVALID_CANCEL_REQUEST' })
+  try {
+    const order = await prisma.order.findFirst({ where: { id: request.params.orderId, customerId: request.user.id }, include: { payment: true, restaurant: { select: { name: true } } } })
+    if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
+    const actions = orderActions(order)
+    if (!actions.canCancel) return response.status(409).json({ error: 'ORDER_CANNOT_BE_CANCELLED', message: cancelBlockedMessage(order.status) })
+    const reason = body.data.reason || 'Cancelled by the customer'
+    const paid = order.status === 'PAID'
+    const done = await prisma.$transaction(async (transaction) => {
+      const changed = await transaction.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason } })
+      if (changed.count !== 1) return false
+      await transaction.delivery.updateMany({ where: { orderId: order.id, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'CANCELLED' } })
+      if (!paid && order.payment && ['PENDING', 'PENDING_VERIFICATION'].includes(order.payment.status)) await transaction.payment.update({ where: { id: order.payment.id }, data: { status: 'ABANDONED' } })
+      if (paid) {
+        await voidOrderMoney(transaction, order, 'customer cancelled before the business accepted')
+        await transaction.transaction.create({ data: { paymentId: order.payment.id, type: 'REFUND_REQUIRED', amountMinor: order.payment.amountMinor, providerReference: order.payment.reference, metadata: { reason: 'customer_cancelled_before_acceptance' } } })
+        await notifyUsers(transaction, await restaurantTeamIds(transaction, order.restaurantId), { type: 'ORDER', title: 'Order cancelled by the customer', body: `${order.orderNumber} was cancelled before you accepted it. Please don’t prepare it.`, link: '/restaurant/orders' })
+      }
+      return true
+    })
+    if (!done) return response.status(409).json({ error: 'ORDER_STATE_CHANGED', message: 'This order just changed. Refresh and check its status.' })
+
+    let refund = null
+    if (paid && order.payment?.method === 'PAYSTACK') {
+      // Refund the exact Paystack transaction that paid (it may differ from the current reference after a retry).
+      const paidTx = await prisma.transaction.findFirst({ where: { paymentId: order.payment.id, type: 'PAYMENT_SUCCESS' }, orderBy: { createdAt: 'desc' }, select: { providerReference: true } })
+      const status = await refundTransaction(paidTx?.providerReference || order.payment.reference).catch(() => 'failed')
+      refund = status === 'failed' ? 'MANUAL' : 'STARTED'
+      await prisma.transaction.create({ data: { paymentId: order.payment.id, type: status === 'failed' ? 'REFUND_FAILED' : 'REFUND_INITIATED', amountMinor: order.payment.amountMinor, providerReference: paidTx?.providerReference || order.payment.reference, metadata: { providerStatus: status } } })
+    } else if (paid) refund = 'MANUAL'
+    if (refund === 'MANUAL') await notifyAdmins(prisma, { type: 'PAYMENT', title: 'Refund needed', body: `${order.orderNumber} (₦${(order.totalMinor / 100).toLocaleString('en-NG')}) was cancelled by the customer and must be refunded manually.`, link: '/admin/orders' })
+    await notifyUsers(prisma, [request.user.id], paid
+      ? { type: 'PAYMENT', title: 'Order cancelled', body: refund === 'STARTED' ? `${order.orderNumber} is cancelled and your ₦${(order.totalMinor / 100).toLocaleString('en-NG')} refund has started. Your bank may take a few working days to show it.` : `${order.orderNumber} is cancelled. Our team will refund your payment and let you know here.`, link: `/account/orders/${order.id}` }
+      : { type: 'ORDER', title: 'Order cancelled', body: `${order.orderNumber} from ${order.restaurant.name} is cancelled. You weren’t charged.`, link: '/account/orders' })
+    return response.json({ cancelled: true, refund })
+  } catch { return response.status(503).json({ error: 'ORDER_SERVICE_UNAVAILABLE' }) }
+})
+
+// "Delete" for customers: removes the order from their list. The record is kept for payments and tax.
+app.post('/api/orders/:orderId/remove', requireUser, async (request, response) => {
+  if (request.user.role !== 'CUSTOMER') return response.status(403).json({ error: 'CUSTOMER_ROLE_REQUIRED' })
+  try {
+    const order = await prisma.order.findFirst({ where: { id: request.params.orderId, customerId: request.user.id }, include: { payment: true } })
+    if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
+    if (!orderActions(order).canRemove) return response.status(409).json({ error: 'ORDER_CANNOT_BE_REMOVED', message: 'Active orders can’t be removed. Cancel it first, or wait until it’s delivered.' })
+    await prisma.$transaction(async (transaction) => {
+      if (order.status === 'PENDING_PAYMENT') {
+        // An unpaid order is cancelled as it is removed, so it can no longer be paid.
+        const changed = await transaction.order.updateMany({ where: { id: order.id, status: 'PENDING_PAYMENT' }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: 'Removed by the customer before payment' } })
+        if (changed.count !== 1) throw Object.assign(new Error('changed'), { code: 'ORDER_STATE_CHANGED', status: 409 })
+        if (order.payment && ['PENDING', 'PENDING_VERIFICATION'].includes(order.payment.status)) await transaction.payment.update({ where: { id: order.payment.id }, data: { status: 'ABANDONED' } })
+        await transaction.delivery.updateMany({ where: { orderId: order.id, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'CANCELLED' } })
+      }
+      await transaction.order.update({ where: { id: order.id }, data: { customerHiddenAt: new Date() } })
+    })
+    return response.json({ removed: true })
+  } catch (error) {
+    if (error?.code === 'ORDER_STATE_CHANGED') return response.status(409).json({ error: 'ORDER_STATE_CHANGED', message: 'This order just changed. Refresh and check its status.' })
+    return response.status(503).json({ error: 'ORDER_SERVICE_UNAVAILABLE' })
+  }
 })
 
 app.post('/api/orders', requireUser, async (request, response) => {
@@ -1041,12 +1078,13 @@ app.post('/api/orders', requireUser, async (request, response) => {
     if (result.data.paymentMethod === 'BANK_TRANSFER' && (!paymentSettings.bankTransfer.enabled || !hasValidBankTransferConfig(paymentSettings.bankTransfer))) return response.status(409).json({ error: 'BANK_TRANSFER_UNAVAILABLE' })
     if (result.data.paymentMethod === 'CASH_ON_DELIVERY') return response.status(409).json({ error: 'CASH_ON_DELIVERY_UNSUPPORTED' })
     if (result.data.paymentMethod === 'PAYSTACK' && !process.env.PAYSTACK_SECRET_KEY) return response.status(503).json({ error: 'PAYMENT_PROVIDER_NOT_CONFIGURED', message: 'Paystack is not configured. Choose another available payment method or contact support.' })
+    const finance = await planOrderFinance(quote, { latitude: quote.address?.latitude ?? result.data.latitude, longitude: quote.address?.longitude ?? result.data.longitude })
     const order = await prisma.$transaction(async (transaction) => {
       const orderNumber = `DSP-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 6).toUpperCase()}`
       const address = quote.address || await transaction.address.create({ data: { userId: request.user.id, cityId: quote.serviceAreaCityId, label: 'Checkout address', addressLine: result.data.addressLine, landmark: result.data.landmark, latitude: result.data.latitude, longitude: result.data.longitude } })
       const transferExpiry = result.data.paymentMethod === 'BANK_TRANSFER' && paymentSettings.bankTransfer.expiryMinutes ? new Date(Date.now() + paymentSettings.bankTransfer.expiryMinutes * 60_000) : null
       const transferInstructions = result.data.paymentMethod === 'BANK_TRANSFER' ? { bankName: paymentSettings.bankTransfer.bankName, accountName: paymentSettings.bankTransfer.accountName, accountNumber: paymentSettings.bankTransfer.accountNumber, message: paymentSettings.bankTransfer.instructions } : null
-      const created = await transaction.order.create({ data: { orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
+      const created = await transaction.order.create({ data: { ...finance, orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
       if (created.payment.method === 'BANK_TRANSFER') await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Bank transfer to confirm', body: `Order ${created.orderNumber} (${'₦'}${(created.totalMinor / 100).toLocaleString('en-NG')}) will be paid by bank transfer, reference ${created.payment.reference}. Confirm it once the money arrives.`, link: '/admin/payments' })
       return created
     })
@@ -1092,7 +1130,12 @@ app.post('/api/payments/initialize', requireUser, async (request, response) => {
     }
     if (order.payment.method === 'CASH_ON_DELIVERY') return response.status(409).json({ error: 'CASH_ON_DELIVERY_NOT_SUPPORTED' })
     if (order.payment.status !== 'PENDING') return response.status(409).json({ error: 'PAYMENT_NOT_PENDING' })
-    const payment = await initializePayment({ email: request.user.email, amountMinor: order.totalMinor, reference: order.payment.reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { orderId: order.id, orderNumber: order.orderNumber, saveCard: Boolean(result.data.saveCard) } })
+    // Paystack settles the business's share straight to its bank when it has a verified payout account.
+    const [financeSettings, payoutAccount] = await Promise.all([getFinanceSettings(prisma), prisma.payoutAccount.findUnique({ where: { restaurantId: order.restaurantId }, select: { paystackSubaccountCode: true, status: true } })])
+    const subaccountCode = payoutAccount?.status === 'ACTIVE' ? payoutAccount.paystackSubaccountCode : null
+    const split = order.partnerShareMinor != null ? paystackSplit({ subaccountCode, partnerShareMinor: order.partnerShareMinor }, financeSettings) : null
+    if ((order.splitSubaccountCode || null) !== (split ? subaccountCode : null)) await prisma.order.update({ where: { id: order.id }, data: { splitSubaccountCode: split ? subaccountCode : null } })
+    const payment = await initializePayment({ email: request.user.email, amountMinor: order.totalMinor, reference: order.payment.reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { orderId: order.id, orderNumber: order.orderNumber, saveCard: Boolean(result.data.saveCard) }, split })
     return response.json(payment)
   } catch (error) {
     const paymentError = error instanceof PaymentError ? error : new PaymentError('PAYMENT_SERVICE_UNAVAILABLE', 'Payment service is unavailable.', 503)
@@ -1147,6 +1190,7 @@ app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdm
       await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
       await transaction.transaction.create({ data: { paymentId: payment.id, type: 'BANK_TRANSFER_MANUALLY_CONFIRMED', amountMinor: payment.amountMinor, providerReference: result.data.bankTransactionId, metadata: { note: result.data.note, transferReference: payment.reference } } })
       await transaction.auditLog.create({ data: { actorId: request.user.id, action: 'CONFIRM_BANK_TRANSFER', entityType: 'Payment', entityId: payment.id, metadata: { bankTransactionId: result.data.bankTransactionId, orderId: payment.orderId } } })
+      await recordOrderPaid(transaction, await transaction.order.findUnique({ where: { id: payment.orderId } }), { splitSettled: false })
       await transaction.notification.create({ data: { userId: payment.order.customerId, type: 'PAYMENT', title: 'Bank transfer confirmed', body: `Your payment for ${payment.order.orderNumber} was confirmed. The restaurant will start on it shortly.`, link: `/account/orders/${payment.orderId}` } })
       await notifyUsers(transaction, await restaurantTeamIds(transaction, payment.order.restaurantId), { type: 'ORDER', title: 'New paid order', body: `Order ${payment.order.orderNumber} is paid and waiting for you to accept it.`, link: '/restaurant/orders' })
     })
@@ -1158,20 +1202,32 @@ app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdm
 })
 
 // Confirms a verified food-order payment. Idempotent: a second confirmation is a no-op.
-async function confirmOrderPayment(transaction, payment, { providerReference, metadata }) {
+async function confirmOrderPayment(transaction, payment, { providerReference, metadata, verified = null }) {
   const currentOrder = await transaction.order.findUnique({ where: { id: payment.orderId }, select: { status: true } })
   if (!currentOrder || !isOrderPayable(currentOrder.status)) throw Object.assign(new Error('Order is not payable in its current state.'), { code: 'ORDER_NOT_PAYABLE', status: 409 })
   const changed = await transaction.payment.updateMany({ where: { id: payment.id, status: { not: 'SUCCESSFUL' } }, data: { status: 'SUCCESSFUL', verifiedAt: new Date() } })
   if (changed.count !== 1) return { duplicate: true }
   const order = await transaction.order.update({ where: { id: payment.orderId }, data: { status: 'PAID', paidAt: new Date() }, include: { restaurant: { include: { users: true } } } })
   await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
-  const commissionMinor = Math.round(order.subtotalMinor * 0.15)
-  await transaction.commission.upsert({ where: { orderId: order.id }, update: {}, create: { orderId: order.id, percentage: 15, amountMinor: commissionMinor } })
-  await transaction.restaurantPayout.upsert({ where: { orderId: order.id }, update: {}, create: { restaurantId: order.restaurantId, orderId: order.id, amountMinor: order.subtotalMinor - commissionMinor } })
+  // Commission, business share and DOORSTEP income for this order (15% / 10% rules live in financeService).
+  await recordOrderPaid(transaction, order, { splitSettled: splitSettledTo(verified, order.splitSubaccountCode) })
   await transaction.notification.create({ data: { userId: order.customerId, type: 'PAYMENT', title: 'Payment confirmed', body: `Your payment for ${order.orderNumber} was confirmed. The restaurant will start on it shortly.`, link: `/account/orders/${order.id}` } })
   await notifyUsers(transaction, order.restaurant.users.map((member) => member.userId), { type: 'ORDER', title: 'New paid order', body: `Order ${order.orderNumber} is paid and waiting for you to accept it.`, link: '/restaurant/orders' })
   await transaction.transaction.create({ data: { paymentId: payment.id, type: 'PAYMENT_SUCCESS', amountMinor: payment.amountMinor, providerReference, metadata } })
   return { confirmed: true }
+}
+
+async function refundPaymentForClosedOrder(payment, verified, source) {
+  const already = await prisma.transaction.findFirst({ where: { paymentId: payment.id, providerReference: verified.reference, type: { in: ['LATE_PAYMENT_REFUND_INITIATED', 'LATE_PAYMENT_REFUND_FAILED'] } } })
+  if (already) return { status: 'refund', duplicate: true }
+  const status = await refundTransaction(verified.reference).catch(() => 'failed')
+  await prisma.transaction.create({ data: { paymentId: payment.id, type: status === 'failed' ? 'LATE_PAYMENT_REFUND_FAILED' : 'LATE_PAYMENT_REFUND_INITIATED', amountMinor: verified.amount, providerReference: verified.reference, metadata: { source, providerStatus: status } } })
+  const order = await prisma.order.findUnique({ where: { id: payment.orderId }, select: { id: true, orderNumber: true, customerId: true } })
+  if (order) {
+    await notifyUsers(prisma, [order.customerId], { type: 'PAYMENT', title: 'Payment returned', body: status === 'failed' ? `We received a payment for ${order.orderNumber}, which you had cancelled. Our team will refund it.` : `We received a payment for ${order.orderNumber}, which you had cancelled, and have started a refund.`, link: `/account/orders/${order.id}` })
+    if (status === 'failed') await notifyAdmins(prisma, { type: 'PAYMENT', title: 'Refund needed: payment on a cancelled order', body: `${order.orderNumber}: ₦${(verified.amount / 100).toLocaleString('en-NG')} (ref ${verified.reference}) must be refunded manually.`, link: '/admin/orders' })
+  }
+  return { status: 'refund', refundStatus: status }
 }
 
 // Finds a payment by its current reference, or by a reference that was retired after a failed attempt.
@@ -1184,7 +1240,7 @@ async function findPaymentByReference(reference) {
 
 // Normalises a Paystack transaction (webhook payload or verify response) into one shape.
 function paystackResult(data, status = data?.status) {
-  return { status, reference: data?.reference, amount: data?.amount, currency: data?.currency, id: data?.id, gatewayResponse: data?.gateway_response || data?.gatewayResponse || null, paidAt: data?.paid_at || data?.paidAt || null, authorization: data?.authorization || null, channel: data?.channel || null, customerEmail: data?.customer?.email || data?.customerEmail || null, metadata: typeof data?.metadata === 'object' && data.metadata ? data.metadata : null }
+  return { subaccountCode: data?.subaccount?.subaccount_code || null, split: data?.split && typeof data.split === 'object' ? data.split : null, status, reference: data?.reference, amount: data?.amount, currency: data?.currency, id: data?.id, gatewayResponse: data?.gateway_response || data?.gatewayResponse || null, paidAt: data?.paid_at || data?.paidAt || null, authorization: data?.authorization || null, channel: data?.channel || null, customerEmail: data?.customer?.email || data?.customerEmail || null, metadata: typeof data?.metadata === 'object' && data.metadata ? data.metadata : null }
 }
 
 async function paymentOwnerId(payment) {
@@ -1209,7 +1265,13 @@ async function applyVerifiedPayment(payment, verified, source, expectedReference
     await prisma.payment.updateMany({ where: { id: payment.id, status: { not: 'SUCCESSFUL' } }, data: { status: 'AMOUNT_MISMATCH' } })
     outcome = { status: 'mismatch' }
   } else {
-    outcome = await prisma.$transaction((transaction) => confirmOrderPayment(transaction, payment, { providerReference: verified.reference, metadata: { source, gatewayResponse: verified.gatewayResponse, paidAt: verified.paidAt } }))
+    try {
+      outcome = await prisma.$transaction((transaction) => confirmOrderPayment(transaction, payment, { providerReference: verified.reference, metadata: { source, gatewayResponse: verified.gatewayResponse, paidAt: verified.paidAt }, verified }))
+    } catch (error) {
+      if (error?.code !== 'ORDER_NOT_PAYABLE') throw error
+      // Money arrived for an order the customer already cancelled (e.g. a checkout tab left open). Never keep it.
+      outcome = await refundPaymentForClosedOrder(payment, verified, source)
+    }
   }
   // Save the card only when the customer ticked "save this card" and Paystack marks it reusable.
   const wantsSave = verified.status === 'success' && (verified.metadata?.saveCard === true || verified.metadata?.saveCard === 'true')
@@ -1223,6 +1285,13 @@ async function applyVerifiedPayment(payment, verified, source, expectedReference
 app.post('/api/payments/webhook', async (request, response) => {
   if (!verifyWebhookSignature(request.rawBody, request.get('x-paystack-signature'))) return response.status(401).json({ error: 'INVALID_WEBHOOK_SIGNATURE' })
   const event = request.body
+  // Payout transfers to businesses and riders.
+  if (['transfer.success', 'transfer.failed', 'transfer.reversed'].includes(event.event) && event.data?.reference) {
+    try {
+      await applyTransferResult(prisma, event.data.reference, event.event.split('.')[1], event.data.reason || null)
+      return response.status(200).json({ received: true })
+    } catch { return response.status(503).json({ error: 'PAYMENT_WEBHOOK_RETRY' }) }
+  }
   if (event.event !== 'charge.success' || !event.data?.reference) return response.status(200).json({ received: true })
   try {
     const verified = paystackResult(event.data, 'success')
@@ -1253,7 +1322,7 @@ app.post('/api/payments/verify', requireUser, rateLimit({ windowMs: 60_000, limi
       if (verification.userId !== request.user.id) return response.status(404).json({ error: 'PAYMENT_NOT_FOUND' })
       const verified = await verifyPaystackTransaction(result.data.reference)
       const outcome = await completeCardVerification(prisma, verification, verified, 'verify')
-      return response.json({ kind: 'card', status: outcome.status, providerStatus: verified.status, refundStatus: outcome.refundStatus || null })
+      return response.json({ kind: 'card', status: outcome.status, providerStatus: verified.status, gatewayResponse: verified.gatewayResponse || null, refundStatus: outcome.refundStatus || null })
     }
     const { payment, expectedReference } = await findPaymentByReference(result.data.reference)
     if (!payment) return response.status(404).json({ error: 'PAYMENT_NOT_FOUND' })
@@ -1526,6 +1595,7 @@ app.get('/api/orders/:orderId/tracking', requireUser, async (request, response) 
     if (request.user.role === 'CUSTOMER') {
       orderDetails.totalMinor = order.totalMinor
       orderDetails.payment = order.payment ? { status: order.payment.status } : null
+      orderDetails.actions = orderActions(order)
     }
     return response.json({ order: orderDetails })
   } catch (error) {
@@ -1630,7 +1700,28 @@ app.use((error, _request, response, next) => {
 })
 
 function publicUser(user) { return { id: user.id, hasPassword: Boolean(user.passwordHash), emailVerified: Boolean(user.emailVerifiedAt), phoneVerified: Boolean(user.phoneVerifiedAt), email: user.email, phone: user.phone, firstName: user.firstName, lastName: user.lastName, preferredName: user.preferredName || null, dateOfBirth: user.dateOfBirth || null, dietaryPreference: user.dietaryPreference || null, deliveryNotes: user.deliveryNotes || null, role: user.role, status: user.status, profileImageKey: user.profileImageKey || null } }
-function automatedSupportReply(category, body) { return buildAiReply(body, category) }
+
+/**
+ * Money plan fixed when an order is placed: who is meant to deliver (business's own riders → 10% commission,
+ * DOORSTEP riders → 15%), the business's share, and the road distance used for the rider's Sapele rate.
+ * Routing failures never block an order; the rider earning is then priced by DOORSTEP manually.
+ */
+async function planOrderFinance(quote, destination) {
+  const [settings, restaurant] = await Promise.all([
+    getFinanceSettings(prisma),
+    prisma.restaurant.findUnique({ where: { id: quote.restaurantId }, select: { latitude: true, longitude: true, application: { select: { deliveryPreference: true } } } }),
+  ])
+  const fulfilment = plannedFulfilment(restaurant?.application?.deliveryPreference)
+  const shares = orderShares(quote, fulfilment, settings)
+  let deliveryDistanceMeters = null
+  if (restaurant?.latitude != null && destination?.latitude != null && destination?.longitude != null) {
+    try {
+      const routes = await fetchRoadRoutes({ latitude: Number(restaurant.latitude), longitude: Number(restaurant.longitude) }, { latitude: Number(destination.latitude), longitude: Number(destination.longitude) }, { alternatives: false })
+      deliveryDistanceMeters = Math.min(...routes.map((route) => route.distanceMeters))
+    } catch (error) { console.warn('[finance] delivery_distance_unavailable', JSON.stringify({ code: error?.code })) }
+  }
+  return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, deliveryDistanceMeters }
+}
 
 async function quoteOrder(input) {
   const [restaurant, address, menuItems, activeServiceArea] = await Promise.all([

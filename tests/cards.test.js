@@ -90,3 +90,8 @@ test('removing a card retires the Paystack authorization and refunds report fail
   assert.equal(await refundTransaction('R1', { fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ status: false }) }) }), 'failed')
   assert.equal(await refundTransaction('R1', { fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: true, data: { status: 'pending' } }) }) }), 'pending')
 })
+
+test('add-card attempts are capped per day so Paystack does not block the customer’s card', async () => {
+  const { MAX_ADD_CARD_ATTEMPTS_PER_DAY } = await import('../server/cardRoutes.js')
+  assert.ok(MAX_ADD_CARD_ATTEMPTS_PER_DAY >= 2 && MAX_ADD_CARD_ATTEMPTS_PER_DAY <= 5)
+})

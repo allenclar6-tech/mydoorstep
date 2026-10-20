@@ -43,6 +43,8 @@ services:
         sync: false
       - key: CARD_TOKEN_ENCRYPTION_KEY
         sync: false
+      - key: PAYSTACK_TRANSFERS_ENABLED
+        value: "false"
       - key: VERIFICATION_FROM_EMAIL
         sync: false
       - key: EMAIL_PROVIDER

@@ -11,7 +11,7 @@ export function cardLabel(card) {
 
 /** Loads the customer's saved cards. `enabled` is false until the server has saved cards configured. */
 export function useSavedCards() {
-  const [state, setState] = useState({ loading: true, enabled: false, cards: [], mode: null, verificationAmountMinor: 5000, error: '' })
+  const [state, setState] = useState({ loading: true, enabled: false, cards: [], mode: null, verificationAmountMinor: 10000, error: '' })
   const load = useCallback(() => {
     if (!token()) { setState((current) => ({ ...current, loading: false })); return }
     api('/api/cards').then((body) => setState({ loading: false, enabled: body.enabled, cards: body.cards, mode: body.mode, verificationAmountMinor: body.verificationAmountMinor, error: '' }))
@@ -87,8 +87,10 @@ export function PaymentMethodsPage() {
             : <button type="button" className="map-icon-button" aria-label={`Remove ${cardLabel(card)}`} onClick={() => setConfirmRemove(card.id)}><Trash2 size={17} /></button>}
         </div>)}
       </section>
-      <button type="button" className="primary-button saved-card-add" disabled={busy === 'add'} onClick={add}><Plus size={17} /> {busy === 'add' ? 'Opening Paystack…' : 'Add a debit or credit card'}</button>
-      <p className="parcel-hint">To check the card is yours, Paystack charges {naira(verificationAmountMinor)} and DOORSTEP refunds it straight away. Refunds can take a few working days to show on your statement.</p>
+      <div className="saved-card-tip"><strong>Easiest way to save a card</strong><p>Tick “Save my card for faster checkout” when you pay for your next order or package. No extra charge.</p></div>
+      <button type="button" className="primary-button saved-card-add" disabled={busy === 'add'} onClick={add}><Plus size={17} /> {busy === 'add' ? 'Opening Paystack…' : 'Add a card now'}</button>
+      <p className="parcel-hint">Adding a card now: Paystack charges {naira(verificationAmountMinor)} to confirm the card is yours, and DOORSTEP refunds it straight away (refunds can take a few working days to show). Use a card that’s enabled for online payments.</p>
+      <details className="saved-card-help"><summary>Paystack said “Unable to process transaction”?</summary><p>That message comes from Paystack’s fraud protection. It blocks a card for about 24 hours after several tries in a short time, or after several different cards are tried. Wait a day before trying that card again, check with your bank that online/web payments are switched on for the card, or simply save the card during your next order instead.</p></details>
     </>}
     <p className="saved-card-security"><ShieldCheck size={16} aria-hidden="true" />Card numbers are entered on Paystack’s page and never reach DOORSTEP. We keep only an encrypted Paystack token, the last 4 digits and the expiry date.</p>
   </main>

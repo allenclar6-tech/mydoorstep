@@ -59,3 +59,14 @@ export async function removePrivateDocument(storageKey) {
   if (!target.startsWith(`${privateRoot}${path.sep}`)) throw uploadError('INVALID_STORAGE_KEY', 'Invalid storage key.', 400)
   try { await unlink(target) } catch (error) { if (error.code !== 'ENOENT') throw error }
 }
+
+/**
+ * True only for a file this user uploaded: exactly `private/users/<userId>/<name>.<ext>` with no further
+ * path segments. A prefix check alone would accept `private/users/<me>/../<someone-else>/…`, which the
+ * reader would then resolve to another person's file.
+ */
+export function isOwnPrivateKey(userId, storageKey) {
+  if (typeof storageKey !== 'string' || typeof userId !== 'string' || !userId) return false
+  const prefix = `private/users/${userId}/`
+  return storageKey.startsWith(prefix) && /^[A-Za-z0-9_-]+\.(jpg|jpeg|png|pdf)$/.test(storageKey.slice(prefix.length))
+}

@@ -224,6 +224,8 @@ model Restaurant {
   closingTime       String?
   daysOpen          Json?
   temporarilyClosed Boolean                  @default(false)
+  latitude          Decimal?                 @db.Decimal(10, 7)
+  longitude         Decimal?                 @db.Decimal(10, 7)
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   users             RestaurantUser[]
@@ -237,6 +239,7 @@ model Restaurant {
   payouts           RestaurantPayout[]
   favorites         Favorite[]
   businessRiders    Rider[]                  @relation("BusinessOwnedRiders")
+  payoutAccount     PayoutAccount?
 }
 
 model RestaurantApplication {
@@ -303,6 +306,7 @@ model Rider {
   ratingCount    Int               @default(0)
   application    RiderApplication?
   documents      RiderDocument[]
+  payoutAccount  PayoutAccount?
   orders         Order[]
   deliveries     Delivery[]
   locations      RiderLocation[]
@@ -521,6 +525,12 @@ model Order {
   reviews            Review[]
   restaurantPayout   RestaurantPayout?
   riderPayout        RiderPayout?
+  fulfilment         String?
+  commissionPercent  Decimal?          @db.Decimal(5, 2)
+  partnerShareMinor  Int?
+  deliveryDistanceMeters Int?
+  splitSubaccountCode String?
+  customerHiddenAt   DateTime?
   addressSnapshot    String
   landmarkSnapshot   String?
   latitude           Decimal?          @db.Decimal(10, 7)
@@ -543,6 +553,8 @@ model Order {
   @@index([customerId, createdAt])
   @@index([restaurantId, status])
   @@index([status, createdAt])
+
+  @@index([customerId, customerHiddenAt, createdAt])
 }
 
 model OrderItem {
@@ -794,7 +806,11 @@ model SupportTicket {
   resolution   String?
   createdAt    DateTime         @default(now())
   resolvedAt   DateTime?
+  lastMessageAt DateTime        @default(now())
+  assignedToId String?
   messages     SupportMessage[]
+
+  @@index([status, lastMessageAt])
 }
 
 model SupportMessage {
@@ -804,6 +820,7 @@ model SupportMessage {
   senderId   String?
   senderType String
   body       String
+  attachments Json?
   createdAt  DateTime      @default(now())
 
   @@index([ticketId, createdAt])
@@ -909,4 +926,71 @@ model VerificationCheck {
   createdAt         DateTime @default(now())
 
   @@index([subjectType, subjectId, createdAt])
+}
+
+/// Where a business or rider receives money. Only the last 4 digits are kept; Paystack holds the full details
+/// behind the subaccount (automatic split settlement) and transfer-recipient codes.
+model PayoutAccount {
+  id                     String      @id @default(cuid())
+  ownerType              String
+  restaurantId           String?     @unique
+  restaurant             Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  riderId                String?     @unique
+  rider                  Rider?      @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  bankCode               String
+  bankName               String
+  accountName            String
+  accountLast4           String
+  paystackSubaccountCode String?
+  paystackRecipientCode  String?
+  status                 String      @default("ACTIVE")
+  verifiedAt             DateTime?
+  updatedById            String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+}
+
+/// Every money movement between DOORSTEP, businesses and riders. Positive amounts belong to `party`.
+/// status: RETAINED (DOORSTEP income), SETTLED_BY_SPLIT (Paystack paid the business directly), DUE (owed),
+/// PAYING (in a payout), PAID, NEEDS_REVIEW (rider earning that DOORSTEP must price), VOID.
+model LedgerEntry {
+  id              String   @id @default(cuid())
+  party           String
+  restaurantId    String?
+  riderId         String?
+  orderId         String?
+  parcelBookingId String?
+  type            String
+  amountMinor     Int
+  status          String
+  description     String
+  payoutId        String?
+  dedupeKey       String   @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([party, status])
+  @@index([restaurantId, createdAt])
+  @@index([riderId, createdAt])
+  @@index([payoutId])
+}
+
+/// A transfer (or manual payment) of what a business or rider is owed.
+model Payout {
+  id            String    @id @default(cuid())
+  party         String
+  restaurantId  String?
+  riderId       String?
+  amountMinor   Int
+  method        String
+  status        String    @default("PENDING")
+  reference     String    @unique
+  transferCode  String?
+  failureReason String?
+  bankSnapshot  Json?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@index([party, status])
 }

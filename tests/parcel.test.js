@@ -117,6 +117,7 @@ function fakeTransaction(state) {
   return {
     payment: { updateMany: async ({ where, data }) => { if (state.payment.status === 'SUCCESSFUL' && where.status?.not === 'SUCCESSFUL') return { count: 0 }; Object.assign(state.payment, data); return { count: 1 } } },
     parcelBooking: { findUnique: async () => ({ ...state.booking }), update: async ({ data }) => Object.assign(state.booking, data) },
+    ledgerEntry: { createMany: async ({ data }) => { state.revenue = state.revenue || new Map(); let count = 0; for (const entry of data) if (!state.revenue.has(entry.dedupeKey)) { state.revenue.set(entry.dedupeKey, entry); count += 1 } return { count } } },
     parcelEvent: { create: async ({ data }) => state.events.push(data.status) },
     delivery: { upsert: async ({ create }) => { state.deliveries += 1; return create } },
     transaction: { create: async ({ data }) => state.ledger.push(data.type) },
@@ -137,6 +138,7 @@ test('verified parcel payments are applied exactly once', async () => {
   const second = await confirmParcelPayment(transaction, state.payment, { providerReference: 'DSPPKG-1', source: 'verify' })
   assert.equal(second.duplicate, true)
   assert.equal(state.deliveries, 1)
+  assert.equal(state.revenue.size, 1, 'parcel revenue is recorded once, even when the payment is confirmed twice')
   const lateOldAttempt = await confirmParcelPayment(transaction, state.payment, { providerReference: 'DSPPKG-OLD', source: 'webhook' })
   assert.equal(lateOldAttempt.duplicate, true)
   assert.ok(state.ledger.includes('DUPLICATE_PAYMENT_REFUND_REQUIRED'), 'a second paid attempt is flagged for refund, not ignored')

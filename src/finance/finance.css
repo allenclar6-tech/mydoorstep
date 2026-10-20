@@ -1,0 +1,103 @@
+/* Money screens: business/rider wallet and the admin Money page. */
+.wl { display: flex; flex-direction: column; gap: 14px; margin: 0 auto; max-width: 760px; padding: 0 20px 120px; color: #14231d; }
+.wl-hero { background: #0e4f3c; border-radius: 24px; color: #fff; display: flex; flex-direction: column; gap: 6px; padding: 20px; }
+.wl-hero-label { color: var(--t-on-dark-soft); font-size: .82rem; font-weight: 700; }
+.wl-hero-amount { font-size: clamp(2rem, 8vw, 2.6rem); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.wl-hero-row { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.wl-hero-row span { align-items: center; color: var(--t-on-dark-soft); display: flex; font-size: .8rem; gap: 6px; }
+.wl-hero-row svg { color: #ffc244; flex: 0 0 auto; }
+.wl-card { background: #fff; border: 1px solid #e3e8e2; border-radius: 20px; display: flex; gap: 12px; padding: 16px; }
+.wl-card > svg { color: #0e4f3c; flex: 0 0 auto; margin-top: 2px; }
+.wl-card > div { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.wl-card strong { font-size: .95rem; font-weight: 800; }
+.wl-card p { color: #3e4f47; font-size: .84rem; line-height: 1.45; margin: 0; }
+.wl-card .checkout-button, .wl-card .quiet-button { align-self: flex-start; margin-top: 6px; }
+.wl-alert { background: #fff8e6; border-color: #f3dfa7; }
+.wl-alert > svg { color: #8a5a00; }
+.wl-account { align-items: center; }
+.wl-account small { color: #5b6b63; font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.wl-account span { color: #5b6b63; font-size: .82rem; }
+.wl-account .quiet-button { align-self: center; margin: 0; }
+.wl-rates ul { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 6px 0 0; padding: 0; }
+.wl-rates li { border-bottom: 1px dashed #e3e8e2; display: flex; font-size: .86rem; justify-content: space-between; padding: 4px 0; }
+.wl-stats { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wl-stats div { background: #fff; border: 1px solid #e3e8e2; border-radius: 16px; display: flex; flex-direction: column; gap: 2px; padding: 12px; }
+.wl-stats span { color: #5b6b63; font-size: .74rem; font-weight: 700; }
+.wl-stats strong { font-size: 1.05rem; font-weight: 800; overflow-wrap: anywhere; }
+.wl-statement { flex-direction: column; }
+.wl-statement h3 { font-size: 1.02rem; font-weight: 800; margin: 0 0 4px; }
+.wl-statement ul { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.wl-statement li { align-items: flex-start; border-top: 1px solid #eef2ef; display: flex; gap: 10px; padding: 12px 0; }
+.wl-statement li:first-child { border-top: 0; }
+.wl-st-icon { align-items: center; background: #e2f3ea; border-radius: 12px; color: #0e4f3c; display: inline-flex; flex: 0 0 36px; height: 36px; justify-content: center; }
+.wl-st-main { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.wl-st-main strong { font-size: .9rem; }
+.wl-st-main small { color: #5b6b63; font-size: .76rem; line-height: 1.35; overflow-wrap: anywhere; }
+.wl-st-amount { align-items: flex-end; display: flex; flex: 0 0 auto; flex-direction: column; gap: 4px; }
+.wl-st-amount b { font-size: .95rem; }
+.is-negative { color: #b3261e; }
+.wl-chip { border-radius: 999px; font-size: .68rem; font-weight: 800; padding: 2px 8px; white-space: nowrap; }
+.wl-chip.is-warn { background: #fff4d6; color: #8a5a00; }
+.wl-chip.is-live { background: #e6effc; color: #1f4f9c; }
+.wl-chip.is-done { background: #e2f3ea; color: #0e4f3c; }
+.wl-chip.is-neutral { background: #eef2ef; color: #3e4f47; }
+.wl-chip.is-bad { background: #fdecea; color: #8c2a1c; }
+.wl-form { background: #fff; border: 1px solid #e3e8e2; border-radius: 20px; display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.wl-form h3 { font-size: 1.05rem; font-weight: 800; margin: 0; }
+.wl-form label { display: flex; flex-direction: column; font-size: .84rem; font-weight: 700; gap: 6px; }
+.wl-form input, .wl-form select { border: 1px solid #d6ddd8; border-radius: 12px; font: inherit; font-size: 1rem; min-height: 48px; padding: 0 12px; }
+.wl-form label.wl-check { align-items: center; flex-direction: row; font-weight: 700; }
+.wl-form label.wl-check input { min-height: 0; width: 20px; height: 20px; accent-color: #0e4f3c; }
+.wl-resolved { align-items: center; background: #e2f3ea; border-radius: 14px; color: #0e4f3c; display: flex; gap: 10px; padding: 12px 14px; }
+.wl-resolved small { display: block; font-size: .72rem; font-weight: 700; }
+.wl-resolved strong { font-size: 1rem; }
+.wl-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.wl-muted { color: #5b6b63; font-size: .8rem; margin: 0; }
+.wl-error { background: #fdecea; border-radius: 12px; color: #8c2a1c; font-size: .84rem; margin: 0; padding: 10px 12px; }
+.wl-tip > svg { color: #8a5a00; }
+.wl-foot { align-items: center; color: #5b6b63; display: flex; font-size: .76rem; gap: 6px; justify-content: center; }
+
+.fa { padding-bottom: 60px; }
+.fa-pad { margin: 0 24px 12px; }
+.fa-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 0 24px 12px; }
+.fa-stat { background: #fff; border: 1px solid #e3e8e2; border-radius: 18px; display: flex; flex-direction: column; gap: 4px; padding: 14px; }
+.fa-stat span { align-items: center; color: #5b6b63; display: flex; font-size: .76rem; font-weight: 700; gap: 6px; }
+.fa-stat strong { color: #14231d; font-size: 1.25rem; font-weight: 800; overflow-wrap: anywhere; }
+.fa-stat small { color: #5b6b63; font-size: .74rem; }
+.fa-stat.is-main { background: #0e4f3c; border-color: #0e4f3c; grid-column: span 2; }
+.fa-stat.is-main span, .fa-stat.is-main small { color: var(--t-on-dark-soft); }
+.fa-stat.is-main strong { color: #fff; font-size: 1.7rem; }
+.fa-stat.is-owed { background: #fff8e6; border-color: #f3dfa7; }
+.fa-card { background: #fff; border: 1px solid #e3e8e2; border-radius: 20px; display: flex; flex-direction: column; gap: 10px; margin: 0 24px 14px; padding: 16px; }
+.fa-card h3 { font-size: 1.05rem; font-weight: 800; margin: 0; }
+.fa-list { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.fa-owed { align-items: flex-start; border-top: 1px solid #eef2ef; display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
+.fa-owed:first-child { border-top: 0; }
+.fa-owed-icon { align-items: center; background: #f3f6f4; border-radius: 12px; display: inline-flex; flex: 0 0 36px; height: 36px; justify-content: center; }
+.fa-owed-main { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 160px; }
+.fa-owed-main small { color: #5b6b63; font-size: .76rem; overflow-wrap: anywhere; }
+.fa-owed-amount { align-items: flex-end; display: flex; flex-direction: column; gap: 6px; margin-left: auto; }
+.fa-owed-amount b { font-size: 1rem; }
+.fa-owed-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.fa-manual { display: flex; gap: 6px; margin-top: 6px; }
+.fa-manual input { border: 1px solid #d6ddd8; border-radius: 10px; font: inherit; min-height: 38px; padding: 0 10px; width: 160px; }
+.fa-error { color: #b3261e; font-size: .8rem; }
+.fa-muted { color: #5b6b63; font-size: .8rem; margin: 0; }
+.fa-settings label { display: flex; flex-direction: column; font-size: .82rem; font-weight: 700; gap: 4px; }
+.fa-settings input, .fa-settings select { border: 1px solid #d6ddd8; border-radius: 10px; font: inherit; min-height: 42px; padding: 0 10px; }
+.fa-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.fa-bands { border: 1px solid #eef2ef; border-radius: 16px; display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 12px; }
+.fa-bands legend { font-size: .9rem; font-weight: 800; padding: 0 6px; }
+.fa-band { align-items: flex-end; display: grid; gap: 8px; grid-template-columns: 1fr 1fr auto; }
+.fa-icon { align-items: center; background: #fdecea; border: 0; border-radius: 10px; color: #8c2a1c; cursor: pointer; display: inline-flex; height: 42px; justify-content: center; width: 42px; }
+.fa-settings label.fa-switch { align-items: center; flex-direction: row; gap: 8px; }
+.fa-settings label.fa-switch input { min-height: 0; width: 20px; height: 20px; accent-color: #0e4f3c; }
+@media (max-width: 700px) {
+  html body .wl { padding: 0 16px 120px; }
+  .wl-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .wl-stats strong { font-size: .92rem; }
+  html body .fa-cards, html body .fa-card, html body .fa-pad { margin-left: 12px; margin-right: 12px; }
+  .fa-stat.is-main { grid-column: 1 / -1; }
+  .fa-owed-amount { align-items: flex-start; margin-left: 46px; }
+}
+.wl-card .wl-chip { align-self: flex-start; }

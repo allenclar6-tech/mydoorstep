@@ -5,10 +5,14 @@ import { z } from 'zod'
 import { CardError, chargeSavedCard, deactivateAuthorization, isExpired, publicCard, refundTransaction, saveCardFromAuthorization, savedCardsEnabled } from './cardService.js'
 import { initializePayment, PaymentError, paystackMode, verifyPaystackTransaction } from './paymentService.js'
 
+// ₦100 by default: very small charges are more likely to be declined or flagged by card fraud checks.
 const verificationAmount = () => {
-  const value = Number(process.env.CARD_VERIFICATION_AMOUNT_MINOR || 5000)
-  return Number.isSafeInteger(value) && value >= 5000 && value <= 20000 ? value : 5000
+  const value = Number(process.env.CARD_VERIFICATION_AMOUNT_MINOR || 10000)
+  return Number.isSafeInteger(value) && value >= 5000 && value <= 20000 ? value : 10000
 }
+// Paystack's fraud system blocks a card for about 24 hours after several failed tries in a short time
+// ("Unable to process transaction"). Capping add-card attempts keeps customers from triggering that.
+export const MAX_ADD_CARD_ATTEMPTS_PER_DAY = 3
 
 const fail = (response, error, fallback) => {
   if (error instanceof CardError || error instanceof PaymentError || (error?.code && error?.status)) return response.status(error.status || 503).json({ error: error.code, message: error.message })
@@ -63,6 +67,8 @@ export function createCardRouter({ prisma, requireUser, applyVerifiedPayment, ro
   router.post('/cards/add', requireUser, requireCustomer, limiter, async (request, response) => {
     try {
       if (!savedCardsEnabled()) throw new CardError('SAVED_CARDS_NOT_CONFIGURED', 'Saving cards is not available yet.', 503)
+      const recentAttempts = await prisma.cardVerification.count({ where: { userId: request.user.id, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }, status: { not: 'SUCCEEDED' } } })
+      if (recentAttempts >= MAX_ADD_CARD_ATTEMPTS_PER_DAY) throw new CardError('CARD_ATTEMPTS_LIMIT', 'You have tried to add a card several times today. To avoid your bank or Paystack blocking the card, try again tomorrow — or tick “Save my card” the next time you pay for an order.', 429)
       const reference = `DSPCARD-${randomUUID()}`
       const amountMinor = verificationAmount()
       await prisma.cardVerification.create({ data: { reference, userId: request.user.id, amountMinor } })

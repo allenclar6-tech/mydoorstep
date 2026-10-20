@@ -318,11 +318,19 @@ test('application document handling safely accepts no uploads', async () => {
   assert.deepEqual(await storeApplicationDocuments([]), [])
 })
 
-test('public support AI returns a grounded marketplace response', async () => {
+test('public support assistant answers without inventing restaurants or prices', async () => {
   const response = await request(app).post('/api/support/ai').send({ message: 'Where can I get suya?' })
   assert.equal(response.status, 200)
-  assert.match(response.body.reply, /Firewood Grill/)
-  assert.match(response.body.reply, /N5,000/)
+  assert.equal(typeof response.body.reply, 'string')
+  // The reply depends on whatever the database holds (a local seed may contain demo stores), so the
+  // "never invent" rule is checked below against a database whose contents the test controls.
+  const { supportReply } = await import('../server/supportAssistant.js')
+  const emptyDb = { menuItem: { findMany: async () => [] }, restaurant: { findMany: async () => [] } }
+  assert.doesNotMatch(await supportReply(emptyDb, 'Where can I get suya?'), /Firewood Grill|Palm Kitchen|Nana’s Pot|20-30 min|N600/, 'with no stores, nothing may be quoted')
+  const realDb = { menuItem: { findMany: async () => [{ name: 'Suya wrap', priceMinor: 350000, restaurant: { name: 'Green Grove' } }] }, restaurant: { findMany: async () => [{ name: 'Green Grove', cuisineCategory: null }] } }
+  const reply = await supportReply(realDb, 'Where can I get suya?')
+  assert.match(reply, /Suya wrap at Green Grove/, 'quotes the real item from the database')
+  assert.doesNotMatch(reply, /Firewood Grill|Palm Kitchen|Nana’s Pot/)
 })
 
 test('payment configuration uses the documented provider variable', async () => {
