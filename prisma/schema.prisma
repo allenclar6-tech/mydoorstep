@@ -529,6 +529,8 @@ model Order {
   commissionPercent  Decimal?          @db.Decimal(5, 2)
   partnerShareMinor  Int?
   deliveryDistanceMeters Int?
+  plannedRiderPayMinor Int?
+  deliveryQuote      Json?
   splitSubaccountCode String?
   customerHiddenAt   DateTime?
   addressSnapshot    String

@@ -22,6 +22,8 @@ import './auth/altSignIn.css'
 import './support/helpChat.css'
 import './finance/finance.css'
 import './orders/orderActions.css'
+import './orders/pricing.css'
+import './admin/deliveryPricing.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

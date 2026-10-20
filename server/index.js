@@ -24,11 +24,13 @@ import { cancelBlockedMessage, orderActions } from './orderCancellation.js'
 import { createAuthRouter } from './authRoutes.js'
 import { createSupportRouter } from './supportRoutes.js'
 import { recordOrderPaid, splitSettledTo, voidOrderMoney } from './financeLedger.js'
-import { orderShares, paystackSplit, plannedFulfilment } from './financeService.js'
+import { orderShares, paystackSplit, plannedFulfilment, riderEarning } from './financeService.js'
 import { getFinanceSettings } from './financeSettings.js'
 import { fetchRoadRoutes } from './parcelService.js'
 import { applyTransferResult, createFinanceRouter } from './financeRoutes.js'
 import { createVerificationRouter } from './verificationRoutes.js'
+import { createDeliveryPricingRouter } from './deliveryPricingRoutes.js'
+import { orderPricingSnapshot, quoteOrderDelivery } from './deliveryQuote.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
 
@@ -83,6 +85,7 @@ app.use('/api/navigation', createNavigationRouter())
 app.use('/api', createAuthRouter({ prisma, requireUser, createSession, publicUser: (user) => publicUser(user), sendWelcome }))
 app.use('/api', createVerificationRouter({ prisma, requireUser, requireAdmin, upload, storeApplicationDocuments, verifyPassword }))
 app.use('/api', createFinanceRouter({ prisma, requireUser, requireAdmin, verifyPassword }))
+app.use('/api', createDeliveryPricingRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))
 app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
 
@@ -977,7 +980,7 @@ app.post('/api/orders/validate', requireUser, async (request, response) => {
   if (request.user.role !== 'CUSTOMER') return response.status(403).json({ error: 'CUSTOMER_ROLE_REQUIRED' })
   try {
     const quote = await quoteOrder({ ...result.data, customerId: request.user.id })
-    return response.json(quote)
+    return response.json(customerQuote(quote))
   } catch (error) {
     return response.status(error.status || 503).json({ error: error.code || 'ORDER_SERVICE_UNAVAILABLE', message: error.message })
   }
@@ -991,7 +994,7 @@ app.get('/api/orders', requireUser, async (request, response) => {
     const orders = await prisma.order.findMany({ where: { customerId: request.user.id, customerHiddenAt: null }, include: { restaurant: { select: { name: true } }, items: true, payment: { select: { status: true } }, delivery: { select: { status: true } } }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
     const hasNextPage = orders.length > result.data.limit
     if (hasNextPage) orders.pop()
-    return response.json({ orders: orders.map((order) => ({ ...order, actions: orderActions(order) })), nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
+    return response.json({ orders: orders.map((order) => ({ ...customerOrderView(order), actions: orderActions(order) })), nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
   } catch { return response.status(503).json({ error: 'ORDER_SERVICE_UNAVAILABLE' }) }
 })
 
@@ -1073,7 +1076,7 @@ app.post('/api/orders', requireUser, async (request, response) => {
   try {
     if (idempotencyKey) {
       const existing = await prisma.order.findUnique({ where: { idempotencyKey }, include: { items: true, payment: true, restaurant: true } })
-      if (existing) return existing.customerId === request.user.id ? response.status(200).json({ order: existing, duplicate: true }) : response.status(409).json({ error: 'IDEMPOTENCY_KEY_CONFLICT' })
+      if (existing) return existing.customerId === request.user.id ? response.status(200).json({ order: customerOrderView(existing), duplicate: true }) : response.status(409).json({ error: 'IDEMPOTENCY_KEY_CONFLICT' })
     }
     const quote = await quoteOrder({ ...result.data, customerId: request.user.id })
     const paymentSettings = await getPaymentSettings()
@@ -1090,7 +1093,7 @@ app.post('/api/orders', requireUser, async (request, response) => {
       if (created.payment.method === 'BANK_TRANSFER') await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Bank transfer to confirm', body: `Order ${created.orderNumber} (${'₦'}${(created.totalMinor / 100).toLocaleString('en-NG')}) will be paid by bank transfer, reference ${created.payment.reference}. Confirm it once the money arrives.`, link: '/admin/payments' })
       return created
     })
-    return response.status(201).json({ order })
+    return response.status(201).json({ order: customerOrderView(order) })
   } catch (error) {
     return response.status(error.status || 503).json({ error: error.code || 'ORDER_SERVICE_UNAVAILABLE', message: error.message })
   }
@@ -1490,7 +1493,15 @@ app.get('/api/rider/deliveries', requireUser, async (request, response) => {
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
     const deliveries = await prisma.delivery.findMany({ where: { orderId: { not: null }, OR: [{ status: 'AVAILABLE' }, { riderId: request.user.rider.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } }] }, include: { order: { include: { restaurant: { select: { name: true, address: true, phone: true } } } } }, orderBy: { requestedAt: 'asc' }, take: 50 })
-    return response.json({ deliveries })
+    const finance = await getFinanceSettings(prisma)
+    // Glovo-style: riders see what they will earn and how far it is before accepting, not the customer's fee.
+    return response.json({ deliveries: deliveries.map((delivery) => {
+      if (!delivery.order) return delivery
+      const { deliveryQuote, plannedRiderPayMinor, partnerShareMinor, commissionPercent, ...order } = delivery.order
+      const fromRates = plannedRiderPayMinor == null ? riderEarning(order.deliveryDistanceMeters, finance).amountMinor : null
+      const ownRider = request.user.rider.network === 'BUSINESS_OWNED'
+      return { ...delivery, order, earning: { amountMinor: ownRider ? null : plannedRiderPayMinor ?? fromRates ?? null, km: deliveryQuote?.km ?? (order.deliveryDistanceMeters ? Math.round(order.deliveryDistanceMeters / 100) / 10 : null), paidByBusiness: ownRider } }
+    }) })
   } catch { return response.status(503).json({ error: 'RIDER_DELIVERY_SERVICE_UNAVAILABLE' }) }
 })
 
@@ -1703,6 +1714,33 @@ app.use((error, _request, response, next) => {
 
 function publicUser(user) { return { id: user.id, hasPassword: Boolean(user.passwordHash), emailVerified: Boolean(user.emailVerifiedAt), phoneVerified: Boolean(user.phoneVerifiedAt), email: user.email, phone: user.phone, firstName: user.firstName, lastName: user.lastName, preferredName: user.preferredName || null, dateOfBirth: user.dateOfBirth || null, dietaryPreference: user.dietaryPreference || null, deliveryNotes: user.deliveryNotes || null, role: user.role, status: user.status, profileImageKey: user.profileImageKey || null } }
 
+/** Customer-facing order: internal money planning (rider pay, business share, DOORSTEP margin) stays server-side. */
+function customerOrderView(order) {
+  if (!order) return order
+  const { deliveryQuote, plannedRiderPayMinor, partnerShareMinor, commissionPercent, fulfilment, ...rest } = order
+  return { ...rest, deliveryDetails: deliveryQuote ? { km: deliveryQuote.km, estimated: deliveryQuote.distance?.source !== 'ROAD', area: deliveryQuote.dropoffZone?.name || null } : null }
+}
+
+/** Checkout preview: totals plus the distance explanation the customer needs, nothing about DOORSTEP's margins. */
+function customerQuote(quote) {
+  const { delivery, ...rest } = quote
+  if (!delivery) return { ...rest, delivery: { pricing: 'FLAT' } }
+  const source = delivery.distance.source
+  return {
+    ...rest,
+    delivery: {
+      pricing: 'DISTANCE',
+      km: delivery.km,
+      estimated: source !== 'ROAD',
+      basis: source === 'ASSUMED' ? 'TYPICAL_DISTANCE' : delivery.dropoffSource === 'AREA_CENTRE' ? 'AREA' : 'PIN',
+      area: delivery.dropoffZone?.name || null,
+      fromArea: delivery.pickupZone?.name || null,
+      boost: delivery.customer.boostMinor > 0 ? { label: 'Busy-time fee', amountMinor: delivery.customer.boostMinor } : null,
+      agreedRoute: Boolean(delivery.rule),
+    },
+  }
+}
+
 /**
  * Money plan fixed when an order is placed: who is meant to deliver (business's own riders → 10% commission,
  * DOORSTEP riders → 15%), the business's share, and the road distance used for the rider's Sapele rate.
@@ -1715,6 +1753,8 @@ async function planOrderFinance(quote, destination) {
   ])
   const fulfilment = plannedFulfilment(restaurant?.application?.deliveryPreference)
   const shares = orderShares(quote, fulfilment, settings)
+  // Published delivery pricing already measured the route and fixed the rider's pay for this order.
+  if (quote.delivery) return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, ...orderPricingSnapshot(quote.delivery) }
   let deliveryDistanceMeters = null
   if (restaurant?.latitude != null && destination?.latitude != null && destination?.longitude != null) {
     try {
@@ -1727,7 +1767,7 @@ async function planOrderFinance(quote, destination) {
 
 async function quoteOrder(input) {
   const [restaurant, address, menuItems, activeServiceArea] = await Promise.all([
-    prisma.restaurant.findUnique({ where: { id: input.restaurantId }, include: { city: { include: { serviceAreas: true } } } }),
+    prisma.restaurant.findUnique({ where: { id: input.restaurantId }, include: { city: { include: { serviceAreas: true } }, application: { select: { deliveryPreference: true } } } }),
     prisma.address.findFirst({ where: { id: input.addressId, userId: input.customerId } }),
     prisma.menuItem.findMany({ where: { id: { in: input.items.map((item) => item.menuItemId) }, restaurantId: input.restaurantId, available: true } }),
     prisma.serviceArea.findFirst({ where: { enabled: true }, orderBy: { createdAt: 'asc' } }),
@@ -1741,9 +1781,13 @@ async function quoteOrder(input) {
   const items = input.items.map((inputItem) => { const menuItem = menuItems.find((item) => item.id === inputItem.menuItemId); return { menuItemId: menuItem.id, name: menuItem.name, unitPriceMinor: menuItem.priceMinor, quantity: inputItem.quantity, instructions: inputItem.instructions } })
   const subtotalMinor = items.reduce((sum, item) => sum + item.unitPriceMinor * item.quantity, 0)
   if (subtotalMinor < restaurant.minimumOrderMinor) throw Object.assign(new Error('Order total is below this business’s minimum order.'), { status: 409, code: 'MINIMUM_ORDER_NOT_MET' })
-  const deliveryFeeMinor = 80000
-  const serviceFeeMinor = Math.round(subtotalMinor * 0.03)
-  return { restaurantId: restaurant.id, address, serviceAreaCityId: activeServiceArea.cityId, items, subtotalMinor, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor }
+  // Distance-based Sapele pricing once DOORSTEP has published it (Admin › Delivery pricing); until then the
+  // original flat ₦800 delivery fee and 3% service fee stay in place.
+  const destination = { point: address?.latitude != null ? { latitude: address.latitude, longitude: address.longitude } : input.latitude != null ? { latitude: input.latitude, longitude: input.longitude } : null, addressLine: address?.addressLine || input.addressLine }
+  const delivery = await quoteOrderDelivery({ db: prisma, restaurant, destination, subtotalMinor })
+  const deliveryFeeMinor = delivery ? delivery.customer.deliveryFeeMinor : 80000
+  const serviceFeeMinor = delivery ? delivery.serviceFeeMinor : Math.round(subtotalMinor * 0.03)
+  return { restaurantId: restaurant.id, address, serviceAreaCityId: activeServiceArea.cityId, items, subtotalMinor, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor, delivery }
 }
 
 function isRestaurantOpen(restaurant, now = new Date()) {

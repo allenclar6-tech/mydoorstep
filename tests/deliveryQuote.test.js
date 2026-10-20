@@ -1,0 +1,80 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { defaultDeliveryPricing, STARTER_RIDER_BANDS } from '../server/deliveryPricing.js'
+import { deliveryPricingSchema, getDeliveryPricing } from '../server/deliveryPricingSettings.js'
+import { orderPricingSnapshot, quoteOrderDelivery, resolveDropoff } from '../server/deliveryQuote.js'
+import { defaultFinanceSettings } from '../server/financeService.js'
+
+process.env.MAPBOX_SERVER_TOKEN = 'test-token'
+const published = () => {
+  const pricing = { ...structuredClone(defaultDeliveryPricing), published: true }
+  pricing.zones = pricing.zones.map((zone) => zone.id === 'amukpe' ? { ...zone, latitude: 5.9100, longitude: 5.6846 } : zone)
+  return pricing
+}
+const finance = { ...structuredClone(defaultFinanceSettings), riderPay: { enabled: true, bands: STARTER_RIDER_BANDS, perKmAfterMinor: 12_000 } }
+const restaurant = { latitude: '5.8916', longitude: '5.6846', application: { deliveryPreference: 'DOORSTEP_RIDERS' } }
+const mapbox = (distances) => async () => ({ ok: true, status: 200, json: async () => ({ code: 'Ok', routes: distances.map((distance) => ({ distance, duration: distance / 8, geometry: { type: 'LineString', coordinates: [] } })) }) })
+
+test('starter settings are valid and unpublished; invalid stored settings fall back safely', async () => {
+  assert.equal(deliveryPricingSchema.safeParse(structuredClone(defaultDeliveryPricing)).success, true)
+  const empty = await getDeliveryPricing({ platformSetting: { findUnique: async () => null } })
+  assert.equal(empty.published, false)
+  const broken = await getDeliveryPricing({ platformSetting: { findUnique: async () => ({ value: { published: true } }) } })
+  assert.equal(broken.published, false)
+  assert.equal(broken.invalidStoredSettings, true)
+})
+
+test('schema rejects agreed prices that point at missing areas or carry no amounts', () => {
+  const pricing = published()
+  pricing.routeRules = [{ id: 'r1', fromZoneId: 'amukpe', toZoneId: 'nowhere', bothWays: true, customerFeeMinor: 100_000, riderPayMinor: null, agreedWith: '', note: '', active: true }]
+  assert.equal(deliveryPricingSchema.safeParse(pricing).success, false)
+  pricing.routeRules = [{ id: 'r1', fromZoneId: 'amukpe', toZoneId: 'ogodo', bothWays: true, customerFeeMinor: null, riderPayMinor: null, agreedWith: '', note: '', active: true }]
+  assert.equal(deliveryPricingSchema.safeParse(pricing).success, false)
+})
+
+test('unpublished pricing leaves checkout on the old flat fee', async () => {
+  const result = await quoteOrderDelivery({ db: null, restaurant, destination: { point: { latitude: 5.91, longitude: 5.6846 } }, subtotalMinor: 800_000, pricing: structuredClone(defaultDeliveryPricing), finance })
+  assert.equal(result, null)
+})
+
+test('an exact pin is priced on the shortest road route and fixes the rider pay on the order', async () => {
+  const result = await quoteOrderDelivery({ db: null, restaurant, destination: { point: { latitude: 5.91, longitude: 5.6846 } }, subtotalMinor: 800_000, pricing: published(), finance, fetchImpl: mapbox([3100, 2600]) })
+  assert.equal(result.distance.source, 'ROAD')
+  assert.equal(result.km, 2.6)
+  assert.equal(result.dropoffZone?.name, 'Amukpe')
+  assert.equal(result.rider.payMinor, 70_000)
+  const snapshot = orderPricingSnapshot(result)
+  assert.equal(snapshot.plannedRiderPayMinor, 70_000)
+  assert.equal(snapshot.deliveryDistanceMeters, 2600)
+  assert.equal(snapshot.deliveryQuote.customer.deliveryFeeMinor, result.customer.deliveryFeeMinor)
+})
+
+test('choosing an area without a pin prices from the area centre', async () => {
+  const pricing = published()
+  const dropoff = resolveDropoff({ point: null, addressLine: 'Amukpe, Sapele' }, pricing.zones)
+  assert.equal(dropoff.source, 'AREA_CENTRE')
+  const result = await quoteOrderDelivery({ db: null, restaurant, destination: { point: null, addressLine: 'Amukpe, Sapele' }, subtotalMinor: 500_000, pricing, finance, fetchImpl: mapbox([2500]) })
+  assert.equal(result.dropoffSource, 'AREA_CENTRE')
+  assert.ok(result.warnings.includes('AREA_CENTRE'))
+})
+
+test('missing pins use the assumed distance and leave the rider pay for review', async () => {
+  const result = await quoteOrderDelivery({ db: null, restaurant: { ...restaurant, latitude: null, longitude: null }, destination: { point: { latitude: 5.91, longitude: 5.68 } }, subtotalMinor: 500_000, pricing: published(), finance })
+  assert.equal(result.distance.source, 'ASSUMED')
+  assert.ok(result.warnings.includes('PICKUP_NOT_PINNED'))
+  assert.equal(orderPricingSnapshot(result).plannedRiderPayMinor, null)
+})
+
+test('trips beyond the maximum distance are refused with a clear message', async () => {
+  await assert.rejects(
+    quoteOrderDelivery({ db: null, restaurant, destination: { point: { latitude: 6.05, longitude: 5.6846 } }, subtotalMinor: 500_000, pricing: published(), finance, fetchImpl: mapbox([21_000]) }),
+    (error) => error.code === 'DELIVERY_TOO_FAR' && /15 km/.test(error.message),
+  )
+})
+
+test('a routing outage still prices the order from an estimate instead of failing checkout', async () => {
+  const down = async () => { throw new Error('offline') }
+  const result = await quoteOrderDelivery({ db: null, restaurant, destination: { point: { latitude: 5.905, longitude: 5.6846 } }, subtotalMinor: 500_000, pricing: published(), finance, fetchImpl: down })
+  assert.equal(result.distance.source, 'ESTIMATE')
+  assert.ok(result.customer.deliveryFeeMinor > 0)
+})

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ArrowRight, BarChart3, Bell, Check, ClipboardList, DollarSign, FileText, LayoutDashboard, MapPin, Menu, Settings, Shield, Store, Truck, Users } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BarChart3, Bell, Calculator, Check, ClipboardList, DollarSign, FileText, LayoutDashboard, MapPin, Menu, Settings, Shield, Store, Truck, Users } from 'lucide-react'
 import { formatNaira } from './data'
 import { PasswordField } from './PasswordField'
 import { lockedUntilTouched, useManualSignIn } from './auth/manualSignIn'
@@ -9,11 +9,12 @@ import { WorkspaceTabBar } from './mobile/WorkspaceTabBar'
 import { NotificationBell } from './notifications/NotificationCenter'
 import { SupportDesk } from './admin/SupportDesk'
 import { FinanceAdmin } from './admin/FinanceAdmin'
+import { DeliveryPricingAdmin } from './admin/DeliveryPricing'
 import { SessionSignOutButton, SignOutNotice } from './authControls'
 import { apiBase } from './config/apiBase'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
-const adminNav = [['Dashboard', '/admin/dashboard', LayoutDashboard], ['Active deliveries', '/admin/deliveries', MapPin], ['Customers', '/admin/customers', Users], ['Restaurants', '/admin/restaurants', Store], ['Groceries', '/admin/groceries', Store], ['Riders', '/admin/riders', Truck], ['Orders', '/admin/orders', ClipboardList], ['Packages', '/admin/parcels', Truck], ['Reviews', '/admin/reviews', ClipboardList], ['Support', '/admin/support', Bell], ['Money', '/admin/finance', DollarSign], ['Payment methods', '/admin/payments', Settings], ['Analytics', '/admin/analytics', BarChart3], ['Audit logs', '/admin/audit-logs', FileText], ['Settings', '/admin/settings', Settings]]
+const adminNav = [['Dashboard', '/admin/dashboard', LayoutDashboard], ['Active deliveries', '/admin/deliveries', MapPin], ['Customers', '/admin/customers', Users], ['Restaurants', '/admin/restaurants', Store], ['Groceries', '/admin/groceries', Store], ['Riders', '/admin/riders', Truck], ['Orders', '/admin/orders', ClipboardList], ['Packages', '/admin/parcels', Truck], ['Reviews', '/admin/reviews', ClipboardList], ['Support', '/admin/support', Bell], ['Money', '/admin/finance', DollarSign], ['Delivery pricing', '/admin/pricing', Calculator], ['Payment methods', '/admin/payments', Settings], ['Analytics', '/admin/analytics', BarChart3], ['Audit logs', '/admin/audit-logs', FileText], ['Settings', '/admin/settings', Settings]]
 
 export function AdminLogin({ onLogin }) {
 	const [error, setError] = useState('')
@@ -136,6 +137,7 @@ export function AdminPortal({ path, onLogout }) {
   if (path === '/admin/reviews') content = <Reviews />
   if (path === '/admin/payments') content = <PaymentSettings />
   if (path === '/admin/finance') content = <FinanceAdmin />
+  if (path === '/admin/pricing') content = <DeliveryPricingAdmin />
   if (path === '/admin/analytics') content = <Finance />
   if (path === '/admin/audit-logs') content = <AuditLogs />
   if (path === '/admin/settings') content = <SettingsPage />

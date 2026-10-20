@@ -1,0 +1,8 @@
+/* Checkout price rows: delivery is priced on the server by road distance. */
+.price-km { color: var(--t-muted, #5b6b63); font-size: .78em; font-weight: 600; }
+.price-pending { color: var(--t-muted, #5b6b63); font-style: normal; font-weight: 600; }
+.price-note { color: var(--t-muted, #5b6b63); font-size: .78rem; line-height: 1.4; margin: -2px 0 4px; }
+.price-note.is-error { color: #b3261e; }
+.checkout-panel .price-note { margin: 6px 0 0; }
+.rider-earning { color: var(--t-forest-800, #123d2d); }
+.rider-earning small { color: var(--t-muted, #5b6b63); font-weight: 600; }

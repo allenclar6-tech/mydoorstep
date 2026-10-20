@@ -59,7 +59,9 @@ export async function recordDeliveryCompleted(db, deliveryId) {
       if (actualFulfilment === 'BUSINESS_RIDER' && planned.deliveryFeeToPlatformMinor) entries.push({ orderId: order.id, party: 'PLATFORM', type: 'DELIVERY_FEE', amountMinor: -planned.deliveryFeeToPlatformMinor, status: 'RETAINED', description: `Delivery fee passed to the business for ${order.orderNumber}`, dedupeKey: `DELIVERY_FEE_REVERSAL:${order.id}` })
     }
     if (!businessRider) {
-      const earning = riderEarning(order.deliveryDistanceMeters, settings)
+      // Rider pay fixed at checkout (distance rate card, area bonus, agreed route price or busy-time boost) wins;
+      // older orders fall back to the rate card for the measured distance.
+      const earning = order.plannedRiderPayMinor != null ? { amountMinor: order.plannedRiderPayMinor } : riderEarning(order.deliveryDistanceMeters, settings)
       riderEntry = { orderId: order.id, party: 'RIDER', riderId: delivery.rider.id, type: 'RIDER_EARNING', amountMinor: earning.amountMinor ?? 0, status: earning.amountMinor == null ? 'NEEDS_REVIEW' : 'DUE', description: earning.amountMinor == null ? `${order.orderNumber}: ${earning.reason === 'DISTANCE_UNKNOWN' ? 'distance unknown' : 'rider rates not published'} — DOORSTEP will set this amount` : `${order.orderNumber} · ${(order.deliveryDistanceMeters / 1000).toFixed(1)} km`, dedupeKey: `RIDER_EARNING:order:${order.id}` }
       if (earning.amountMinor != null) await db.riderPayout.upsert({ where: { orderId: order.id }, update: {}, create: { riderId: delivery.rider.id, orderId: order.id, amountMinor: earning.amountMinor } })
     }

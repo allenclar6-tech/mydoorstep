@@ -11,7 +11,7 @@ const siteBrain = `DOORSTEP is a website-first food delivery marketplace serving
 Restaurants currently shown:
 ${restaurants.map((restaurant) => `- ${restaurant.name}: ${restaurant.cuisine}; rating ${restaurant.rating}; delivery ${restaurant.time}; fee ${restaurant.fee}; menu: ${restaurant.items.join(', ')}.`).join('\n')}
 
-Delivery coverage includes ${locations.join(', ')}. Customers can choose an area, use device location, or save an exact address with a landmark. Delivery fee is normally calculated server-side; the current checkout foundation uses N800 as its default quote and a 3% service fee. Delivery estimates are restaurant-specific and can change with operations conditions.
+Delivery coverage includes ${locations.join(', ')}. Customers can choose an area, use device location, or save an exact address with a landmark. The delivery fee is calculated on the server from the road distance between the store and the customer's map pin (or the centre of the Sapele area they chose), and checkout shows the exact fee and distance before payment. There is also a small service fee. Delivery estimates are restaurant-specific and can change with operations conditions.
 
 Order flow: browse restaurants or search dishes, add food to the cart, keep one restaurant per order, review subtotal plus delivery and service fee, enter address and phone, create the server order, then initialize Paystack. Customers can view account orders and tracking stages such as payment confirmed, restaurant accepted, preparing, ready for pickup, rider assigned, picked up, out for delivery, and delivered.
 

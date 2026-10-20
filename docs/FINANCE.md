@@ -34,6 +34,8 @@ No official published Sapele payout rate could be found, so none is built in.
 - Until then, completed deliveries appear as **"Needs a price"** for an admin to set.
 - The same happens when a delivery's distance is unknown (for example, the business hasn't set its pickup point). Businesses set this under Earnings → Pickup point.
 
+The rate card can also be edited, together with customer delivery fees, in **Admin → Delivery pricing** (see [DELIVERY_PRICING.md](DELIVERY_PRICING.md)). Once delivery pricing is published, each order stores the rider's pay at checkout and that amount is what the rider is paid.
+
 ## Setup
 
 1. **Saved payout accounts.** Businesses and riders open **Earnings → Add bank account**.

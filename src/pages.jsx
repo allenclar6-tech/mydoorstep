@@ -22,6 +22,8 @@ import { SignInLinks, SignOutNotice } from './authControls'
 import { NotificationsScreen, useNotifications } from './notifications/NotificationCenter'
 import { AlternativeSignIn, PHONE_HANDOFF_KEY, SignInMethodsPage, useAuthProviders } from './auth/AltSignIn'
 import { ORDER_STATUS_LABELS, OrderActionButtons, orderStatusTone } from './orders/OrderActions'
+import { checkoutTotals, useDeliveryQuote } from './orders/useDeliveryQuote'
+import { PriceRows } from './orders/PriceRows'
 import { apiBase } from './config/apiBase'
 import { formatTime12, TimeSelect } from './TimeSelect'
 
@@ -846,18 +848,16 @@ function RestaurantPage({ slug, onAddToCart, grocery = false }) {
 }
 
 function CartPage({ cart, onChangeQuantity, onCheckout }) {
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const delivery = cart[0]?.deliveryFee || 800
-  const service = Math.round(subtotal * 0.03)
-  return <PageFrame eyebrow="YOUR ORDER" title="Cart" intro="Review your items before checkout. Each order comes from one restaurant or store.">{cart.length === 0 ? <div className="submitted-card"><ShoppingBagIcon /><h2>Your cart is empty</h2><p>Choose a restaurant and add something good to get started.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Browse restaurants <ArrowRight size={16} /></button></div> : <section className="cart-page-layout"><div className="cart-page-items"><div className="cart-restaurant">{cart[0].restaurantName}<small>One kitchen per order</small></div>{cart.map((item) => <div className="cart-page-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatNaira(item.price)} each</p><div className="quantity"><button onClick={() => onChangeQuantity(item.id, -1)}>-</button><span>{item.quantity}</span><button onClick={() => onChangeQuantity(item.id, 1)}>+</button></div></div><strong>{formatNaira(item.price * item.quantity)}</strong></div>)}</div><div className="cart-page-summary"><span className="section-kicker">ORDER SUMMARY</span><div><span>Subtotal</span><strong>{formatNaira(subtotal)}</strong></div><div><span>Delivery</span><strong>{formatNaira(delivery)}</strong></div><div><span>Service fee</span><strong>{formatNaira(service)}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(subtotal + delivery + service)}</strong></div><button className="checkout-button" onClick={onCheckout}>Proceed to checkout <ArrowRight size={17} /></button></div></section>}</PageFrame>
+  const savedPoint = readConfirmedLocation()
+  const savedLine = (() => { try { return localStorage.getItem('doorstep-location') || savedPoint?.label || '' } catch { return savedPoint?.label || '' } })()
+  const priceState = useDeliveryQuote(cart, { addressLine: savedLine, latitude: savedPoint?.latitude, longitude: savedPoint?.longitude })
+  const totals = checkoutTotals(priceState, cart)
+  return <PageFrame eyebrow="YOUR ORDER" title="Cart" intro="Review your items before checkout. Each order comes from one restaurant or store.">{cart.length === 0 ? <div className="submitted-card"><ShoppingBagIcon /><h2>Your cart is empty</h2><p>Choose a restaurant and add something good to get started.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Browse restaurants <ArrowRight size={16} /></button></div> : <section className="cart-page-layout"><div className="cart-page-items"><div className="cart-restaurant">{cart[0].restaurantName}<small>One kitchen per order</small></div>{cart.map((item) => <div className="cart-page-item" key={item.id}><img src={item.image} alt="" /><div><h3>{item.name}</h3><p>{formatNaira(item.price)} each</p><div className="quantity"><button onClick={() => onChangeQuantity(item.id, -1)}>-</button><span>{item.quantity}</span><button onClick={() => onChangeQuantity(item.id, 1)}>+</button></div></div><strong>{formatNaira(item.price * item.quantity)}</strong></div>)}</div><div className="cart-page-summary"><span className="section-kicker">ORDER SUMMARY</span><PriceRows totals={totals} state={priceState} /><button className="checkout-button" onClick={onCheckout}>Proceed to checkout <ArrowRight size={17} /></button></div></section>}</PageFrame>
 }
 
 function ShoppingBagIcon() { return <div className="success-mark"><ShoppingBag size={24} /></div> }
 
 function CheckoutPage({ cart, onComplete, error }) {
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const delivery = cart[0]?.deliveryFee || 800
-  const service = Math.round(subtotal * 0.03)
   const [gateway, setGateway] = useState({ provider: 'paystack', configured: false, methods: {} })
   const [paymentMethod, setPaymentMethod] = useState('PAYSTACK')
   const savedCards = useSavedCards()
@@ -866,6 +866,8 @@ function CheckoutPage({ cart, onComplete, error }) {
   useEffect(() => { const first = savedCards.cards.find((card) => !card.expired); if (first) setCardChoice((current) => current === 'NEW' ? first.id : current) }, [savedCards.cards.length])
   const [deliveryPoint, setDeliveryPoint] = useState(() => readConfirmedLocation())
   const [address, setAddress] = useState(() => readConfirmedLocation()?.label || 'Amukpe, Sapele')
+  const priceState = useDeliveryQuote(cart, { addressLine: address, latitude: deliveryPoint?.latitude, longitude: deliveryPoint?.longitude })
+  const totals = checkoutTotals(priceState, cart)
   useEffect(() => {
     let active = true
     fetch(`${apiBase}/api/payments/config`).then(async (response) => {
@@ -903,7 +905,7 @@ function CheckoutPage({ cart, onComplete, error }) {
         <input type="hidden" name="saveCard" value={paymentMethod === 'PAYSTACK' && savedCards.enabled && cardChoice === 'NEW' && saveCard ? 'yes' : ''} />
         {choices.length === 0 && <div className="checkout-note" role="alert"><ShieldCheck size={17} /> No payment method is currently configured. Contact DOORSTEP support.</div>}
       </div>
-      <div className="cart-page-summary"><span className="section-kicker">PAYMENT SUMMARY</span><div><span>Subtotal</span><strong>{formatNaira(subtotal)}</strong></div><div><span>Delivery</span><strong>{formatNaira(delivery)}</strong></div><div><span>Service fee</span><strong>{formatNaira(service)}</strong></div><div className="total"><span>Total</span><strong>{formatNaira(subtotal + delivery + service)}</strong></div>{error && <p className="profile-message" role="alert">{error}</p>}<button className="checkout-button" type="submit" disabled={choices.length === 0}>{buttonLabel} <ArrowRight size={17} /></button><small className="payment-disclaimer">DOORSTEP recalculates this order on the server before creating a payment.</small></div>
+      <div className="cart-page-summary"><span className="section-kicker">PAYMENT SUMMARY</span><PriceRows totals={totals} state={priceState} pending="Calculating…" />{error && <p className="profile-message" role="alert">{error}</p>}<button className="checkout-button" type="submit" disabled={choices.length === 0}>{buttonLabel} <ArrowRight size={17} /></button><small className="payment-disclaimer">DOORSTEP recalculates this order on the server before creating a payment.</small></div>
     </form>
   </PageFrame>
 }
