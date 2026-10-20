@@ -946,6 +946,7 @@ function PaymentCallbackPage() {
 }
 
 function OrdersPage() {
+  const { unreadCount } = useNotifications('doorstep-token', Boolean(localStorage.getItem('doorstep-token')))
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -978,6 +979,8 @@ function OrdersPage() {
   }, [refreshKey])
 
   return <PageFrame eyebrow="ACCOUNT ORDERS" title="Your order history." intro="Every order you have placed, with its payment and delivery status.">
+    {/* The number on the Orders tab counts unread updates (payments, deliveries, account messages), so show where they are. */}
+    {unreadCount > 0 && <button type="button" className="orders-updates" onClick={() => navigate('/account/notifications')}><span className="orders-updates-icon"><Bell size={18} aria-hidden="true" /><b>{unreadCount > 99 ? '99+' : unreadCount}</b></span><span><strong>{unreadCount === 1 ? '1 new update' : `${unreadCount} new updates`}</strong><small>Payments, deliveries and account messages</small></span><ArrowRight size={18} aria-hidden="true" /></button>}
     {loading ? <div className="submitted-card"><Clock3 size={24} /><h2>Loading your orders</h2><p>Checking your secure order history.</p></div>
       : error ? <div className="submitted-card"><Clock3 size={24} /><h2>Could not load orders</h2><p>{error}</p><div className="profile-form-actions"><button className="primary-button" onClick={() => setRefreshKey((key) => key + 1)}>Try again <ArrowRight size={16} /></button><button className="quiet-button" onClick={() => navigate('/help')}>Contact support</button></div></div>
         : orders.length === 0 ? <div className="submitted-card"><Clock3 size={24} /><h2>No orders yet</h2><p>Your orders will appear here with their verified payment and delivery history.</p><button className="primary-button" onClick={() => navigate('/restaurants')}>Find food <ArrowRight size={16} /></button></div>
