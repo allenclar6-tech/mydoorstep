@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, ArrowRight, BarChart3, Bell, Check, ClipboardList, DollarSign, FileText, LayoutDashboard, MapPin, Menu, Settings, Shield, Store, Truck, Users } from 'lucide-react'
 import { formatNaira } from './data'
 import { PasswordField } from './PasswordField'
+import { lockedUntilTouched, useManualSignIn } from './auth/manualSignIn'
 import { ApplicationManagement } from './ApplicationManagement'
 import { AdminParcels } from './admin/AdminParcels'
 import { WorkspaceTabBar } from './mobile/WorkspaceTabBar'
@@ -17,7 +18,9 @@ const adminNav = [['Dashboard', '/admin/dashboard', LayoutDashboard], ['Active d
 export function AdminLogin({ onLogin }) {
 	const [error, setError] = useState('')
 	const [busy, setBusy] = useState(false)
+	const manual = useManualSignIn()
 	const submit = async (event) => {
+		if (!manual.allowSubmit(event)) return
 		event.preventDefault()
 		setBusy(true)
 		setError('')
@@ -30,7 +33,7 @@ export function AdminLogin({ onLogin }) {
 			onLogin()
 		} catch (loginError) { setError(loginError.name === 'TimeoutError' ? 'The sign-in service did not respond. Please try again.' : loginError.message || 'Unable to sign in. Please try again.') } finally { setBusy(false) }
 	}
-	return <main className="admin-login-page"><div className="admin-login-card"><div className="admin-brand"><span className="brand-mark">✦</span><span>doorstep<small>control center</small></span></div><span className="section-kicker">OWNER ACCESS</span><h1>Admin control center</h1><p>Sign in with the business owner account. Normal customer, partner, and rider accounts cannot enter this workspace.</p><SignOutNotice /><form onSubmit={submit}><label>Email address<input required type="email" name="email" autoComplete="username" /></label><PasswordField required label="Password" name="password" autoComplete="current-password" />{error && <div className="admin-login-error" role="alert">{error}</div>}<button className="admin-primary" disabled={busy} type="submit">{busy ? 'Signing in...' : 'Sign in to admin'} <ArrowRight size={16} /></button><button className="forgot-password-link" type="button" onClick={() => navigate('/admin/forgot-password')}>Forgot password?</button></form></div></main>
+	return <main className="admin-login-page"><div className="admin-login-card"><div className="admin-brand"><span className="brand-mark">✦</span><span>doorstep<small>control center</small></span></div><span className="section-kicker">OWNER ACCESS</span><h1>Admin control center</h1><p>Sign in with the business owner account. Normal customer, partner, and rider accounts cannot enter this workspace.</p><SignOutNotice /><form onSubmit={submit} {...manual.formProps}><label>Email address<input required type="email" name="email" autoComplete="username" {...lockedUntilTouched} /></label><PasswordField required label="Password" name="password" autoComplete="current-password" {...lockedUntilTouched} />{error && <div className="admin-login-error" role="alert">{error}</div>}<button className="admin-primary" disabled={busy} type="submit">{busy ? 'Signing in...' : 'Sign in to admin'} <ArrowRight size={16} /></button><button className="forgot-password-link" type="button" onClick={() => navigate('/admin/forgot-password')}>Forgot password?</button></form></div></main>
 }
 
 function AdminShell({ path, children }) {

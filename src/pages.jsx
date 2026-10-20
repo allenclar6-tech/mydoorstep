@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { ArrowRight, CreditCard, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
 import { categories, formatNaira, sapeleLocations } from './data'
 import { PasswordField } from './PasswordField'
+import { lockedUntilTouched, useManualSignIn } from './auth/manualSignIn'
 import { ProfileAvatar } from './ProfileAvatar'
 import { GroceryOwnerApplication } from './GroceryOwnerApplication'
 import { ApplicationReviewSummary, clearApplicationDraft, getApplicationReview, restoreApplicationDraft, saveApplicationDraft } from './ApplicationReview'
@@ -186,7 +187,9 @@ function LegacyAuthPage({ register = false }) {
 function AuthPage({ register = false, portalRole = 'CUSTOMER' }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const manual = useManualSignIn()
   const submit = async (event) => {
+    if (!manual.allowSubmit(event)) return
     event.preventDefault()
     setBusy(true)
     setError('')
@@ -215,12 +218,12 @@ function AuthPage({ register = false, portalRole = 'CUSTOMER' }) {
     <section className={`auth-layout auth-layout-${portalRole.toLowerCase()}`}>
       <div className="partner-cta"><div className="auth-emblem" aria-hidden="true"><ShieldCheck size={56} strokeWidth={2.5} /></div><span className="section-kicker">{portalRole === 'CUSTOMER' ? 'DOORSTEP CUSTOMER' : portalRole === 'RESTAURANT' ? 'APPROVED PARTNER WORKSPACE' : 'APPROVED RIDER WORKSPACE'}</span><h2>{roleCopy.heading}</h2><p>{roleCopy.detail}</p><div className="auth-trust-points"><span><Check size={13} /> Secure sessions</span><span><Check size={13} /> Role-checked access</span><span><Check size={13} /> Support when needed</span></div></div>
       <div className="auth-form-stack">
-      <form className="auth-form" onSubmit={submit}>
+      <form className="auth-form" onSubmit={submit} {...manual.formProps}>
         <h2>{register ? 'Customer account' : 'Sign in securely'}</h2>
         {register && <div className="form-row"><label>First name<input required name="firstName" /></label><label>Last name<input required name="lastName" /></label></div>}
-        <label>Email address<input required type="email" name="email" autoComplete="username" /></label>
+        <label>Email address<input required type="email" name="email" autoComplete="username" {...(register ? {} : lockedUntilTouched)} /></label>
         {register && <label>Phone number<input required type="tel" name="phone" /></label>}
-        <PasswordField required label="Password" minLength="8" name="password" autoComplete={register ? 'new-password' : 'current-password'} />
+        <PasswordField required label="Password" minLength="8" name="password" autoComplete={register ? 'new-password' : 'current-password'} {...(register ? {} : lockedUntilTouched)} />
         {register && <label className="terms-check"><input type="checkbox" required /> I agree to the DOORSTEP terms and privacy policy.</label>}
         {error && <div className="admin-login-error" role="alert">{error}</div>}
         <button className="checkout-button" disabled={busy} type="submit">{busy ? 'Please wait...' : register ? 'Create account' : `Continue to ${portalRole === 'CUSTOMER' ? 'DOORSTEP' : portalRole === 'RESTAURANT' ? 'owner workspace' : 'rider workspace'}`} <ArrowRight size={17} /></button>
