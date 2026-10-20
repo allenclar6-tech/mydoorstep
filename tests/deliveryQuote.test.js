@@ -8,7 +8,7 @@ import { defaultFinanceSettings } from '../server/financeService.js'
 process.env.MAPBOX_SERVER_TOKEN = 'test-token'
 const published = () => {
   const pricing = { ...structuredClone(defaultDeliveryPricing), published: true }
-  pricing.zones = pricing.zones.map((zone) => zone.id === 'amukpe' ? { ...zone, latitude: 5.9100, longitude: 5.6846 } : zone)
+  pricing.zones = pricing.zones.map((zone) => zone.id === 'sapele-rural-amukpe' ? { ...zone, latitude: 5.9100, longitude: 5.6846 } : zone)
   return pricing
 }
 const finance = { ...structuredClone(defaultFinanceSettings), riderPay: { enabled: true, bands: STARTER_RIDER_BANDS, perKmAfterMinor: 12_000 } }
@@ -26,9 +26,9 @@ test('starter settings are valid and unpublished; invalid stored settings fall b
 
 test('schema rejects agreed prices that point at missing areas or carry no amounts', () => {
   const pricing = published()
-  pricing.routeRules = [{ id: 'r1', fromZoneId: 'amukpe', toZoneId: 'nowhere', bothWays: true, customerFeeMinor: 100_000, riderPayMinor: null, agreedWith: '', note: '', active: true }]
+  pricing.routeRules = [{ id: 'r1', fromZoneId: 'sapele-rural-amukpe', toZoneId: 'nowhere', bothWays: true, customerFeeMinor: 100_000, riderPayMinor: null, agreedWith: '', note: '', active: true }]
   assert.equal(deliveryPricingSchema.safeParse(pricing).success, false)
-  pricing.routeRules = [{ id: 'r1', fromZoneId: 'amukpe', toZoneId: 'ogodo', bothWays: true, customerFeeMinor: null, riderPayMinor: null, agreedWith: '', note: '', active: true }]
+  pricing.routeRules = [{ id: 'r1', fromZoneId: 'sapele-rural-amukpe', toZoneId: 'ogorode', bothWays: true, customerFeeMinor: null, riderPayMinor: null, agreedWith: '', note: '', active: true }]
   assert.equal(deliveryPricingSchema.safeParse(pricing).success, false)
 })
 
@@ -41,7 +41,7 @@ test('an exact pin is priced on the shortest road route and fixes the rider pay 
   const result = await quoteOrderDelivery({ db: null, restaurant, destination: { point: { latitude: 5.91, longitude: 5.6846 } }, subtotalMinor: 800_000, pricing: published(), finance, fetchImpl: mapbox([3100, 2600]) })
   assert.equal(result.distance.source, 'ROAD')
   assert.equal(result.km, 2.6)
-  assert.equal(result.dropoffZone?.name, 'Amukpe')
+  assert.equal(result.dropoffZone?.name, 'Sapele Rural / Amukpe')
   assert.equal(result.rider.payMinor, 70_000)
   const snapshot = orderPricingSnapshot(result)
   assert.equal(snapshot.plannedRiderPayMinor, 70_000)
@@ -56,6 +56,15 @@ test('choosing an area without a pin prices from the area centre', async () => {
   const result = await quoteOrderDelivery({ db: null, restaurant, destination: { point: null, addressLine: 'Amukpe, Sapele' }, subtotalMinor: 500_000, pricing, finance, fetchImpl: mapbox([2500]) })
   assert.equal(result.dropoffSource, 'AREA_CENTRE')
   assert.ok(result.warnings.includes('AREA_CENTRE'))
+})
+
+test('a typed street from the Sapele directory is priced from its placed district', async () => {
+  const pricing = published()
+  pricing.zones = pricing.zones.map((zone) => zone.id === 'ayomanor-road-district' ? { ...zone, latitude: 5.8950, longitude: 5.6800 } : zone)
+  const dropoff = resolveDropoff({ point: null, addressLine: '14 Boyo Road, Sapele' }, pricing.zones)
+  assert.equal(dropoff.source, 'AREA_CENTRE')
+  assert.equal(dropoff.zone.id, 'ayomanor-road-district')
+  assert.equal(resolveDropoff({ point: null, addressLine: '14 Boyo Road, Sapele' }, published().zones).source, 'UNKNOWN', 'an unplaced district is never guessed')
 })
 
 test('missing pins use the assumed distance and leave the rider pay for review', async () => {

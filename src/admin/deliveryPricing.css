@@ -122,3 +122,5 @@
 .dp-zones .dp-naira i { left: 9px; }
 .dp-zones .dp-naira.has-unit input { padding-left: 9px; }
 .dp-zones .dp-row-actions { margin-top: -4px; }
+.dp-zone-head b { display: flex; flex-direction: column; gap: 2px; }
+.dp-zone-meta { color: var(--t-muted, #5b6b63); font-size: .74rem; font-weight: 600; }

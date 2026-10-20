@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Bike, Calculator, Check, CloudRain, Handshake, Map as MapIcon, MapPin, Plus, Route, Save, Scale, Store, Trash2, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { MapPointPicker } from '../map/MapPointPicker'
-import { distanceTable, isPoint, priceDelivery, slug } from '../../server/deliveryPricing.js'
+import { distanceTable, isPoint, priceDelivery, slug, starterZones } from '../../server/deliveryPricing.js'
+import { SAPELE_DIRECTORY } from '../../server/sapeleDirectory.js'
+
+const DIRECTORY_BY_ID = new Map(SAPELE_DIRECTORY.map((area) => [area.id, area]))
 
 // Admin › Delivery pricing. One screen to balance what customers pay for delivery, what riders earn, and what
 // DOORSTEP keeps — with a Glovo-style calculator that measures real Sapele routes.
@@ -288,7 +291,7 @@ export function DeliveryPricingAdmin() {
       <div className="dp-card"><h2><MapPin size={18} aria-hidden="true" />Sapele areas <small>{placedCount}/{pricing.zones.length} placed</small></h2>
         <p className="dp-muted">Place each area’s centre on the map. Customers who choose an area instead of an exact pin are priced from it, and you can add a surcharge or rider bonus for hard-to-reach areas.</p>
         <ul className="dp-zones">{pricing.zones.map((zone, index) => <li key={zone.id} className={zone.active ? '' : 'is-off'}>
-          <div className="dp-zone-head"><b>{zone.name}</b><span className={isPoint(zone) ? 'dp-pill is-ok' : 'dp-pill'}>{isPoint(zone) ? 'Placed' : 'Not placed'}</span>
+          <div className="dp-zone-head"><b>{zone.name}{DIRECTORY_BY_ID.get(zone.id) && <small className="dp-zone-meta">{DIRECTORY_BY_ID.get(zone.id).postcode || 'postcode to confirm'} · {(DIRECTORY_BY_ID.get(zone.id).streets?.length || 0) + (DIRECTORY_BY_ID.get(zone.id).localities?.length || 0)} streets/places</small>}</b><span className={isPoint(zone) ? 'dp-pill is-ok' : 'dp-pill'}>{isPoint(zone) ? 'Placed' : 'Not placed'}</span>
             <button type="button" className="dp-link" onClick={() => setMapSheet({ mode: 'area', index, value: { name: zone.name, ...(isPoint(zone) ? { area: { latitude: zone.latitude, longitude: zone.longitude, label: zone.name } } : {}) } })}><MapIcon size={14} />{isPoint(zone) ? 'Move' : 'Place'}</button></div>
           <div className="dp-grid is-tight">
             <NumberField label="Radius" value={zone.radiusMeters} suffix="m" step="50" onChange={(v) => setP(['zones', index, 'radiusMeters'], Math.round(v))} />
@@ -298,6 +301,7 @@ export function DeliveryPricingAdmin() {
           <div className="dp-row-actions"><Toggle checked={zone.active} onChange={(v) => setP(['zones', index], { ...zone, active: v })} label="Active" />
             <button type="button" className="dp-icon" aria-label={`Delete ${zone.name}`} onClick={() => { if (pricing.routeRules.some((rule) => rule.fromZoneId === zone.id || rule.toZoneId === zone.id)) return setError(`${zone.name} is used by an agreed price. Remove that first.`); setP(['zones'], pricing.zones.filter((_, i) => i !== index)) }}><Trash2 size={16} /></button></div>
         </li>)}</ul>
+        {(() => { const missing = starterZones().filter((seed) => !pricing.zones.some((zone) => zone.id === seed.id)); return missing.length > 0 && <button type="button" className="dp-link" onClick={() => setP(['zones'], [...pricing.zones, ...missing])}><Plus size={15} />Add {missing.length} area{missing.length > 1 ? 's' : ''} from the Sapele directory</button> })()}
         <form className="dp-add" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem('zone'); addZone(input.value); input.value = '' }}><input name="zone" placeholder="Add an area, e.g. Okotie-Eboh" maxLength={60} /><button type="submit" className="dp-link"><Plus size={15} />Add</button></form>
       </div>
       {unpinned.length > 0 && <div className="dp-card dp-alert"><Store size={18} aria-hidden="true" /><div><b>{unpinned.length} business{unpinned.length > 1 ? 'es have' : ' has'} no map pin</b><p className="dp-muted">Orders from them are priced on an assumed {pricing.distance.assumedKm} km and the rider’s pay needs checking. Ask them to set their location in their DOORSTEP account.</p><p className="dp-muted">{unpinned.slice(0, 12).map((entry) => entry.name).join(', ')}{unpinned.length > 12 ? '…' : ''}</p></div></div>}

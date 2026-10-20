@@ -1,5 +1,6 @@
 import { loadMapToken, SAPELE_CENTER } from './mapConfig'
 import { sapeleDeliveryDirectory } from '../data'
+import { searchDirectory } from '../../server/sapeleDirectory.js'
 
 import { apiBase } from '../config/apiBase'
 export { apiBase }
@@ -15,7 +16,10 @@ export function featureLabel(feature) {
 function nigeriaQuery(query) {
   if (/\bnigeria\b/i.test(query)) return query
   const directoryMatch = sapeleDeliveryDirectory.find((location) => location.name.toLowerCase() === query.toLowerCase())
-  return directoryMatch ? `${directoryMatch.name}, Sapele, Delta State, Nigeria` : `${query}, Nigeria`
+  if (directoryMatch) return `${directoryMatch.name}, Sapele, Delta State, Nigeria`
+  // A street or quarter from the Sapele LGA directory: anchor the search in Sapele so the right "Court Road" is found.
+  if (!/\bsapele\b/i.test(query) && searchDirectory(query, 1).length) return `${query}, Sapele, Delta State, Nigeria`
+  return `${query}, Nigeria`
 }
 
 const statusError = (status, label) => status === 429

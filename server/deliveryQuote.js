@@ -4,6 +4,7 @@ import { isPoint, measureDelivery, priceDelivery, toPoint, zoneForPoint, zoneFor
 import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { getFinanceSettings } from './financeSettings.js'
 import { plannedFulfilment } from './financeService.js'
+import { areaForAddress } from './sapeleDirectory.js'
 import { fetchRoadRoutes } from './parcelService.js'
 
 export class DeliveryQuoteError extends Error {
@@ -31,7 +32,9 @@ export function cachedRoutes(fetchImpl) {
 /** Where the customer is: exact pin → saved address pin → named Sapele area's centre → unknown. */
 export function resolveDropoff({ point, addressLine }, zones) {
   if (isPoint(point)) return { point: toPoint(point), zone: zoneForPoint(point, zones), source: 'PIN' }
-  const named = zoneForText(addressLine, zones)
+  // A typed area name, or a street/quarter/postcode from the Sapele directory that belongs to a placed area.
+  const directoryArea = areaForAddress(addressLine)
+  const named = zoneForText(addressLine, zones) || (directoryArea ? zones.find((zone) => zone.active && zone.id === directoryArea.id) : null) || null
   if (named && isPoint(named)) return { point: toPoint(named), zone: named, source: 'AREA_CENTRE' }
   return { point: null, zone: named, source: 'UNKNOWN' }
 }

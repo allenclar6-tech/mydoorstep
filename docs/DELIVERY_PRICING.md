@@ -67,6 +67,15 @@ Every order keeps the price breakdown, including the rider's pay, in `Order.deli
 - **Customers:** checkout shows the fee and the distance from the server. They never see rider pay or DOORSTEP's margin.
 - **Riders:** the available-jobs list shows "You earn ₦X · Y km" before they accept.
 
+## Sapele address directory
+
+`server/sapeleDirectory.js` is generated from `docs/data/Sapele_LGA_Master_Directory_DOORSTEP.xlsx`. It holds 38 areas, 145 streets, 105 quarters/villages and their postcodes, including the eight urban postcode districts (331211–331262) and the rural groups (331107 Sapele Rural/Amukpe, 331108 Ugborhen, 331109 Elume).
+
+- **Customers:** address fields on checkout, saved addresses and the location page suggest streets, quarters and postcodes as they type. For example, "12 boyo" becomes "12 Boyo Road, Ayomanor Road district, Sapele 331211".
+- **Pricing:** the directory's 36 plannable areas are the starter Sapele areas in Admin → Delivery pricing. The two "verify locally" groups are left out. If a customer types a street but sets no pin, the order is priced from the centre of that street's district, once you've placed that district on the map. A street listed under two districts is not guessed.
+- **No coordinates:** the directory has none, so every area stays "Not placed" until an admin places it.
+- **Not official:** it is not an official, complete street register. Spellings, boundaries and postcodes marked "verify" or "confirm" need checking locally. To update it, edit the spreadsheet and regenerate the file, or edit `server/sapeleDirectory.js` directly.
+
 ## Starter values (edit before publishing)
 
 These are suggestions only. There is no official Sapele rider tariff.

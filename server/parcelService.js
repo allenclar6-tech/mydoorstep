@@ -98,7 +98,7 @@ export function assertWithinServiceArea(pricing, point, label) {
 
 // --------------------------- routing --------------------------------------
 
-const routingToken = () => process.env.MAPBOX_SERVER_TOKEN || process.env.MAPBOX_TOKEN || ''
+const routingToken = () => process.env.MAPBOX_SERVER_TOKEN || process.env.MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN || ''
 
 export function routingConfigured() { return Boolean(routingToken()) }
 

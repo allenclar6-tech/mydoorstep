@@ -2,21 +2,19 @@
 // DOORSTEP's published rate card, and DOORSTEP keeps the difference plus commission and the service fee.
 // Everything here is pure (no database, no network) so it can be unit tested and reused by the admin calculator.
 import { riderEarning } from './financeService.js'
+import { directoryZoneSeeds } from './sapeleDirectory.js'
 
 export const DELIVERY_PRICING_KEY = 'delivery_pricing'
 
-// Sapele areas DOORSTEP already lists for customers. They start without map pins: an admin places each one on the
-// map in Admin › Delivery pricing. Nothing here is a guessed coordinate.
-export const SAPELE_AREA_NAMES = [
-  'Amukpe', 'Central Sapele', 'New Road', 'Ogodo', 'Sapele Township', 'Market Road', 'Mission Road', 'Warri-Sapele Road',
-  'Benin-Sapele Road', 'Urban Area', 'Ugbeyi', 'Okpe Road', 'Oton Road', 'Oghara Junction', 'Estate Area', 'Hospital Road',
-  'School Road', 'Water Side', 'Mosogar Road', 'Jesse Road', 'Okirigwe', 'Ogorode', 'Shell Road',
-]
+// Sapele areas come from the LGA master directory (server/sapeleDirectory.js). They start without map pins: an
+// admin places each one on the map in Admin › Delivery pricing. Nothing here is a guessed coordinate.
 
 export const slug = (value) => String(value).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'area'
 
-export function starterZones(names = SAPELE_AREA_NAMES) {
-  return names.map((name) => ({ id: slug(name), name, latitude: null, longitude: null, radiusMeters: 800, customerSurchargeMinor: 0, riderBonusMinor: 0, active: true }))
+/** Starter areas: the Sapele LGA master directory (districts, neighbourhoods, rural groups), all unplaced. */
+export function starterZones(names) {
+  const seeds = names ? names.map((name) => ({ id: slug(name), name, radiusMeters: 800 })) : directoryZoneSeeds()
+  return seeds.map((seed) => ({ id: seed.id, name: seed.name, latitude: null, longitude: null, radiusMeters: seed.radiusMeters, customerSurchargeMinor: 0, riderBonusMinor: 0, active: true }))
 }
 
 // Starter values are only a starting point for DOORSTEP operations to edit. Nothing changes at checkout until an

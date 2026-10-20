@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowRight, CreditCard, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
-import { categories, formatNaira, sapeleLocations } from './data'
+import { categories, formatNaira } from './data'
+import { AddressSuggestInput } from './address/SapeleAddressSearch'
+import { isPlannableArea, SAPELE_DIRECTORY } from '../server/sapeleDirectory.js'
 import { PasswordField } from './PasswordField'
 import { lockedUntilTouched, useManualSignIn } from './auth/manualSignIn'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -36,6 +38,7 @@ const mapFallback = <div className="empty-state" role="status">Loading map…</d
 const ParcelRoutes = lazy(() => import('./parcel/ParcelRoutes'))
 const PaymentResultPage = lazy(() => import('./parcel/ParcelRoutes').then((module) => ({ default: module.PaymentResult })))
 
+const DIRECTORY_AREAS = SAPELE_DIRECTORY.filter(isPlannableArea).sort((a, b) => a.name.localeCompare(b.name))
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 
 export function MobileStoreDock() {
@@ -678,7 +681,7 @@ function ProfilePage() {
 }
 
 function AddressesPage() {
-  const [addresses, setAddresses] = useState([]); const [message, setMessage] = useState(''); const [coords, setCoords] = useState(() => readConfirmedLocation() || {}); const [selectedArea, setSelectedArea] = useState('')
+  const [addresses, setAddresses] = useState([]); const [message, setMessage] = useState(''); const [coords, setCoords] = useState(() => readConfirmedLocation() || {}); const [selectedArea, setSelectedArea] = useState(''); const [streetLine, setStreetLine] = useState('')
   const load = () => fetch(`${apiBase}/api/addresses`, { headers: authHeaders() }).then((response) => response.json()).then((body) => setAddresses(body.addresses || []))
   useEffect(() => { load(); if (new URLSearchParams(window.location.search).get('locate')) locate() }, [])
   const locate = () => navigator.geolocation?.getCurrentPosition((position) => { setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude }); setMessage('Location captured. Add a label and address, then save it.') }, () => setMessage('Location permission was not granted. You can still enter the address manually.'))
@@ -704,7 +707,8 @@ function AddressesPage() {
     event.preventDefault()
     const form = event.currentTarget
     const values = Object.fromEntries(new FormData(form).entries())
-    const fullAddress = `${values.area}, ${values.addressLine}`
+    const line = String(values.addressLine || '').trim()
+    const fullAddress = line.toLowerCase().includes(String(values.area).toLowerCase()) ? line : `${line}, ${values.area}, Sapele`
     const response = await fetch(`${apiBase}/api/addresses`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ ...values, addressLine: fullAddress, latitude: coords.latitude, longitude: coords.longitude }) })
     setMessage(response.ok ? 'Delivery location saved.' : 'Could not save this address.')
     if (response.ok) {
@@ -713,16 +717,18 @@ function AddressesPage() {
         : null
       setDeliveryLocation(fullAddress, coordinates)
       setSelectedArea('')
+      setStreetLine('')
       form.reset()
       load()
     }
   }
-  return <PageFrame eyebrow="DELIVERY LOCATIONS" title="Your delivery addresses." intro="Choose a Sapele area, then add the exact street, house number, and landmark for reliable delivery."><section className="address-page"><div className="address-actions"><button className="primary-button" onClick={locate}><MapPin size={16} /> Use current device location</button><button className="quiet-button" type="button" onClick={() => navigate('/location?return=/account/addresses')}>Pick exact point on map <ArrowRight size={14} /></button>{coords.latitude != null && coords.longitude != null && <span>Map pin: {Number(coords.latitude).toFixed(7)}, {Number(coords.longitude).toFixed(7)}</span>}{message && <span>{message}</span>}</div><form className="address-form" onSubmit={save}><span className="section-kicker">NEW SAVED PLACE · SAPELE</span><div className="form-row"><label>Label<input required name="label" placeholder="Home, work, school..." /></label><label>Area<select required name="area" value={selectedArea} onChange={(event) => setSelectedArea(event.target.value)}><option value="" disabled>Select a Sapele area</option>{sapeleLocations.map((location) => <option key={location} value={location}>{location}</option>)}</select></label></div><label>Street, house number, or address<input required name="addressLine" placeholder="Exact street and house number" /></label><label>Landmark or delivery note<input name="landmark" placeholder="Near the pharmacy, beside the junction..." /></label><button className="checkout-button" type="submit">Save delivery location <Check size={17} /></button></form><div className="location-directory"><span className="section-kicker">DELIVERY DIRECTORY</span><h2>Sapele areas</h2><p>Select an area to use it for delivery now, then add your exact street and landmark above.</p><div>{sapeleLocations.slice(0, 12).map((location) => <button key={location} type="button" onClick={() => selectArea(location)}>{location}</button>)}</div></div><div className="address-list">{addresses.length === 0 ? <div className="empty-state">No saved locations yet.</div> : addresses.map((address) => <div className="address-card" key={address.id}><MapPin size={19} /><div><strong>{address.label}</strong><p>{address.addressLine}</p><small>{address.landmark || 'No landmark added'}</small>{address.latitude != null && address.longitude != null && <small>Pin: {Number(address.latitude).toFixed(7)}, {Number(address.longitude).toFixed(7)}</small>}</div><div className="address-card-actions"><button className="quiet-button" onClick={() => useSavedAddress(address)}>Use for delivery</button><button className="quiet-button" onClick={() => fetch(`${apiBase}/api/addresses/${address.id}`, { method: 'DELETE', headers: authHeaders() }).then(load)}>Remove</button></div></div>)}</div></section></PageFrame>
+  return <PageFrame eyebrow="DELIVERY LOCATIONS" title="Your delivery addresses." intro="Choose a Sapele area, then add the exact street, house number, and landmark for reliable delivery."><section className="address-page"><div className="address-actions"><button className="primary-button" onClick={locate}><MapPin size={16} /> Use current device location</button><button className="quiet-button" type="button" onClick={() => navigate('/location?return=/account/addresses')}>Pick exact point on map <ArrowRight size={14} /></button>{coords.latitude != null && coords.longitude != null && <span>Map pin: {Number(coords.latitude).toFixed(7)}, {Number(coords.longitude).toFixed(7)}</span>}{message && <span>{message}</span>}</div><form className="address-form" onSubmit={save}><span className="section-kicker">NEW SAVED PLACE · SAPELE</span><div className="form-row"><label>Label<input required name="label" placeholder="Home, work, school..." /></label><label>Area<select required name="area" value={selectedArea} onChange={(event) => setSelectedArea(event.target.value)}><option value="" disabled>Select a Sapele area</option>{DIRECTORY_AREAS.map((area) => <option key={area.id} value={area.name}>{area.name}{area.postcode ? ` · ${area.postcode}` : ''}</option>)}<option value="Other Sapele location">Other Sapele location</option></select></label></div><label>Street, house number, or address<AddressSuggestInput required name="addressLine" value={streetLine} onChange={setStreetLine} placeholder="Start typing your street, e.g. 12 Boyo Road" onPick={(result) => setSelectedArea(DIRECTORY_AREAS.some((area) => area.name === result.areaName) ? result.areaName : 'Other Sapele location')} /></label><label>Landmark or delivery note<input name="landmark" placeholder="Near the pharmacy, beside the junction..." /></label><button className="checkout-button" type="submit">Save delivery location <Check size={17} /></button></form><div className="location-directory"><span className="section-kicker">DELIVERY DIRECTORY</span><h2>Sapele areas</h2><p>Select an area to use it for delivery now, then add your exact street and landmark above.</p><div>{DIRECTORY_AREAS.filter((area) => area.postcode && !area.postcodeNote).map((area) => <button key={area.id} type="button" onClick={() => selectArea(area.name)}>{area.name}<small> · {area.postcode}</small></button>)}</div></div><div className="address-list">{addresses.length === 0 ? <div className="empty-state">No saved locations yet.</div> : addresses.map((address) => <div className="address-card" key={address.id}><MapPin size={19} /><div><strong>{address.label}</strong><p>{address.addressLine}</p><small>{address.landmark || 'No landmark added'}</small>{address.latitude != null && address.longitude != null && <small>Pin: {Number(address.latitude).toFixed(7)}, {Number(address.longitude).toFixed(7)}</small>}</div><div className="address-card-actions"><button className="quiet-button" onClick={() => useSavedAddress(address)}>Use for delivery</button><button className="quiet-button" onClick={() => fetch(`${apiBase}/api/addresses/${address.id}`, { method: 'DELETE', headers: authHeaders() }).then(load)}>Remove</button></div></div>)}</div></section></PageFrame>
 }
 
 function LocationPage() {
   const [location, setLocation] = useState(localStorage.getItem('doorstep-location') || readConfirmedLocation()?.label || 'Amukpe, Sapele')
   const [message, setMessage] = useState('')
+  const [locationQuery, setLocationQuery] = useState('')
   const returnTo = new URLSearchParams(window.location.search).get('return')
   const saveLocation = (value, coordinates = null) => {
     localStorage.setItem('doorstep-location', value)
@@ -748,8 +754,9 @@ function LocationPage() {
       <div className="location-directory">
         <span className="section-kicker">SAPELE DELIVERY AREAS</span>
         <h2>Choose your area</h2>
-        <p>Coverage is configured by DOORSTEP operations and can expand as the service grows.</p>
-        <div>{sapeleLocations.map((area) => <button key={area} onClick={() => saveLocation(`${area}, Sapele`)}>{area}</button>)}</div>
+        <p>Search any street, quarter or postcode in Sapele LGA, or tap an area. For the exact delivery fee, set a map pin too.</p>
+        <AddressSuggestInput className="location-search" value={locationQuery} onChange={setLocationQuery} placeholder="Search a street, quarter or postcode" onPick={(_result, line) => { saveLocation(line); setLocationQuery('') }} />
+        <div>{DIRECTORY_AREAS.filter((area) => area.postcode && !area.postcodeNote).map((area) => <button key={area.id} onClick={() => saveLocation(`${area.name}, Sapele ${area.postcode}`)}>{area.name}</button>)}</div>
       </div>
       <button className="checkout-button" onClick={() => navigate('/account/addresses')}>Manage exact addresses <ArrowRight size={17} /></button>
     </section>
@@ -891,7 +898,7 @@ function CheckoutPage({ cart, onComplete, error }) {
     <form className="checkout-page-layout" onSubmit={onComplete}>
       <div className="checkout-details">
         <h2>Delivery details</h2>
-        <label>Address<input required name="address" value={address} onChange={(event) => { setAddress(event.target.value); if (event.target.value !== deliveryPoint?.label) setDeliveryPoint(null) }} /></label>
+        <label>Address<AddressSuggestInput required name="address" value={address} onChange={(value) => { setAddress(value); if (value !== deliveryPoint?.label) setDeliveryPoint(null) }} /></label>
         <button className="quiet-button" type="button" onClick={() => navigate('/location?return=/checkout')}>{deliveryPoint ? 'Adjust exact map pin' : 'Choose exact point on map'} <ArrowRight size={14} /></button>
         {deliveryPoint && <div className="checkout-location-confirmation"><MapPin size={17} /><span>Order destination: {deliveryPoint.latitude.toFixed(7)}, {deliveryPoint.longitude.toFixed(7)}</span></div>}
         <input type="hidden" name="latitude" value={deliveryPoint?.latitude ?? ''} />
