@@ -738,7 +738,9 @@ app.get('/api/profile/photo', requireUser, async (request, response) => {
     if (!isOwnPrivateKey(request.user.id, request.user.profileImageKey)) return response.status(403).json({ error: 'PROFILE_PHOTO_OWNERSHIP_REQUIRED' })
     const photo = await readPrivateDocument(request.user.profileImageKey)
     response.set('Content-Type', photo.mimeType)
-    response.set('Cache-Control', 'private, max-age=300')
+    // Every account shares this URL, so a cached copy could show the previous person's photo after switching accounts.
+    response.set('Cache-Control', 'private, no-store')
+    response.set('Vary', 'Authorization')
     return response.send(photo.buffer)
   } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'PROFILE_PHOTO_UNAVAILABLE' }) }
 })

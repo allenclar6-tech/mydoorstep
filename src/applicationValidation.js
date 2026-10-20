@@ -23,7 +23,12 @@ export function validateOpeningHours(form) {
   closingTime.setCustomValidity(incomplete && !closingTime.value ? 'Enter both opening and closing times.' : '')
   if (!incomplete) return true
 
-  ;(openingTime.value ? closingTime : openingTime).reportValidity()
+  // The time picker keeps its value in a hidden field; show the message on its visible hour box.
+  const visible = (field) => field.closest?.('.time-select')?.querySelector('select') || field
+  const missing = visible(openingTime.value ? closingTime : openingTime)
+  missing.setCustomValidity('Enter both opening and closing times.')
+  missing.reportValidity()
+  missing.addEventListener?.('change', () => missing.setCustomValidity(''), { once: true })
   return false
 }
 

@@ -211,3 +211,10 @@ html body .recovery-icon { background: var(--t-gold-400); box-shadow: none; colo
 html body .route-page > .discovery-toolbar { gap: 16px; margin: 28px auto 0; max-width: 958px; min-height: 0; padding: 12px 16px; }
 @media (max-width: 1000px) { html body .route-page > .discovery-toolbar { margin-left: 16px; margin-right: 16px; } }
 html body .discovery-toolbar .route-search { border: 1px solid var(--t-line); box-shadow: none; flex: 1 1 auto; margin: 0; }
+
+/* Opening and closing time picker: hour, minutes and AM/PM, empty until chosen. */
+.time-select { align-items: center; display: flex; gap: 6px; margin-top: 6px; position: relative; }
+.time-select select { background: var(--t-surface); border: 1px solid var(--t-line-strong); border-radius: 10px; color: var(--t-ink); flex: 1 1 0; font: inherit; font-weight: 600; min-height: 44px; min-width: 0; padding: 0 10px; }
+.time-select select:focus { border-color: var(--t-green-600); outline: 2px solid var(--t-mint-200); }
+.time-select-colon { color: var(--t-muted); font-weight: 800; }
+.time-select-value { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }

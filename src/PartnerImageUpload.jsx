@@ -31,7 +31,7 @@ export function PartnerImageUpload({ label, endpoint, imageEndpoint, initialImag
     if (!imageEndpoint) return
     const controller = new AbortController()
     let url
-    fetch(`${partnerApiBase}${imageEndpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` }, signal: controller.signal })
+    fetch(`${partnerApiBase}${imageEndpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` }, signal: controller.signal, cache: 'no-store' })
       .then(async response => {
         if (response.status === 404) return
         if (!response.ok) throw new Error('Could not load your saved image.')

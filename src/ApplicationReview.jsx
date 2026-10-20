@@ -82,6 +82,7 @@ export function restoreApplicationDraft(form, storageKey) {
       }
     } else if (field && typeof value === 'string' && !draftExcludedTypes.has(field.type)) {
       field.value = value
+      field.dispatchEvent(new Event('input', { bubbles: true }))
     }
   }
   return draft
