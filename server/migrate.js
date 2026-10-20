@@ -39,6 +39,12 @@ try {
   await ensureBaseline()
   await runPrisma(['migrate', 'deploy'])
   console.info('[database] migrations_ready')
+  // Repeatable seed: adds any of the 36 candidate Sapele locations that are missing; never edits existing rows.
+  try {
+    const { seedCandidateLocations } = await import('./locations.js')
+    const result = await seedCandidateLocations(prisma)
+    console.info('[database] location_candidates', JSON.stringify(result))
+  } catch (error) { console.warn('[database] location_seed_skipped', error?.message) }
 } finally {
   await prisma.$disconnect()
 }

@@ -3,6 +3,7 @@
 // Everything here is pure (no database, no network) so it can be unit tested and reused by the admin calculator.
 import { riderEarning } from './financeService.js'
 import { directoryZoneSeeds } from './sapeleDirectory.js'
+import { coverageContains } from './locations.js'
 
 export const DELIVERY_PRICING_KEY = 'delivery_pricing'
 
@@ -31,7 +32,10 @@ export const defaultDeliveryPricing = Object.freeze({
   serviceFee: { percent: 3, minimumMinor: 0, maximumMinor: 100_000 },
   margin: { protect: true, minimumMinor: 10_000 },
   boost: { active: false, label: 'Rain / busy hours', customerExtraMinor: 20_000, riderExtraMinor: 15_000 },
-  zones: starterZones(),
+  // Areas now live in the Location directory (Admin › Locations); only verified, coverage-approved, active,
+  // delivery-enabled locations are used. This legacy list is kept empty for old saved settings.
+  zones: [],
+  coverage: { requireApprovedZone: false },
   routeRules: [],
 })
 
@@ -60,10 +64,14 @@ const placed = (zone) => zone.active && isPoint(zone)
 /** The area a point falls in: the nearest placed area whose circle contains it. */
 export function zoneForPoint(point, zones = []) {
   if (!isPoint(point)) return null
+  const target = toPoint(point)
   let best = null
   for (const zone of zones.filter(placed)) {
-    const meters = haversineMeters(toPoint(point), toPoint(zone))
-    if (meters <= zone.radiusMeters && (!best || meters < best.meters)) best = { zone, meters }
+    // Approved location zones use their reviewed polygon (or explicitly approved radius); nothing else counts.
+    const inside = zone.coverageMethod ? coverageContains(zone, target) : haversineMeters(target, toPoint(zone)) <= zone.radiusMeters
+    if (!inside) continue
+    const meters = haversineMeters(target, toPoint(zone))
+    if (!best || meters < best.meters) best = { zone, meters }
   }
   return best?.zone || null
 }
@@ -72,7 +80,8 @@ export function zoneForPoint(point, zones = []) {
 export function zoneForText(text, zones = []) {
   const haystack = String(text || '').toLowerCase()
   if (!haystack) return null
-  return [...zones].filter((zone) => zone.active).sort((a, b) => b.name.length - a.name.length).find((zone) => haystack.includes(zone.name.toLowerCase())) || null
+  const names = (zone) => [zone.name, ...(zone.alternativeNames || [])].filter(Boolean)
+  return [...zones].filter((zone) => zone.active).sort((a, b) => b.name.length - a.name.length).find((zone) => names(zone).some((name) => haystack.includes(name.toLowerCase()))) || null
 }
 
 /**

@@ -10,11 +10,13 @@ import { HelpPage } from './support/HelpChat'
 import { Wallet } from './finance/Wallet'
 import { SignInMethodsPage } from './auth/AltSignIn'
 import { AvailabilityLocationToggle, RiderParcelJobs } from './rider/RiderParcelJobs'
+import { LocationReviews } from './rider/LocationReviews'
 import { apiBase } from './config/apiBase'
+import { DeliveryCodeSheet, RiderOfferCard } from './live/RiderOffer'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 
-const riderNav = [['Dashboard', '/rider/dashboard', Truck], ['Available deliveries', '/rider/deliveries', Package], ['Delivery history', '/rider/history', Clock3], ['Earnings', '/rider/earnings', DollarSign], ['Verification', '/rider/verification', ShieldCheck], ['Rider account', '/rider/account', Settings]]
+const riderNav = [['Dashboard', '/rider/dashboard', Truck], ['Available deliveries', '/rider/deliveries', Package], ['Delivery history', '/rider/history', Clock3], ['Earnings', '/rider/earnings', DollarSign], ['Local checks', '/rider/locations', MapPin], ['Verification', '/rider/verification', ShieldCheck], ['Rider account', '/rider/account', Settings]]
 const stages = ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED']
 
 function RiderShell({ path, children }) {
@@ -93,12 +95,26 @@ function RiderLocationSharing({ deliveryId, active }) {
   return <div className={`rider-location-sharing ${state}`}><strong>Live location</strong><p>{message}</p>{state === 'sharing' ? <button type="button" className="portal-secondary" onClick={() => { stop(); setState('idle'); setMessage('Location sharing is paused.') }}>Pause sharing</button> : <button type="button" className="portal-primary" disabled={!active || state === 'requesting'} onClick={start}><MapPin size={16} />{state === 'requesting' ? 'Requesting location...' : 'Start location sharing'}</button>}</div>
 }
 
+const STAGE_ACTION = { GOING_TO_RESTAURANT: 'Head to the store', ARRIVED_AT_RESTAURANT: 'I’m at the store', PICKED_UP: 'Order picked up', GOING_TO_CUSTOMER: 'Head to the customer', DELIVERED: 'Delivered — enter code' }
+
 function CurrentDelivery({ delivery, setDelivery }) {
   const stage = stages.indexOf(delivery.status)
   const next = stages[stage + 1]
   const active = next !== undefined
-  const advance = async () => { const response = await fetch(`${apiBase}/api/deliveries/by-order/${encodeURIComponent(delivery.order)}/status`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next }) }); if (response.ok) setDelivery({ ...delivery, status: next }) }
-  return <section className="rider-delivery-card"><div className="delivery-card-head"><div><span className="section-kicker">ACTIVE DELIVERY</span><h3>{delivery.order}</h3></div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span></div><div className="delivery-route"><div><Store size={17} /><span><small>Pickup</small><strong>{delivery.restaurant}</strong><em>{delivery.pickup}</em></span></div><div className="route-line" /><div><MapPin size={17} /><span><small>Drop-off</small><strong>{delivery.customer}</strong><em>{delivery.dropoff}</em></span></div></div><RiderLocationSharing deliveryId={delivery.id} active={active} />{next ? <button className="portal-primary" onClick={advance}>{next === 'DELIVERED' ? <Check size={16} /> : <ArrowRight size={16} />} {next.replaceAll('_', ' ')}</button> : <div className="delivered-label"><Check size={17} /> Delivery completed</div>}</section>
+  const [codeOpen, setCodeOpen] = useState(false)
+  const [error, setError] = useState('')
+  const send = async (body) => {
+    const response = await fetch(`${apiBase}/api/deliveries/by-order/${encodeURIComponent(delivery.order)}/status`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(result.message || 'Could not update the delivery. Try again.')
+    setDelivery({ ...delivery, status: body.status })
+  }
+  const advance = async () => {
+    setError('')
+    if (next === 'DELIVERED') { setCodeOpen(true); return }
+    try { await send({ status: next }) } catch (sendError) { setError(sendError.message) }
+  }
+  return <section className="rider-delivery-card"><div className="delivery-card-head"><div><span className="section-kicker">ACTIVE DELIVERY</span><h3>{delivery.order}</h3></div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span></div><div className="delivery-route"><div><Store size={17} /><span><small>Pickup</small><strong>{delivery.restaurant}</strong><em>{delivery.pickup}</em></span></div><div className="route-line" /><div><MapPin size={17} /><span><small>Drop-off</small><strong>{delivery.customer}</strong><em>{delivery.dropoff}</em>{delivery.landmark && <em className="rider-landmark">Landmark: {delivery.landmark}</em>}{delivery.destination ? <a className="rider-nav-link" href={`https://www.google.com/maps/dir/?api=1&destination=${delivery.destination.latitude},${delivery.destination.longitude}&travelmode=driving`} target="_blank" rel="noreferrer">Navigate to the customer’s pin</a> : <em className="rider-landmark">No exact pin from the customer — use the address and landmark, and call if unsure.</em>}</span></div></div><RiderLocationSharing deliveryId={delivery.id} active={active} />{error && <p className="rider-status-alert is-error" role="alert">{error}</p>}{next ? <button className="portal-primary" onClick={advance}>{next === 'DELIVERED' ? <Check size={16} /> : <ArrowRight size={16} />} {STAGE_ACTION[next] || next.replaceAll('_', ' ')}</button> : <div className="delivered-label"><Check size={17} /> Delivery completed</div>}{codeOpen && <DeliveryCodeSheet orderNumber={delivery.order} onClose={() => setCodeOpen(false)} onSubmit={async (code) => { await send({ status: 'DELIVERED', code }); setCodeOpen(false) }} />}</section>
 }
 
 function onlineFor(since, now) {
@@ -153,13 +169,11 @@ function RiderDashboard() {
     window.addEventListener('online', refresh)
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refresh); window.removeEventListener('online', refresh) }
   }, [token])
-  useEffect(() => {
-    loadSummary()
-    fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => {
-      const active = body.deliveries?.find((item) => item.riderId && item.order)
-      if (active) setDelivery({ id: active.id, order: active.order.orderNumber, restaurant: active.order.restaurant.name, pickup: active.order.restaurant.address, customer: 'Customer', dropoff: active.order.addressSnapshot, status: active.status })
-    }).catch(() => undefined)
-  }, [token])
+  const loadActive = () => fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => {
+    const active = body.deliveries?.find((item) => item.riderId && item.order)
+    setDelivery(active ? { id: active.id, order: active.order.orderNumber, restaurant: active.order.restaurant.name, pickup: active.order.restaurant.address, customer: 'Customer', dropoff: active.order.addressSnapshot, landmark: active.order.landmarkSnapshot || null, destination: active.order.latitude != null && active.order.longitude != null ? { latitude: Number(active.order.latitude), longitude: Number(active.order.longitude) } : null, status: active.status } : null)
+  }).catch(() => undefined)
+  useEffect(() => { loadSummary(); loadActive() }, [token])
   const toggleOnline = async () => {
     if (switching) return
     const next = online ? 'OFFLINE' : 'ONLINE'
@@ -192,7 +206,8 @@ function RiderDashboard() {
     <AvailabilityLocationToggle online={online} />
     <section className="rider-layout">
       <div className="rider-work-column">
-        {delivery && <CurrentDelivery delivery={delivery} setDelivery={setDelivery} />}
+        {!delivery && approved && <RiderOfferCard online={online} busy={Boolean(delivery || activeParcel)} onAccepted={() => { loadActive(); loadSummary() }} />}
+        {delivery && <CurrentDelivery delivery={delivery} setDelivery={(next) => { setDelivery(next); if (next.status === 'DELIVERED') window.setTimeout(() => { loadActive(); loadSummary() }, 1500) }} />}
         {activeParcel && <RiderLocationSharing deliveryId={activeParcel.deliveryId} active />}
         {!delivery && <RiderParcelJobs online={online} approved={approved} onActiveChange={setActiveParcel} />}
       </div>
@@ -208,4 +223,4 @@ function Earnings() { return <><RiderIntro eyebrow="MONEY" title="Earnings & pay
 
 function Verification() { return <><RiderIntro eyebrow="VERIFICATION" title="Keep your rider record ready." /><section className="portal-panel verification-panel"><ShieldCheck size={23} /><div><h3>Verification is operations-controlled</h3><p>Identity, vehicle, and safety documents are reviewed privately by DOORSTEP operations before delivery access is enabled.</p></div></section></> }
 
-export function RiderPortal({ path }) { let content = <RiderDashboard />; if (path === '/rider/deliveries') content = <Available />; if (path === '/rider/history') content = <History />; if (path === '/rider/earnings') content = <Earnings />; if (path === '/rider/verification') content = <Verification />; if (path === '/rider/account' || path === '/rider/settings') content = <RiderAccount initialSection={path === '/rider/settings' ? 'rider' : 'profile'} />; if (path === '/rider/support') content = <HelpPage embedded />; if (path === '/rider/security') content = <SignInMethodsPage backHref="/rider/account" />; if (path === '/rider/notifications') content = <WorkspaceInbox title="Notifications" subtitle="New pickups, customer requests, cancellations and account updates." />; return <RiderShell path={path}>{content}</RiderShell> }
+export function RiderPortal({ path }) { let content = <RiderDashboard />; if (path === '/rider/deliveries') content = <Available />; if (path === '/rider/history') content = <History />; if (path === '/rider/earnings') content = <Earnings />; if (path === '/rider/verification') content = <Verification />; if (path === '/rider/locations') content = <LocationReviews />; if (path === '/rider/account' || path === '/rider/settings') content = <RiderAccount initialSection={path === '/rider/settings' ? 'rider' : 'profile'} />; if (path === '/rider/support') content = <HelpPage embedded />; if (path === '/rider/security') content = <SignInMethodsPage backHref="/rider/account" />; if (path === '/rider/notifications') content = <WorkspaceInbox title="Notifications" subtitle="New pickups, customer requests, cancellations and account updates." />; return <RiderShell path={path}>{content}</RiderShell> }

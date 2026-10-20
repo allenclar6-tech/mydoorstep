@@ -312,6 +312,7 @@ model Rider {
   locations      RiderLocation[]
   payouts        RiderPayout[]
   parcelBookings ParcelBooking[]   @relation("AssignedParcelRider")
+  dispatchOffers DispatchOffer[]
   availabilityLatitude   Decimal?  @db.Decimal(10, 7)
   availabilityLongitude  Decimal?  @db.Decimal(10, 7)
   availabilityAccuracyM  Int?
@@ -588,9 +589,31 @@ model Delivery {
   pickedUpAt  DateTime?
   deliveredAt DateTime?
   cancelledAt DateTime?
+  codeAttempts   Int       @default(0)
+  proofMethod    String?
+  stuckAlertedAt DateTime?
+  offers         DispatchOffer[]
 
   @@index([riderId, status])
   @@index([requestedRiderId, status])
+  @@index([status, requestExpiresAt])
+}
+
+/// One offer of a delivery to one rider (auto-dispatch). Status: OFFERED, ACCEPTED, DECLINED, EXPIRED.
+model DispatchOffer {
+  id             String    @id @default(cuid())
+  deliveryId     String
+  delivery       Delivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  riderId        String
+  rider          Rider     @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  status         String    @default("OFFERED")
+  distanceMeters Int?
+  offeredAt      DateTime  @default(now())
+  expiresAt      DateTime?
+  respondedAt    DateTime?
+
+  @@index([deliveryId, offeredAt])
+  @@index([riderId, offeredAt])
 }
 
 model RiderLocation {
@@ -995,4 +1018,83 @@ model Payout {
   completedAt   DateTime?
 
   @@index([party, status])
+}
+
+/// Sapele location directory (communities, quarters, streets, estates) with verification evidence and
+/// separately-approved delivery coverage. Only verified + coverage-approved + active + delivery-enabled
+/// records are used for delivery pricing and availability.
+model Location {
+  id                     String    @id @default(cuid())
+  slug                   String    @unique
+  name                   String
+  originalCandidateName  String?
+  alternativeNames       String[]  @default([])
+  state                  String    @default("Delta")
+  localGovernmentArea    String    @default("Sapele")
+  localityType           String    @default("UNKNOWN")
+  parentId               String?
+  parent                 Location? @relation("LocationHierarchy", fields: [parentId], references: [id])
+  children               Location[] @relation("LocationHierarchy")
+  latitude               Decimal?  @db.Decimal(10, 7)
+  longitude              Decimal?  @db.Decimal(10, 7)
+  referenceLatitude      Decimal?  @db.Decimal(10, 7)
+  referenceLongitude     Decimal?  @db.Decimal(10, 7)
+  referenceSource        String?
+  nearestLandmark        String?
+  verificationStatus     String    @default("pending")
+  verificationMethod     String?
+  verificationSource     String?
+  verificationSourceUrl  String?
+  verificationCheckedAt  DateTime?
+  verificationNotes      String?
+  reviewerId             String?
+  evidence               Json      @default("[]")
+  coverageMethod         String?
+  boundaryGeometry       Json?
+  coverageRadiusMeters   Int?
+  radiusLimitationsAcceptedById String?
+  boundaryVerificationStatus String  @default("none")
+  boundaryNotes          String?
+  boundaryApprovedById   String?
+  boundaryApprovedAt     DateTime?
+  isActive               Boolean   @default(true)
+  deliveryEnabled        Boolean   @default(false)
+  customerSurchargeMinor Int       @default(0)
+  riderBonusMinor        Int       @default(0)
+  minimumOrderMinor      Int?
+  closedUntil            DateTime?
+  closedReason           String?
+  mergedIntoId           String?
+  candidateNumber        Int?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  reviews                LocationReview[]
+
+  @@index([verificationStatus])
+  @@index([isActive, deliveryEnabled])
+  @@index([parentId])
+}
+
+/// A local check (by a rider, resident or field representative) submitted for an authorised reviewer.
+model LocationReview {
+  id               String    @id @default(cuid())
+  locationId       String
+  location         Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  submittedById    String
+  submitterRole    String
+  confirmationType String
+  nameConfirmed    Boolean
+  suggestedName    String?
+  suggestedLatitude  Decimal? @db.Decimal(10, 7)
+  suggestedLongitude Decimal? @db.Decimal(10, 7)
+  landmark         String?
+  notes            String
+  status           String    @default("SUBMITTED")
+  decidedById      String?
+  decidedAt        DateTime?
+  decisionNote     String?
+  createdAt        DateTime  @default(now())
+
+  @@index([locationId, status])
+  @@index([status, createdAt])
 }

@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import { areaForAddress, directoryAddressLine, directoryZoneSeeds, SAPELE_DIRECTORY, searchDirectory, spellings } from '../server/sapeleDirectory.js'
 
 test('the imported directory keeps every area with a unique id', () => {
-  assert.equal(SAPELE_DIRECTORY.length, 38)
-  assert.equal(new Set(SAPELE_DIRECTORY.map((area) => area.id)).size, 38)
+  assert.equal(new Set(SAPELE_DIRECTORY.map((area) => area.id)).size, SAPELE_DIRECTORY.length)
+  assert.ok(SAPELE_DIRECTORY.length >= 47)
   assert.equal(SAPELE_DIRECTORY.find((area) => area.id === 'ayomanor-road-district').postcode, '331211')
   assert.ok(SAPELE_DIRECTORY.find((area) => area.id === 'ayomanor-road-district').streets.includes('Boyo Road'))
 })
@@ -31,4 +31,19 @@ test('pricing areas exclude the "verify locally" catch-all groups and the addres
   assert.equal(seeds.length, 36)
   assert.ok(!seeds.some((seed) => seed.id.startsWith('sapele-town-postcode') || seed.id === 'sapele-lga-to-verify'))
   assert.equal(directoryAddressLine(searchDirectory('boyo')[0]), 'Boyo Road, Ayomanor Road district, Sapele 331211')
+})
+
+test('the expanded directory finds estates, layouts and landmarks', () => {
+  assert.equal(searchDirectory('salubi')[0].type, 'estate')
+  const mona = searchDirectory('mona school')[0]
+  assert.equal(mona.type, 'landmark'); assert.equal(mona.kind, 'school'); assert.equal(mona.areaName, 'Agimele Village district')
+  assert.match(searchDirectory('nnec')[0].name, /Naval Engineering College/)
+  assert.equal(areaForAddress('UBA (Okpe Road)').id, 'okpe-road-district')
+  assert.equal(areaForAddress('5 Tiko Drive, Ugbeyiyi').id, 'agimele-village-district')
+})
+
+test('ward groups are searchable but never decide delivery pricing', () => {
+  assert.equal(searchDirectory('zik grammar')[0].areaName, 'Sapele Urban VI ward')
+  assert.equal(areaForAddress('near Zik Grammar School'), null)
+  assert.ok(!directoryZoneSeeds().some((seed) => seed.id.startsWith('ward-')))
 })

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { ArrowRight, BarChart3, Bell, Check, ChevronRight, Clock3, DollarSign, LayoutDashboard, LogOut, Menu, Package, Pencil, Plus, Settings, Store, Utensils, X, MessageCircle } from 'lucide-react'
 import { formatNaira, restaurants } from './data'
+import { RestaurantOrderBoard } from './live/RestaurantOrderBoard'
 import { WorkspaceTabBar } from './mobile/WorkspaceTabBar'
 import { NotificationBell, WorkspaceInbox } from './notifications/NotificationCenter'
 import { ProfileCompletenessCard } from './account/ProfileCompleteness'
@@ -47,14 +48,7 @@ function Dashboard() {
 
 function OrderRow({ order, onStatus }) { const customer = typeof order.customer === 'string' ? order.customer : `${order.customer?.firstName || 'Customer'} ${order.customer?.lastName || ''}`.trim(); const items = Array.isArray(order.items) ? order.items.map((item) => `${item.quantity}× ${item.nameSnapshot}`).join(', ') : order.items; const total = order.total ?? (order.totalMinor ? order.totalMinor / 100 : 0); return <div className="portal-order-row"><div className="order-id"><strong>{order.orderNumber || order.id}</strong><small>{order.time || new Date(order.createdAt).toLocaleString('en-NG')} · {customer}</small></div><div className="order-items">{items}</div><strong>{formatNaira(total)}</strong><span className={`portal-status ${order.status.toLowerCase()}`}>{order.status.replaceAll('_', ' ')}</span>{onStatus && order.status === 'PAID' && <button className="small-action" onClick={() => onStatus(order.id)}>Accept</button>}</div> }
 
-function Orders() {
-  const [orders, setOrders] = useState([])
-  const token = localStorage.getItem('doorstep-token')
-  const load = () => fetch(`${apiBase}/api/restaurant/orders`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => setOrders(body.orders || [])).catch(() => setOrders([]))
-  useEffect(() => { load() }, [])
-  const accept = async (id) => { const response = await fetch(`${apiBase}/api/orders/${id}/status`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'RESTAURANT_ACCEPTED' }) }); if (response.ok) load() }
-  return <><PortalIntro eyebrow="ORDER MANAGEMENT" title="Orders from your customers." action={<div className="portal-filter"><button className="active">All <b>{orders.length}</b></button><button>New <b>{orders.filter((order) => order.status === 'PAID').length}</b></button><button>Preparing</button><button>Completed</button></div>} /><div className="demo-banner"><span>CONTROLLED WORKFLOW</span><p>Accepting an order advances it from PAID to RESTAURANT_ACCEPTED. Later stages will be server-authorized.</p></div><section className="orders-panel">{orders.map((order) => <OrderRow order={order} onStatus={accept} key={order.id} />)}</section></>
-}
+function Orders() { return <RestaurantOrderBoard /> }
 
 function Earnings() { const grocery = useContext(PartnerBusinessContext)?.storeType === 'GROCERY'; return <><PortalIntro eyebrow={grocery ? 'STORE MONEY' : 'MONEY'} title="Earnings & payouts" /><Wallet kind="RESTAURANT" /></> }
 

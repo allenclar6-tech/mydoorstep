@@ -124,3 +124,15 @@
 .dp-zones .dp-row-actions { margin-top: -4px; }
 .dp-zone-head b { display: flex; flex-direction: column; gap: 2px; }
 .dp-zone-meta { color: var(--t-muted, #5b6b63); font-size: .74rem; font-weight: 600; }
+/* Theme layers colour every h1 dark green; keep the hero title readable on the dark card. */
+html body .dp-hero h1, html body .dp-hero p { color: #fff; }
+html body .dp-hero p { color: var(--t-on-dark-soft, #cfe0d6); }
+/* Area rows: unit sits on the right, never on top of the number. */
+.dp-zones .dp-naira.has-unit i { left: auto; right: 10px; }
+.dp-zones .dp-naira.has-unit input { padding-left: 10px; padding-right: 26px; }
+/* On phones the admin tab bar is fixed at the bottom: keep Save / Publish above it. */
+@media (max-width: 700px) {
+  .dp { padding-bottom: 180px; }
+  .dp-savebar { bottom: calc(76px + env(safe-area-inset-bottom)); }
+}
+.dp-zones .dp-grid.is-tight { align-items: end; }

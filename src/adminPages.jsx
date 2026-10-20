@@ -11,11 +11,13 @@ import { SupportDesk } from './admin/SupportDesk'
 import { FinanceAdmin } from './admin/FinanceAdmin'
 import { DeliveryPricingAdmin } from './admin/DeliveryPricing'
 import { PaymentSettingsAdmin } from './admin/PaymentSettings'
+import { LocationsAdmin } from './admin/LocationsAdmin'
+import { ConfirmDeliveredButton, DispatchBoard } from './admin/DispatchBoard'
 import { SessionSignOutButton, SignOutNotice } from './authControls'
 import { apiBase } from './config/apiBase'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
-const adminNav = [['Dashboard', '/admin/dashboard', LayoutDashboard], ['Active deliveries', '/admin/deliveries', MapPin], ['Customers', '/admin/customers', Users], ['Restaurants', '/admin/restaurants', Store], ['Groceries', '/admin/groceries', Store], ['Riders', '/admin/riders', Truck], ['Orders', '/admin/orders', ClipboardList], ['Packages', '/admin/parcels', Truck], ['Reviews', '/admin/reviews', ClipboardList], ['Support', '/admin/support', Bell], ['Money', '/admin/finance', DollarSign], ['Delivery pricing', '/admin/pricing', Calculator], ['Payment methods', '/admin/payments', Settings], ['Analytics', '/admin/analytics', BarChart3], ['Audit logs', '/admin/audit-logs', FileText], ['Settings', '/admin/settings', Settings]]
+const adminNav = [['Dashboard', '/admin/dashboard', LayoutDashboard], ['Active deliveries', '/admin/deliveries', MapPin], ['Customers', '/admin/customers', Users], ['Restaurants', '/admin/restaurants', Store], ['Groceries', '/admin/groceries', Store], ['Riders', '/admin/riders', Truck], ['Orders', '/admin/orders', ClipboardList], ['Packages', '/admin/parcels', Truck], ['Reviews', '/admin/reviews', ClipboardList], ['Support', '/admin/support', Bell], ['Money', '/admin/finance', DollarSign], ['Locations', '/admin/locations', MapPin], ['Delivery pricing', '/admin/pricing', Calculator], ['Payment methods', '/admin/payments', Settings], ['Analytics', '/admin/analytics', BarChart3], ['Audit logs', '/admin/audit-logs', FileText], ['Settings', '/admin/settings', Settings]]
 
 export function AdminLogin({ onLogin }) {
 	const [error, setError] = useState('')
@@ -99,7 +101,7 @@ function ActiveDeliveries() {
     const timer = window.setInterval(load, 15000)
     return () => { active = false; window.clearInterval(timer) }
   }, [apiBase, token])
-  return <><AdminIntro eyebrow="DELIVERY OPERATIONS" title="Live delivery command view." /><p className="admin-delivery-privacy">This protected view exposes only operational status, rider identity, and the latest authorized location time. Customer details and location history stay private.</p>{message && <div className="admin-login-error">{message}</div>}<section className="admin-table">{deliveries.length === 0 ? <div className="empty-state">No active deliveries are currently available.</div> : deliveries.map((delivery) => <div className="admin-table-row" key={delivery.id}><div><strong>{delivery.orderNumber}</strong><small>{delivery.restaurant} · {delivery.rider}</small></div><div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span><small>{delivery.location?.recordedAt ? `Last verified rider location: ${new Date(delivery.location.recordedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for the rider’s first verified location.'}</small></div></div>)}</section></>
+  return <><AdminIntro eyebrow="DELIVERY OPERATIONS" title="Live delivery command view." /><DispatchBoard /><p className="admin-delivery-privacy">This protected view exposes only operational status, rider identity, and the latest authorized location time. Customer details and location history stay private.</p>{message && <div className="admin-login-error">{message}</div>}<section className="admin-table">{deliveries.length === 0 ? <div className="empty-state">No active deliveries are currently available.</div> : deliveries.map((delivery) => <div className="admin-table-row" key={delivery.id}><div><strong>{delivery.orderNumber}</strong><small>{delivery.restaurant} · {delivery.rider}</small></div><div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span><small>{delivery.location?.recordedAt ? `Last verified rider location: ${new Date(delivery.location.recordedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for the rider’s first verified location.'}</small>{delivery.kind === 'order' && delivery.status === 'GOING_TO_CUSTOMER' && <ConfirmDeliveredButton deliveryId={delivery.id} />}</div></div>)}</section></>
 }
 
 function AdminComingSoon({ title, detail }) { return <><AdminIntro eyebrow="ADMIN CONTROL CENTER" title={title} /><section className="admin-panel finance-note"><Settings size={22} /><div><h3>Operational workspace ready</h3><p>{detail}</p><button className="admin-primary" onClick={() => navigate('/admin/dashboard')}>Return to overview <ArrowRight size={15} /></button></div></section></> }
@@ -116,6 +118,7 @@ export function AdminPortal({ path, onLogout }) {
   if (path === '/admin/payments') content = <PaymentSettingsAdmin />
   if (path === '/admin/finance') content = <FinanceAdmin />
   if (path === '/admin/pricing') content = <DeliveryPricingAdmin />
+  if (path === '/admin/locations') content = <LocationsAdmin />
   if (path === '/admin/analytics') content = <Finance />
   if (path === '/admin/audit-logs') content = <AuditLogs />
   if (path === '/admin/settings') content = <SettingsPage />

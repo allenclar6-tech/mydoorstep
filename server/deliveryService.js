@@ -2,6 +2,7 @@ import { prisma } from './prisma.js'
 import { parcelStatusByDeliveryStatus, RIDER_REQUEST_TTL_MS } from './parcelService.js'
 import { notifyUsers, restaurantTeamIds } from './notify.js'
 import { naira, recordDeliveryCompleted } from './financeLedger.js'
+import { codeMatches, deliveryCodeFor, deliveryCodeSecret, MAX_CODE_ATTEMPTS } from './dispatch.js'
 
 export const deliveryTransitions = {
   AVAILABLE: ['REQUESTED', 'CANCELLED'],
@@ -88,6 +89,7 @@ export async function claimDelivery(deliveryId, riderId, now = new Date()) {
     if (conflicting > 0) throw serviceError('RIDER_HAS_ACTIVE_DELIVERY', 'Finish your current delivery before accepting another one.', 409)
     const claimed = await transaction.delivery.updateMany({ where: { id: deliveryId, status: { in: ['AVAILABLE', 'REQUESTED'] }, riderId: null }, data: { riderId, status: 'ACCEPTED', acceptedAt: now, requestedRiderId: null, requestExpiresAt: null } })
     if (claimed.count !== 1) throw serviceError('DELIVERY_ALREADY_CLAIMED', 'Another rider has already accepted this delivery.', 409)
+    await transaction.dispatchOffer.updateMany({ where: { deliveryId, riderId, status: 'OFFERED' }, data: { status: 'ACCEPTED', respondedAt: now } })
     if (deliveryBeforeClaim.orderId) {
       await transaction.order.update({ where: { id: deliveryBeforeClaim.orderId }, data: { riderId, status: 'RIDER_ASSIGNED' } })
       await notifyFoodOrder(transaction, deliveryBeforeClaim.orderId, 'ACCEPTED', rider.user.firstName)
@@ -109,6 +111,7 @@ export async function rejectDeliveryRequest(deliveryId, riderId) {
     if (delivery.status !== 'REQUESTED' || delivery.requestedRiderId !== riderId) throw serviceError('NO_PENDING_REQUEST', 'There is no pending request for you on this delivery.', 409)
     const changed = await transaction.delivery.updateMany({ where: { id: deliveryId, status: 'REQUESTED', requestedRiderId: riderId }, data: { status: 'AVAILABLE', requestedRiderId: null, requestExpiresAt: null } })
     if (changed.count !== 1) throw serviceError('DELIVERY_STATE_CHANGED', 'This delivery changed while you were responding.', 409)
+    await transaction.dispatchOffer.updateMany({ where: { deliveryId, riderId, status: 'OFFERED' }, data: { status: 'DECLINED', respondedAt: new Date() } })
     if (delivery.parcelBooking) {
       await recordParcelEvent(transaction, delivery.parcelBooking.id, 'SEARCHING_FOR_RIDER', { actorRole: 'RIDER', note: 'Requested rider declined' })
       await notifyParcelCustomer(transaction, delivery.parcelBooking, 'Rider unavailable', `The rider you requested for ${delivery.parcelBooking.reference} declined. You can request another available rider.`)
@@ -136,14 +139,33 @@ export async function releaseDelivery(deliveryId, riderId, reason) {
   })
 }
 
-export async function advanceDelivery(deliveryId, riderId, nextStatus) {
+/**
+ * Proof of delivery for food orders: the rider enters the customer's 4-digit code. Wrong codes are counted and
+ * the delivery locks after MAX_CODE_ATTEMPTS, so a code can't be guessed; DOORSTEP support can then confirm it.
+ */
+export async function checkDeliveryCode(deliveryId, riderId, code) {
+  const delivery = await prisma.delivery.findUnique({ where: { id: deliveryId }, select: { id: true, riderId: true, orderId: true, codeAttempts: true } })
+  if (!delivery) throw serviceError('DELIVERY_NOT_FOUND', 'Delivery was not found.', 404)
+  if (delivery.riderId !== riderId) throw serviceError('ASSIGNED_RIDER_REQUIRED', 'Only the assigned rider can complete this delivery.', 403)
+  if (!delivery.orderId) return true
+  if (delivery.codeAttempts >= MAX_CODE_ATTEMPTS) throw serviceError('DELIVERY_CODE_LOCKED', 'Too many wrong codes. Call DOORSTEP support to confirm this delivery.', 423)
+  if (!code) throw serviceError('DELIVERY_CODE_REQUIRED', 'Ask the customer for their 4-digit delivery code.', 400)
+  const expected = deliveryCodeFor(delivery.id, await deliveryCodeSecret(prisma))
+  if (codeMatches(code, expected)) return true
+  const updated = await prisma.delivery.update({ where: { id: deliveryId }, data: { codeAttempts: { increment: 1 } }, select: { codeAttempts: true } })
+  const left = MAX_CODE_ATTEMPTS - updated.codeAttempts
+  throw serviceError('DELIVERY_CODE_WRONG', left > 0 ? `That code is not right. ${left} ${left === 1 ? 'try' : 'tries'} left — check it with the customer.` : 'Too many wrong codes. Call DOORSTEP support to confirm this delivery.', left > 0 ? 422 : 423)
+}
+
+export async function advanceDelivery(deliveryId, riderId, nextStatus, { code, adminConfirmedBy = null } = {}) {
+  if (nextStatus === 'DELIVERED' && !adminConfirmedBy) await checkDeliveryCode(deliveryId, riderId, code)
   return prisma.$transaction(async (transaction) => {
     const delivery = await transaction.delivery.findUnique({ where: { id: deliveryId }, include: { parcelBooking: { select: { id: true, customerId: true, reference: true, status: true } } } })
     if (!delivery) throw serviceError('DELIVERY_NOT_FOUND', 'Delivery was not found.', 404)
     if (delivery.riderId !== riderId) throw serviceError('ASSIGNED_RIDER_REQUIRED', 'Only the assigned rider can advance this delivery.', 403)
     if (!deliveryTransitions[delivery.status]?.includes(nextStatus)) throw serviceError('INVALID_DELIVERY_TRANSITION', 'Delivery stages must be completed in order.', 409)
     const now = new Date()
-    const timestamps = { ACCEPTED: { acceptedAt: now }, PICKED_UP: { pickedUpAt: now }, DELIVERED: { deliveredAt: now } }
+    const timestamps = { ACCEPTED: { acceptedAt: now }, PICKED_UP: { pickedUpAt: now }, DELIVERED: { deliveredAt: now, proofMethod: delivery.orderId ? (adminConfirmedBy ? 'ADMIN_CONFIRMED' : 'CUSTOMER_CODE') : null } }
     const updatedCount = await transaction.delivery.updateMany({ where: { id: deliveryId, riderId, status: delivery.status }, data: { status: nextStatus, ...(timestamps[nextStatus] || {}) } })
     if (updatedCount.count !== 1) throw serviceError('DELIVERY_STATE_CHANGED', 'This delivery was updated by another request. Refresh and try again.', 409)
     const updated = await transaction.delivery.findUnique({ where: { id: deliveryId } })

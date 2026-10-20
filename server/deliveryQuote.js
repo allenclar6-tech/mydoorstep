@@ -5,6 +5,7 @@ import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { getFinanceSettings } from './financeSettings.js'
 import { plannedFulfilment } from './financeService.js'
 import { areaForAddress } from './sapeleDirectory.js'
+import { deliveryZones } from './locations.js'
 import { fetchRoadRoutes } from './parcelService.js'
 
 export class DeliveryQuoteError extends Error {
@@ -43,13 +44,18 @@ export function resolveDropoff({ point, addressLine }, zones) {
  * Prices the delivery for a food/grocery order. Returns null when delivery pricing is not published (the caller
  * keeps the old flat fee). Throws DeliveryQuoteError when the trip is beyond the maximum distance.
  */
-export async function quoteOrderDelivery({ db, restaurant, destination, subtotalMinor, fetchImpl, pricing: givenPricing, finance: givenFinance }) {
+export async function quoteOrderDelivery({ db, restaurant, destination, subtotalMinor, fetchImpl, pricing: givenPricing, finance: givenFinance, zones: givenZones }) {
   const [pricing, finance] = await Promise.all([givenPricing || getDeliveryPricing(db), givenFinance || getFinanceSettings(db)])
   if (!pricing.published) return null
+  // Only verified, coverage-approved, active, delivery-enabled locations take part in delivery decisions.
+  const zones = givenZones || await deliveryZones(db)
   const fulfilment = plannedFulfilment(restaurant.application?.deliveryPreference)
   const pickupPoint = toPoint(restaurant)
-  const pickupZone = pickupPoint ? zoneForPoint(pickupPoint, pricing.zones) : null
-  const dropoff = resolveDropoff(destination, pricing.zones)
+  const pickupZone = pickupPoint ? zoneForPoint(pickupPoint, zones) : null
+  const dropoff = resolveDropoff(destination, zones)
+  if (dropoff.zone?.closed) throw new DeliveryQuoteError('AREA_PAUSED', `Deliveries to ${dropoff.zone.name} are paused${dropoff.zone.closedReason ? `: ${dropoff.zone.closedReason}` : ''}. Please try again later.`, 409)
+  if (dropoff.zone?.minimumOrderMinor && subtotalMinor < dropoff.zone.minimumOrderMinor) throw new DeliveryQuoteError('BELOW_AREA_MINIMUM', `Orders to ${dropoff.zone.name} need at least ₦${(dropoff.zone.minimumOrderMinor / 100).toLocaleString('en-NG')} of food.`, 409)
+  if (pricing.coverage?.requireApprovedZone && !dropoff.zone) throw new DeliveryQuoteError('OUTSIDE_COVERAGE', dropoff.point ? 'DOORSTEP doesn’t deliver to this spot yet. Check your map pin, or choose an address inside a DOORSTEP delivery area.' : 'Set your exact delivery pin on the map so we can check DOORSTEP delivers there.', 422)
   let distance
   const extraWarnings = []
   if (pickupPoint && dropoff.point) {
@@ -83,7 +89,7 @@ export function orderPricingSnapshot(priced) {
 }
 
 /** Resolves a calculator end point: a business, a Sapele area, or a map pin. */
-export async function resolveCalculatorPoint(db, input, zones) {
+export async function resolveCalculatorPoint(db, input, zones, { allLocations = [] } = {}) {
   if (input?.restaurantId) {
     const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId }, select: { id: true, name: true, latitude: true, longitude: true, application: { select: { deliveryPreference: true } } } })
     if (!restaurant) throw new DeliveryQuoteError('BUSINESS_NOT_FOUND', 'That business was not found.', 404)
@@ -92,10 +98,12 @@ export async function resolveCalculatorPoint(db, input, zones) {
     return { point, zone: zoneForPoint(point, zones), label: restaurant.name, fulfilment: plannedFulfilment(restaurant.application?.deliveryPreference) }
   }
   if (input?.zoneId) {
+    // Any directory location with a pin can be used to try a trip; only approved zones affect the price.
     const zone = zones.find((entry) => entry.id === input.zoneId)
-    if (!zone) throw new DeliveryQuoteError('AREA_NOT_FOUND', 'That area was not found.', 404)
-    if (!isPoint(zone)) throw new DeliveryQuoteError('AREA_NOT_PLACED', `${zone.name} has no map pin yet. Place it on the map first.`, 422)
-    return { point: toPoint(zone), zone, label: zone.name }
+    const location = zone || allLocations.find((entry) => entry.slug === input.zoneId)
+    if (!location) throw new DeliveryQuoteError('AREA_NOT_FOUND', 'That location was not found.', 404)
+    if (!isPoint(location)) throw new DeliveryQuoteError('AREA_NOT_PLACED', `${location.name} has no map pin yet.`, 422)
+    return { point: toPoint(location), zone: zone || null, label: `${location.name}${zone ? '' : ' (not an approved zone)'}` }
   }
   if (isPoint(input)) return { point: toPoint(input), zone: zoneForPoint(input, zones), label: input.label || 'Map pin' }
   throw new DeliveryQuoteError('POINT_REQUIRED', 'Choose a business, an area, or a map pin.', 400)

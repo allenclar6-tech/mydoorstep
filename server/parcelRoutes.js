@@ -9,7 +9,8 @@ import {
 } from './parcelService.js'
 import { initializePayment, PaymentError, paystackMode, verifyPaystackTransaction } from './paymentService.js'
 import { activeLocationStatuses, claimDelivery, rejectDeliveryRequest, releaseDelivery } from './deliveryService.js'
-import { notifyAdmins } from './notify.js'
+import { notifyAdmins, notifyUsers } from './notify.js'
+import { dispatchDelivery } from './dispatch.js'
 import { recordParcelPaid } from './financeLedger.js'
 
 const phone = z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/, 'Enter a valid phone number')
@@ -494,7 +495,12 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
   })
 
   router.post('/deliveries/:deliveryId/reject', requireUser, requireRider, async (request, response) => {
-    try { return response.json({ delivery: await rejectDeliveryRequest(request.params.deliveryId, request.user.rider.id) }) } catch (error) { return fail(response, error, 'DELIVERY_SERVICE_UNAVAILABLE') }
+    try {
+      const delivery = await rejectDeliveryRequest(request.params.deliveryId, request.user.rider.id)
+      // Food orders move straight on to the next nearest rider.
+      if (delivery.orderId) await dispatchDelivery(prisma, delivery.id, { notifyUsers }).catch(() => undefined)
+      return response.json({ delivery })
+    } catch (error) { return fail(response, error, 'DELIVERY_SERVICE_UNAVAILABLE') }
   })
 
   router.post('/deliveries/:deliveryId/release', requireUser, requireRider, async (request, response) => {

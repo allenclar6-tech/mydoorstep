@@ -2,6 +2,7 @@ import express from 'express'
 import { z } from 'zod'
 import { distanceTable, isPoint, measureDelivery, priceDelivery, STARTER_RIDER_BANDS, STARTER_RIDER_PER_KM_AFTER_MINOR, WARNING_TEXT } from './deliveryPricing.js'
 import { cachedRoutes, resolveCalculatorPoint } from './deliveryQuote.js'
+import { deliveryBlockers, deliveryZones } from './locations.js'
 import { deliveryPricingSchema, getDeliveryPricing, saveDeliveryPricing } from './deliveryPricingSettings.js'
 import { FINANCE_SETTINGS_KEY, financeSettingsSchema, getFinanceSettings } from './financeSettings.js'
 import { routingConfigured } from './parcelService.js'
@@ -15,6 +16,9 @@ const calculateSchema = z.object({
   draft: z.object({ pricing: z.unknown().optional(), riderPay: z.unknown().optional() }).optional(),
 })
 
+// Flags the server adds when reading settings (never part of what is saved).
+const withoutFlags = (value) => { if (!value || typeof value !== 'object') return value; const { starter, invalidStoredSettings, ...rest } = value; return rest }
+
 const fail = (response, error) => {
   if (error?.status && error?.code) return response.status(error.status).json({ error: error.code, message: error.message })
   console.error('[delivery-pricing]', error?.message)
@@ -26,7 +30,7 @@ function draftSettings(draft, pricing, finance) {
   let draftPricing = pricing
   let draftFinance = finance
   if (draft?.pricing) {
-    const parsed = deliveryPricingSchema.safeParse(draft.pricing)
+    const parsed = deliveryPricingSchema.safeParse(withoutFlags(draft.pricing))
     if (!parsed.success) throw Object.assign(new Error(parsed.error.issues[0]?.message || 'Check the pricing values.'), { status: 400, code: 'INVALID_DELIVERY_PRICING' })
     draftPricing = parsed.data
   }
@@ -45,17 +49,19 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
   router.get('/delivery/areas', async (_request, response) => {
     try {
       const pricing = await getDeliveryPricing(prisma)
-      response.set('Cache-Control', 'public, max-age=300')
-      return response.json({ published: pricing.published, areas: pricing.zones.filter((zone) => zone.active).map((zone) => ({ id: zone.id, name: zone.name, placed: isPoint(zone), latitude: zone.latitude, longitude: zone.longitude })) })
+      const zones = await deliveryZones(prisma)
+      response.set('Cache-Control', 'public, max-age=120')
+      return response.json({ published: pricing.published, requireApprovedZone: Boolean(pricing.coverage?.requireApprovedZone), areas: zones.map((zone) => ({ id: zone.id, name: zone.name, closed: zone.closed, closedReason: zone.closedReason || null, minimumOrderMinor: zone.minimumOrderMinor ?? null })) })
     } catch (error) { return fail(response, error) }
   })
 
   router.get('/admin/delivery-pricing', requireUser, requireAdmin, async (_request, response) => {
     try {
-      const [pricing, finance, restaurants] = await Promise.all([
+      const [pricing, finance, restaurants, locations] = await Promise.all([
         getDeliveryPricing(prisma),
         getFinanceSettings(prisma),
         prisma.restaurant.findMany({ where: { status: 'APPROVED' }, select: { id: true, name: true, latitude: true, longitude: true, application: { select: { deliveryPreference: true } } }, orderBy: { name: 'asc' }, take: 500 }),
+        prisma.location.findMany({ where: { mergedIntoId: null, NOT: { verificationStatus: 'rejected' } }, orderBy: { name: 'asc' }, take: 2000 }),
       ])
       return response.json({
         pricing,
@@ -64,13 +70,14 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
         routingConfigured: routingConfigured(),
         starterRiderPay: { bands: STARTER_RIDER_BANDS, perKmAfterMinor: STARTER_RIDER_PER_KM_AFTER_MINOR },
         warningText: WARNING_TEXT,
+        locations: locations.map((row) => ({ id: row.slug, locationId: row.id, name: row.name, status: row.verificationStatus, placed: isPoint(row), zone: deliveryBlockers(row).length === 0, closed: Boolean(row.closedUntil && new Date(row.closedUntil) > new Date()), surchargeMinor: row.customerSurchargeMinor, bonusMinor: row.riderBonusMinor })),
       })
     } catch (error) { return fail(response, error) }
   })
 
   // Saves delivery pricing and (optionally) the rider rate card together, so the two are always balanced.
   router.put('/admin/delivery-pricing', requireUser, requireAdmin, async (request, response) => {
-    const parsed = deliveryPricingSchema.safeParse(request.body?.pricing)
+    const parsed = deliveryPricingSchema.safeParse(withoutFlags(request.body?.pricing))
     if (!parsed.success) return response.status(400).json({ error: 'INVALID_DELIVERY_PRICING', message: parsed.error.issues[0]?.message, path: parsed.error.issues[0]?.path })
     let riderPay = null
     if (request.body?.riderPay) {
@@ -82,6 +89,12 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
       return response.status(409).json({ error: 'RIDER_RATES_REQUIRED', message: 'Switch on rider rates before publishing delivery pricing, so every delivery has a rider amount and a margin check.' })
     }
     try {
+      // Agreed route prices must point at real directory locations.
+      if (parsed.data.routeRules.length) {
+        const slugs = new Set((await prisma.location.findMany({ where: { mergedIntoId: null }, select: { slug: true } })).map((row) => row.slug))
+        const missing = parsed.data.routeRules.find((rule) => !slugs.has(rule.fromZoneId) || !slugs.has(rule.toZoneId))
+        if (missing) return response.status(400).json({ error: 'INVALID_DELIVERY_PRICING', message: 'An agreed price points at a location that no longer exists (or was merged). Pick the areas again.' })
+      }
       const previous = await getDeliveryPricing(prisma)
       const saved = await prisma.$transaction(async (transaction) => {
         const value = await saveDeliveryPricing(transaction, parsed.data)
@@ -106,12 +119,13 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
     try {
       const [savedPricing, savedFinance] = await Promise.all([getDeliveryPricing(prisma), getFinanceSettings(prisma)])
       const { pricing, finance } = draftSettings(parsed.data.draft, savedPricing, savedFinance)
-      const pickup = await resolveCalculatorPoint(prisma, parsed.data.pickup, pricing.zones)
-      const dropoff = await resolveCalculatorPoint(prisma, parsed.data.dropoff, pricing.zones)
+      const [zones, allLocations] = await Promise.all([deliveryZones(prisma), prisma.location.findMany({ where: { mergedIntoId: null }, select: { slug: true, name: true, latitude: true, longitude: true } })])
+      const pickup = await resolveCalculatorPoint(prisma, parsed.data.pickup, zones, { allLocations })
+      const dropoff = await resolveCalculatorPoint(prisma, parsed.data.dropoff, zones, { allLocations })
       const distance = await measureDelivery(pickup.point, dropoff.point, pricing.distance, routingConfigured() ? cachedRoutes(fetchImpl) : null)
       const fulfilment = parsed.data.fulfilment || pickup.fulfilment || 'DOORSTEP_RIDER'
       const quote = priceDelivery({ distance, pickupZone: pickup.zone, dropoffZone: dropoff.zone, subtotalMinor: parsed.data.subtotalMinor, fulfilment, pricing, finance })
-      return response.json({ quote, pickup: { label: pickup.label, point: pickup.point }, dropoff: { label: dropoff.label, point: dropoff.point }, table: distanceTable({ pricing, finance, subtotalMinor: parsed.data.subtotalMinor, fulfilment }) })
+      return response.json({ quote, pickup: { label: pickup.label, point: pickup.point, zone: pickup.zone }, dropoff: { label: dropoff.label, point: dropoff.point, zone: dropoff.zone }, table: distanceTable({ pricing, finance, subtotalMinor: parsed.data.subtotalMinor, fulfilment }) })
     } catch (error) { return fail(response, error) }
   })
 

@@ -30,7 +30,9 @@ import { fetchRoadRoutes } from './parcelService.js'
 import { applyTransferResult, createFinanceRouter } from './financeRoutes.js'
 import { createVerificationRouter } from './verificationRoutes.js'
 import { createDeliveryPricingRouter } from './deliveryPricingRoutes.js'
+import { createLocationRouter } from './locationRoutes.js'
 import { resolveAccount } from './paystackPayouts.js'
+import { deliveryCodeFor, deliveryCodeSecret, DISPATCHABLE_ORDER_STATUSES, dispatchDelivery, estimateArrival, OFFER_SECONDS, point, riderPosition, sweepDispatch } from './dispatch.js'
 import { orderPricingSnapshot, quoteOrderDelivery } from './deliveryQuote.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -87,6 +89,7 @@ app.use('/api', createAuthRouter({ prisma, requireUser, createSession, publicUse
 app.use('/api', createVerificationRouter({ prisma, requireUser, requireAdmin, upload, storeApplicationDocuments, verifyPassword }))
 app.use('/api', createFinanceRouter({ prisma, requireUser, requireAdmin, verifyPassword }))
 app.use('/api', createDeliveryPricingRouter({ prisma, requireUser, requireAdmin }))
+app.use('/api', createLocationRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))
 app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
 
@@ -1082,6 +1085,43 @@ app.post('/api/orders/:orderId/cancel', requireUser, rateLimit({ windowMs: 60_00
   } catch { return response.status(503).json({ error: 'ORDER_SERVICE_UNAVAILABLE' }) }
 })
 
+/** Starts the Paystack refund for a paid order (bank transfers are refunded by an admin). Returns STARTED or MANUAL. */
+async function refundPaidOrder(order, label) {
+  let refund = 'MANUAL'
+  if (order.payment?.method === 'PAYSTACK') {
+    const paidTx = await prisma.transaction.findFirst({ where: { paymentId: order.payment.id, type: 'PAYMENT_SUCCESS' }, orderBy: { createdAt: 'desc' }, select: { providerReference: true } })
+    const status = await refundTransaction(paidTx?.providerReference || order.payment.reference).catch(() => 'failed')
+    refund = status === 'failed' ? 'MANUAL' : 'STARTED'
+    await prisma.transaction.create({ data: { paymentId: order.payment.id, type: status === 'failed' ? 'REFUND_FAILED' : 'REFUND_INITIATED', amountMinor: order.payment.amountMinor, providerReference: paidTx?.providerReference || order.payment.reference, metadata: { providerStatus: status, reason: label } } })
+  }
+  if (refund === 'MANUAL') await notifyAdmins(prisma, { type: 'PAYMENT', title: 'Refund needed', body: `${order.orderNumber} (₦${(order.totalMinor / 100).toLocaleString('en-NG')}) was ${label} and must be refunded manually.`, link: '/admin/orders' })
+  return refund
+}
+
+// A business declines a new paid order (sold out, closing): the customer is refunded straight away.
+app.post('/api/restaurant/orders/:orderId/decline', requireUser, async (request, response) => {
+  if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
+  const body = z.object({ reason: z.string().trim().min(3).max(200) }).safeParse(request.body || {})
+  if (!body.success) return response.status(400).json({ error: 'REASON_REQUIRED', message: 'Tell the customer why (e.g. an item is sold out).' })
+  try {
+    const order = await prisma.order.findFirst({ where: { id: request.params.orderId, restaurant: { users: { some: { userId: request.user.id } } } }, include: { payment: true, restaurant: { select: { name: true } } } })
+    if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
+    if (order.status !== 'PAID') return response.status(409).json({ error: 'ORDER_CANNOT_BE_DECLINED', message: 'Only new orders can be declined. Contact DOORSTEP support for orders already accepted.' })
+    const done = await prisma.$transaction(async (transaction) => {
+      const changed = await transaction.order.updateMany({ where: { id: order.id, status: 'PAID' }, data: { status: 'REJECTED', cancelledAt: new Date(), cancellationReason: `Declined by ${order.restaurant.name}: ${body.data.reason}` } })
+      if (changed.count !== 1) return false
+      await transaction.delivery.updateMany({ where: { orderId: order.id, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'CANCELLED', cancelledAt: new Date() } })
+      await voidOrderMoney(transaction, order, 'declined by the business')
+      await transaction.transaction.create({ data: { paymentId: order.payment.id, type: 'REFUND_REQUIRED', amountMinor: order.payment.amountMinor, providerReference: order.payment.reference, metadata: { reason: 'business_declined', note: body.data.reason } } })
+      return true
+    })
+    if (!done) return response.status(409).json({ error: 'ORDER_STATE_CHANGED', message: 'This order just changed. Refresh to see it.' })
+    const refund = await refundPaidOrder(order, 'declined by the business')
+    await notifyUsers(prisma, [order.customerId], { type: 'ORDER', title: `${order.restaurant.name} couldn’t take your order`, body: `${body.data.reason}. ${refund === 'STARTED' ? `Your ₦${(order.totalMinor / 100).toLocaleString('en-NG')} refund has started.` : 'DOORSTEP will refund you and let you know here.'}`, link: `/account/orders/${order.id}` })
+    return response.json({ declined: true, refund })
+  } catch { return response.status(503).json({ error: 'ORDER_SERVICE_UNAVAILABLE' }) }
+})
+
 // "Delete" for customers: removes the order from their list. The record is kept for payments and tax.
 app.post('/api/orders/:orderId/remove', requireUser, async (request, response) => {
   if (request.user.role !== 'CUSTOMER') return response.status(403).json({ error: 'CUSTOMER_ROLE_REQUIRED' })
@@ -1489,7 +1529,7 @@ app.get('/api/restaurant/orders', requireUser, async (request, response) => {
   try {
     const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
     if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
-    const orders = await prisma.order.findMany({ where: { restaurantId: membership.restaurantId }, include: { items: true, customer: { select: { firstName: true, lastName: true, phone: true } }, delivery: true, payment: { select: { status: true } } }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
+    const orders = await prisma.order.findMany({ where: { restaurantId: membership.restaurantId }, include: { items: true, customer: { select: { firstName: true, lastName: true, phone: true } }, delivery: { select: { id: true, status: true, riderId: true, requestExpiresAt: true, rider: { select: { vehicleType: true, user: { select: { firstName: true, phone: true } } } } } }, payment: { select: { status: true } } }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
     const hasNextPage = orders.length > result.data.limit
     if (hasNextPage) orders.pop()
     return response.json({ orders, nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
@@ -1561,7 +1601,7 @@ app.get('/api/restaurant/summary', requireUser, async (request, response) => {
 app.get('/api/rider/deliveries', requireUser, async (request, response) => {
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
-    const deliveries = await prisma.delivery.findMany({ where: { orderId: { not: null }, OR: [{ status: 'AVAILABLE' }, { riderId: request.user.rider.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } }] }, include: { order: { include: { restaurant: { select: { name: true, address: true, phone: true } } } } }, orderBy: { requestedAt: 'asc' }, take: 50 })
+    const deliveries = await prisma.delivery.findMany({ where: { orderId: { not: null }, OR: [{ status: 'AVAILABLE', order: { status: { in: DISPATCHABLE_ORDER_STATUSES } } }, { riderId: request.user.rider.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } }] }, include: { order: { include: { restaurant: { select: { name: true, address: true, phone: true } } } } }, orderBy: { requestedAt: 'asc' }, take: 50 })
     const finance = await getFinanceSettings(prisma)
     // Glovo-style: riders see what they will earn and how far it is before accepting, not the customer's fee.
     return response.json({ deliveries: deliveries.map((delivery) => {
@@ -1571,6 +1611,35 @@ app.get('/api/rider/deliveries', requireUser, async (request, response) => {
       const ownRider = request.user.rider.network === 'BUSINESS_OWNED'
       return { ...delivery, order, earning: { amountMinor: ownRider ? null : plannedRiderPayMinor ?? fromRates ?? null, km: deliveryQuote?.km ?? (order.deliveryDistanceMeters ? Math.round(order.deliveryDistanceMeters / 100) / 10 : null), paidByBusiness: ownRider } }
     }) })
+  } catch { return response.status(503).json({ error: 'RIDER_DELIVERY_SERVICE_UNAVAILABLE' }) }
+})
+
+// The delivery currently offered to this rider (auto-dispatch), with what they earn and how far it is.
+app.get('/api/rider/offer', requireUser, async (request, response) => {
+  if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
+  try {
+    const delivery = await prisma.delivery.findFirst({
+      where: { status: 'REQUESTED', requestedRiderId: request.user.rider.id, riderId: null, requestExpiresAt: { gt: new Date() }, orderId: { not: null } },
+      include: { order: { select: { orderNumber: true, addressSnapshot: true, landmarkSnapshot: true, latitude: true, longitude: true, plannedRiderPayMinor: true, deliveryQuote: true, items: { select: { quantity: true } }, restaurant: { select: { name: true, address: true, latitude: true, longitude: true } } } }, offers: { where: { riderId: request.user.rider.id, status: 'OFFERED' }, orderBy: { offeredAt: 'desc' }, take: 1 } },
+    })
+    if (!delivery) return response.json({ offer: null })
+    const order = delivery.order
+    const finance = await getFinanceSettings(prisma)
+    const ownRider = request.user.rider.network === 'BUSINESS_OWNED'
+    const earning = ownRider ? null : order.plannedRiderPayMinor ?? riderEarning(order.deliveryQuote?.distance?.meters ?? null, finance).amountMinor ?? null
+    return response.json({ offer: {
+      deliveryId: delivery.id,
+      orderNumber: order.orderNumber,
+      expiresAt: delivery.requestExpiresAt,
+      offerSeconds: OFFER_SECONDS,
+      earningMinor: earning,
+      paidByBusiness: ownRider,
+      tripKm: order.deliveryQuote?.km ?? null,
+      toStoreMeters: delivery.offers[0]?.distanceMeters ?? null,
+      items: order.items.reduce((sum, item) => sum + item.quantity, 0),
+      pickup: { name: order.restaurant.name, address: order.restaurant.address },
+      dropoff: { area: order.deliveryQuote?.dropoffZone?.name || null, address: order.addressSnapshot },
+    } })
   } catch { return response.status(503).json({ error: 'RIDER_DELIVERY_SERVICE_UNAVAILABLE' }) }
 })
 
@@ -1601,6 +1670,7 @@ app.patch('/api/rider/availability', requireUser, async (request, response) => {
     const rider = await prisma.rider.update({ where: { id: request.user.rider.id }, data: { availability: going, ...(changed ? { availabilityChangedAt: new Date() } : {}), ...(going === 'OFFLINE' ? { availabilityLatitude: null, availabilityLongitude: null, availabilityAccuracyM: null, availabilityLocatedAt: null } : {}) } })
     // Going offline stops new jobs; a delivery already under way still has to be finished.
     const activeDeliveries = going === 'OFFLINE' ? await prisma.delivery.count({ where: { riderId: rider.id, status: { in: ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } } }) : 0
+    if (going === 'ONLINE' && changed) runDispatchSweep()
     return response.json({ rider: { id: rider.id, availability: rider.availability, status: rider.status, onlineSince: rider.availability === 'ONLINE' ? rider.availabilityChangedAt : null }, activeDeliveries })
   } catch { return response.status(503).json({ error: 'RIDER_AVAILABILITY_SERVICE_UNAVAILABLE' }) }
 })
@@ -1615,6 +1685,52 @@ app.get('/api/rider/earnings', requireUser, async (request, response) => {
   try { const payouts = await prisma.riderPayout.findMany({ where: { riderId: request.user.rider.id }, include: { order: { select: { orderNumber: true, createdAt: true } } }, orderBy: { order: { createdAt: 'desc' } }, take: 100 }); return response.json({ payouts, totalMinor: payouts.reduce((sum, payout) => sum + payout.amountMinor, 0) }) } catch { return response.status(503).json({ error: 'RIDER_EARNINGS_SERVICE_UNAVAILABLE' }) }
 })
 
+// Admin live board: orders the business accepted that still have no rider, with how dispatch is going.
+app.get('/api/admin/dispatch', requireUser, requireAdmin, async (_request, response) => {
+  try {
+    const [waiting, onlineRiders, freeRiders] = await Promise.all([
+      prisma.delivery.findMany({ where: { riderId: null, orderId: { not: null }, status: { in: ['AVAILABLE', 'REQUESTED'] }, order: { status: { in: DISPATCHABLE_ORDER_STATUSES } } }, include: { order: { select: { id: true, orderNumber: true, status: true, acceptedAt: true, paidAt: true, addressSnapshot: true, restaurant: { select: { name: true } } } }, offers: { select: { status: true } } }, orderBy: { requestedAt: 'asc' }, take: 100 }),
+      prisma.rider.count({ where: { status: 'APPROVED', availability: 'ONLINE' } }),
+      prisma.rider.count({ where: { status: 'APPROVED', availability: 'ONLINE', deliveries: { none: { status: { in: ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } } } } }),
+    ])
+    return response.json({ onlineRiders, freeRiders, waiting: waiting.map((delivery) => ({
+      deliveryId: delivery.id,
+      orderId: delivery.order.id,
+      orderNumber: delivery.order.orderNumber,
+      orderStatus: delivery.order.status,
+      business: delivery.order.restaurant.name,
+      address: delivery.order.addressSnapshot,
+      waitingSince: delivery.order.acceptedAt || delivery.order.paidAt,
+      offerOpenUntil: delivery.status === 'REQUESTED' ? delivery.requestExpiresAt : null,
+      offers: delivery.offers.length,
+      declined: delivery.offers.filter((offer) => offer.status === 'DECLINED').length,
+      expired: delivery.offers.filter((offer) => offer.status === 'EXPIRED').length,
+    })) })
+  } catch { return response.status(503).json({ error: 'DISPATCH_UNAVAILABLE' }) }
+})
+
+app.post('/api/admin/deliveries/:deliveryId/dispatch', requireUser, requireAdmin, async (request, response) => {
+  try {
+    const result = await dispatchDelivery(prisma, request.params.deliveryId, { notifyUsers })
+    return response.json(result.offered ? { offered: true } : { offered: false, message: result.reason === 'NO_FREE_RIDER' ? 'No free rider is online right now (riders who just passed are skipped for 3 minutes).' : result.reason === 'OFFER_PENDING' ? 'A rider is deciding on it right now.' : 'This delivery can’t be offered right now.' })
+  } catch { return response.status(503).json({ error: 'DISPATCH_UNAVAILABLE' }) }
+})
+
+// When a customer can't give the code (phone dead, code locked), DOORSTEP support confirms the handover.
+app.post('/api/admin/deliveries/:deliveryId/confirm-delivered', requireUser, requireAdmin, async (request, response) => {
+  const result = z.object({ note: z.string().trim().min(5).max(500) }).safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'NOTE_REQUIRED', message: 'Say how you confirmed the delivery (e.g. called the customer).' })
+  try {
+    const current = await prisma.delivery.findUnique({ where: { id: request.params.deliveryId }, select: { riderId: true, status: true } })
+    if (!current?.riderId) return response.status(404).json({ error: 'DELIVERY_NOT_FOUND' })
+    if (current.status !== 'GOING_TO_CUSTOMER') return response.status(409).json({ error: 'NOT_AT_CUSTOMER', message: 'Only a delivery on its way to the customer can be confirmed.' })
+    const delivery = await advanceDelivery(request.params.deliveryId, current.riderId, 'DELIVERED', { adminConfirmedBy: request.user.id })
+    await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'DELIVERY_CONFIRMED_BY_ADMIN', entityType: 'Delivery', entityId: delivery.id, metadata: { note: result.data.note } } })
+    deliveryRealtime.broadcastStatus(delivery.id, delivery.status)
+    return response.json({ delivery })
+  } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'DELIVERY_SERVICE_UNAVAILABLE', message: error.message }) }
+})
+
 app.post('/api/deliveries/:deliveryId/claim', requireUser, async (request, response) => {
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
@@ -1627,11 +1743,11 @@ app.post('/api/deliveries/:deliveryId/claim', requireUser, async (request, respo
 })
 
 app.post('/api/deliveries/:deliveryId/status', requireUser, async (request, response) => {
-  const result = z.object({ status: z.enum(['GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED']) }).safeParse(request.body)
+  const result = z.object({ status: z.enum(['GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED']), code: z.string().trim().max(8).optional() }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_DELIVERY_STATUS' })
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
-    const delivery = await advanceDelivery(request.params.deliveryId, request.user.rider.id, result.data.status)
+    const delivery = await advanceDelivery(request.params.deliveryId, request.user.rider.id, result.data.status, { code: result.data.code })
     deliveryRealtime.broadcastStatus(delivery.id, delivery.status)
     return response.json({ delivery })
   } catch (error) {
@@ -1640,10 +1756,10 @@ app.post('/api/deliveries/:deliveryId/status', requireUser, async (request, resp
 })
 
 app.post('/api/deliveries/by-order/:orderNumber/status', requireUser, async (request, response) => {
-  const result = z.object({ status: z.enum(['GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED']) }).safeParse(request.body)
+  const result = z.object({ status: z.enum(['GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED']), code: z.string().trim().max(8).optional() }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_DELIVERY_STATUS' })
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
-  try { const order = await prisma.order.findFirst({ where: { orderNumber: request.params.orderNumber, riderId: request.user.rider.id }, select: { delivery: { select: { id: true } } } }); if (!order?.delivery) return response.status(404).json({ error: 'DELIVERY_NOT_FOUND' }); const delivery = await advanceDelivery(order.delivery.id, request.user.rider.id, result.data.status); deliveryRealtime.broadcastStatus(delivery.id, delivery.status); return response.json({ delivery }) } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'DELIVERY_SERVICE_UNAVAILABLE', message: error.message }) }
+  try { const order = await prisma.order.findFirst({ where: { orderNumber: request.params.orderNumber, riderId: request.user.rider.id }, select: { delivery: { select: { id: true } } } }); if (!order?.delivery) return response.status(404).json({ error: 'DELIVERY_NOT_FOUND' }); const delivery = await advanceDelivery(order.delivery.id, request.user.rider.id, result.data.status, { code: result.data.code }); deliveryRealtime.broadcastStatus(delivery.id, delivery.status); return response.json({ delivery }) } catch (error) { return response.status(error.status || 503).json({ error: error.code || 'DELIVERY_SERVICE_UNAVAILABLE', message: error.message }) }
 })
 
 app.post('/api/deliveries/:deliveryId/location', requireUser, async (request, response) => {
@@ -1678,6 +1794,17 @@ app.get('/api/orders/:orderId/tracking', requireUser, async (request, response) 
       orderDetails.totalMinor = order.totalMinor
       orderDetails.payment = order.payment ? { status: order.payment.status } : null
       orderDetails.actions = orderActions(order)
+      // Live view: arrival estimate, whether we're still finding a rider, and the delivery code to give the rider.
+      const deliveryStatus = order.delivery?.status || null
+      const riderPoint = activeDelivery ? point(snapshot?.delivery.location) : null
+      orderDetails.live = {
+        eta: estimateArrival({ orderStatus: order.status, deliveryStatus, acceptedAt: order.acceptedAt, prepMinutes: order.restaurant.prepTimeMinutes, riderPoint, storePoint: point(order.restaurant), customerPoint: point(order) }),
+        findingRider: Boolean(order.delivery && !order.delivery.riderId && DISPATCHABLE_ORDER_STATUSES.includes(order.status)),
+        deliveryCode: activeDelivery ? deliveryCodeFor(order.delivery.id, await deliveryCodeSecret(prisma)) : null,
+        acceptedAt: order.acceptedAt,
+        readyAt: order.preparedAt,
+        pickedUpAt: order.pickedUpAt,
+      }
     }
     return response.json({ order: orderDetails })
   } catch (error) {
@@ -1730,7 +1857,7 @@ app.get('/api/orders/track', publicTrackingLimiter, async (request, response) =>
   } catch { return response.status(503).json({ error: 'TRACKING_SERVICE_UNAVAILABLE' }) }
 })
 
-const transitions = { CUSTOMER: {}, RESTAURANT: { PAID: 'RESTAURANT_ACCEPTED', RESTAURANT_ACCEPTED: 'PREPARING', PREPARING: 'READY_FOR_PICKUP' }, RIDER: { READY_FOR_PICKUP: 'RIDER_ASSIGNED', RIDER_ASSIGNED: 'PICKED_UP', PICKED_UP: 'OUT_FOR_DELIVERY', OUT_FOR_DELIVERY: 'DELIVERED' }, ADMIN: { PAID: 'CANCELLED', RESTAURANT_ACCEPTED: 'CANCELLED', PREPARING: 'CANCELLED', READY_FOR_PICKUP: 'CANCELLED', RIDER_ASSIGNED: 'CANCELLED', PICKED_UP: 'CANCELLED', OUT_FOR_DELIVERY: 'CANCELLED' } }
+const transitions = { CUSTOMER: {}, RESTAURANT: { PAID: 'RESTAURANT_ACCEPTED', RESTAURANT_ACCEPTED: 'PREPARING', PREPARING: 'READY_FOR_PICKUP' }, RIDER: { READY_FOR_PICKUP: 'RIDER_ASSIGNED', RIDER_ASSIGNED: 'PICKED_UP', PICKED_UP: 'OUT_FOR_DELIVERY' }, ADMIN: { PAID: 'CANCELLED', RESTAURANT_ACCEPTED: 'CANCELLED', PREPARING: 'CANCELLED', READY_FOR_PICKUP: 'CANCELLED', RIDER_ASSIGNED: 'CANCELLED', PICKED_UP: 'CANCELLED', OUT_FOR_DELIVERY: 'CANCELLED' } }
 app.post('/api/orders/:orderId/status', requireUser, async (request, response) => {
   const result = z.object({ status: z.string() }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_STATUS_REQUEST' })
@@ -1744,14 +1871,16 @@ app.post('/api/orders/:orderId/status', requireUser, async (request, response) =
     if (request.user.role === 'RESTAURANT' && !isRestaurantOwner) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
     if (request.user.role === 'RIDER' && !isRider) return response.status(403).json({ error: 'ASSIGNED_RIDER_REQUIRED' })
     const updated = await prisma.$transaction(async (transaction) => {
-      const changedCount = await transaction.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: result.data.status } })
+      const stamp = result.data.status === 'RESTAURANT_ACCEPTED' ? { acceptedAt: new Date() } : result.data.status === 'READY_FOR_PICKUP' ? { preparedAt: new Date() } : {}
+      const changedCount = await transaction.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: result.data.status, ...stamp } })
       if (changedCount.count !== 1) throw Object.assign(new Error('Order state changed while this request was processing.'), { status: 409, code: 'ORDER_STATE_CHANGED' })
       const changed = await transaction.order.findUnique({ where: { id: order.id } })
       const labels = { RESTAURANT_ACCEPTED: 'Restaurant accepted your order', PREPARING: 'Your order is being prepared', READY_FOR_PICKUP: 'Your order is ready for pickup', RIDER_ASSIGNED: 'A rider has been assigned to your order', PICKED_UP: 'Your order has been picked up', OUT_FOR_DELIVERY: 'Your order is out for delivery', DELIVERED: 'Your order has arrived', CANCELLED: 'Your order was cancelled' }
       await transaction.notification.create({ data: { userId: order.customerId, type: result.data.status === 'CANCELLED' ? 'ORDER' : 'DELIVERY', title: labels[result.data.status] || 'Order status updated', body: `Order ${order.orderNumber} is now ${result.data.status.replaceAll('_', ' ').toLowerCase()}.`, link: `/account/orders/${order.id}` } })
-      if (result.data.status === 'READY_FOR_PICKUP' && !order.riderId) {
-        // Let online riders know there is a pickup waiting.
-        await notifyUsers(transaction, await availableRiderUserIds(transaction, { restaurantId: order.restaurantId }), { type: 'DELIVERY', title: 'New pickup nearby', body: `${order.restaurant.name} has order ${order.orderNumber} ready for collection.`, link: '/rider/deliveries' })
+      if (result.data.status === 'READY_FOR_PICKUP' && order.riderId) {
+        // The assigned rider is told the food is waiting at the counter.
+        const rider = await transaction.rider.findUnique({ where: { id: order.riderId }, select: { userId: true } })
+        if (rider) await notifyUsers(transaction, [rider.userId], { type: 'DELIVERY', title: 'Order ready for pickup', body: `${order.restaurant.name} has ${order.orderNumber} packed and waiting for you.`, link: '/rider/dashboard' })
       }
       if (result.data.status === 'CANCELLED') {
         await notifyUsers(transaction, order.restaurant.users.map((member) => member.userId), { type: 'ORDER', title: 'Order cancelled', body: `DOORSTEP cancelled order ${order.orderNumber}. Stop preparing it.`, link: '/restaurant/orders' })
@@ -1762,8 +1891,16 @@ app.post('/api/orders/:orderId/status', requireUser, async (request, response) =
       }
       return changed
     })
+    // Live dispatch: offer the delivery to the nearest free rider as soon as the business accepts the order.
+    if (order.delivery && !order.riderId && DISPATCHABLE_ORDER_STATUSES.includes(result.data.status)) {
+      const dispatched = await dispatchDelivery(prisma, order.delivery.id, { notifyUsers }).catch((error) => { console.error('[dispatch] failed', error?.message); return { offered: false } })
+      if (!dispatched.offered && result.data.status === 'READY_FOR_PICKUP') {
+        await notifyUsers(prisma, await availableRiderUserIds(prisma, { restaurantId: order.restaurantId }), { type: 'DELIVERY', title: 'Pickup waiting', body: `${order.restaurant.name} has order ${order.orderNumber} ready for collection.`, link: '/rider/deliveries' }).catch(() => undefined)
+      }
+    }
     return response.json({ order: updated })
-  } catch {
+  } catch (error) {
+    if (error?.code === 'ORDER_STATE_CHANGED') return response.status(409).json({ error: 'ORDER_STATE_CHANGED', message: 'This order just changed. Refresh to see its latest status.' })
     return response.status(503).json({ error: 'ORDER_SERVICE_UNAVAILABLE' })
   }
 })
@@ -1876,6 +2013,14 @@ function isRestaurantOpen(restaurant, now = new Date()) {
   return closing >= opening ? current >= opening && current <= closing : current >= opening || current <= closing
 }
 
+// Live dispatch loop: expires unanswered offers, moves to the next rider and alerts admins about stuck orders.
+let sweeping = false
+async function runDispatchSweep() {
+  if (sweeping) return
+  sweeping = true
+  try { await sweepDispatch(prisma, { notifyUsers, notifyAdmins }) } catch (error) { console.error('[dispatch] sweep failed', error?.message) } finally { sweeping = false }
+}
+
 export { app }
 
 if (process.env.NODE_ENV !== 'test') {
@@ -1884,4 +2029,5 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`DOORSTEP API listening on http://${host}:${port}`)
   })
   deliveryRealtime.attach(server)
+  if (process.env.DISPATCH_SWEEP !== 'off') setInterval(runDispatchSweep, 10_000).unref()
 }

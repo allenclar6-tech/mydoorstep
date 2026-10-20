@@ -69,12 +69,23 @@ Every order keeps the price breakdown, including the rider's pay, in `Order.deli
 
 ## Sapele address directory
 
-`server/sapeleDirectory.js` is generated from `docs/data/Sapele_LGA_Master_Directory_DOORSTEP.xlsx`. It holds 38 areas, 145 streets, 105 quarters/villages and their postcodes, including the eight urban postcode districts (331211–331262) and the rural groups (331107 Sapele Rural/Amukpe, 331108 Ugborhen, 331109 Elume).
+`server/sapeleDirectory.js` holds 47 groups with 203 streets/roads, 150 quarters/villages, 7 estates/layouts and 158 landmarks (schools, churches, markets, hospitals, hotels, junctions, banks, public offices). It started from your spreadsheet and was expanded from public listings. The full table, with a source on every row, is `docs/data/Sapele_LGA_Master_Directory_DOORSTEP_expanded.xlsx`. Your original is kept next to it.
 
-- **Customers:** address fields on checkout, saved addresses and the location page suggest streets, quarters and postcodes as they type. For example, "12 boyo" becomes "12 Boyo Road, Ayomanor Road district, Sapele 331211".
-- **Pricing:** the directory's 36 plannable areas are the starter Sapele areas in Admin → Delivery pricing. The two "verify locally" groups are left out. If a customer types a street but sets no pin, the order is priced from the centre of that street's district, once you've placed that district on the map. A street listed under two districts is not guessed.
-- **No coordinates:** the directory has none, so every area stays "Not placed" until an admin places it.
-- **Not official:** it is not an official, complete street register. Spellings, boundaries and postcodes marked "verify" or "confirm" need checking locally. To update it, edit the spreadsheet and regenerate the file, or edit `server/sapeleDirectory.js` directly.
+The sources are:
+- INEC polling units, which name schools, junctions and quarters in every ward;
+- zipcodes.ng, for streets by postcode;
+- the OpenStreetMap street index (openalfa);
+- BEDC feeder areas in NERC orders;
+- bookhotels.ng, finelib.com, the NHIA facility list, the FRSC list, the Access Bank branch list and infoisinfo.ng;
+- Delta Mirror, Naij News Alert, jiji.ng and discoverdeltang.com.
+
+What it changes:
+- **Customer suggestions:** address fields suggest streets, quarters, estates and landmarks as people type. For example, "mona" gives "Mona School · School · Agimele Village district".
+- **Pricing areas:** the 36 plannable areas (postcode districts, neighbourhoods, rural groups) are the Sapele pricing areas.
+- **Places with no confirmed district:** these sit under their INEC ward (Sapele Urban I–VIII, Amuokpe) or "Sapele town". They are searchable but never decide a delivery price.
+- **Ambiguous streets:** a street listed in two districts is not guessed.
+
+It has no coordinates and is not an official register. Check spellings and districts locally. When you confirm a ward item's district, move it into that area.
 
 ## Starter values (edit before publishing)
 

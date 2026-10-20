@@ -94,3 +94,8 @@
 .ps-savebar > div { display: flex; gap: 6px; margin-left: auto; }
 @media (max-width: 420px) { .ps-savebar > span { flex-basis: 100%; } .ps-savebar > div { margin-left: 0; width: 100%; } .ps-savebar > div button { flex: 1; } }
 .ps-actions > button { flex: 1 1 120px; white-space: nowrap; }
+html body .ps-hero h1 { color: #fff; }
+@media (max-width: 700px) {
+  .ps { padding-bottom: 180px; }
+  .ps-savebar { bottom: calc(76px + env(safe-area-inset-bottom)); }
+}

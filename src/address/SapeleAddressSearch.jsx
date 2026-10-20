@@ -2,7 +2,8 @@ import { useId, useMemo, useState } from 'react'
 import { MapPin } from 'lucide-react'
 import { directoryAddressLine, searchDirectory } from '../../server/sapeleDirectory.js'
 
-const TYPE_LABEL = { street: 'Street', place: 'Quarter / village', area: 'Area' }
+const TYPE_LABEL = { street: 'Street', place: 'Quarter / village', area: 'Area', estate: 'Estate / layout', landmark: 'Landmark' }
+const LANDMARK_LABEL = { school: 'School', church: 'Church', market: 'Market', health: 'Hospital / clinic', hotel: 'Hotel', junction: 'Junction', bank: 'Bank', government: 'Public office', transport: 'Park / garage', park: 'Park', sport: 'Sports', community: 'Community centre', landmark: 'Landmark' }
 
 /**
  * Address input with suggestions from the Sapele LGA directory (streets, quarters, areas, postcodes).
@@ -36,7 +37,7 @@ export function AddressSuggestInput({ value, onChange, onPick, name, required, p
     {open && results.length > 0 && <ul className="sa-list" id={listId} role="listbox">
       {results.map((result, index) => <li key={`${result.name}-${result.areaId}`} role="option" aria-selected={index === active} className={index === active ? 'is-active' : ''} onMouseDown={(event) => { event.preventDefault(); pick(result) }}>
         <MapPin size={16} aria-hidden="true" />
-        <span><b>{result.name}</b><small>{result.type !== 'area' ? `${TYPE_LABEL[result.type]} · ${result.areaName}` : 'Area'}{result.postcode ? ` · ${result.postcode}` : ''}{result.postcodeToConfirm ? ' (postcode to confirm)' : ''}</small></span>
+        <span><b>{result.name}</b><small>{result.type !== 'area' ? `${result.type === 'landmark' ? LANDMARK_LABEL[result.kind] || 'Landmark' : TYPE_LABEL[result.type]} · ${result.areaName}` : 'Area'}{result.postcode ? ` · ${result.postcode}` : ''}{result.postcodeToConfirm ? ' (postcode to confirm)' : ''}</small></span>
       </li>)}
     </ul>}
   </div>

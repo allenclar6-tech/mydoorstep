@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { ArrowRight, CreditCard, Bell, Camera, Check, Clock3, HelpCircle, Home, KeyRound, LogOut, MapPin, Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Truck, UserCircle, Utensils } from 'lucide-react'
 import { categories, formatNaira } from './data'
 import { AddressSuggestInput } from './address/SapeleAddressSearch'
+import { areaAvailability } from './address/areaAvailability'
 import { isPlannableArea, SAPELE_DIRECTORY } from '../server/sapeleDirectory.js'
 import { PasswordField } from './PasswordField'
 import { lockedUntilTouched, useManualSignIn } from './auth/manualSignIn'
@@ -26,6 +27,7 @@ import { AlternativeSignIn, PHONE_HANDOFF_KEY, SignInMethodsPage, useAuthProvide
 import { ORDER_STATUS_LABELS, OrderActionButtons, orderStatusTone } from './orders/OrderActions'
 import { checkoutTotals, useDeliveryQuote } from './orders/useDeliveryQuote'
 import { PriceRows } from './orders/PriceRows'
+import { LiveOrderCard } from './live/LiveOrderCard'
 import { apiBase } from './config/apiBase'
 import { formatTime12, TimeSelect } from './TimeSelect'
 
@@ -755,7 +757,7 @@ function LocationPage() {
         <span className="section-kicker">SAPELE DELIVERY AREAS</span>
         <h2>Choose your area</h2>
         <p>Search any street, quarter or postcode in Sapele LGA, or tap an area. For the exact delivery fee, set a map pin too.</p>
-        <AddressSuggestInput className="location-search" value={locationQuery} onChange={setLocationQuery} placeholder="Search a street, quarter or postcode" onPick={(_result, line) => { saveLocation(line); setLocationQuery('') }} />
+        <AddressSuggestInput className="location-search" value={locationQuery} onChange={setLocationQuery} placeholder="Search a street, quarter or postcode" onPick={(_result, line) => { saveLocation(line); setLocationQuery(''); areaAvailability(line).then((result) => { if (result) setMessage(result.message) }) }} />
         <div>{DIRECTORY_AREAS.filter((area) => area.postcode && !area.postcodeNote).map((area) => <button key={area.id} onClick={() => saveLocation(`${area.name}, Sapele ${area.postcode}`)}>{area.name}</button>)}</div>
       </div>
       <button className="checkout-button" onClick={() => navigate('/account/addresses')}>Manage exact addresses <ArrowRight size={17} /></button>
@@ -851,7 +853,7 @@ function RestaurantPage({ slug, onAddToCart, grocery = false }) {
     return () => { active = false }
   }, [grocery, restaurant?.id])
   if (!restaurant) return <PageFrame eyebrow={grocery ? 'GROCERY STORE' : 'RESTAURANT MENU'} title={storeError ? 'Menu unavailable' : 'Loading menu…'} intro=""><p role={storeError ? 'alert' : 'status'}>{storeError || 'Loading the latest store menu.'}</p></PageFrame>
-  return <PageFrame eyebrow={grocery ? 'GROCERY STORE' : 'RESTAURANT MENU'} title={restaurant.name} intro={`${restaurant.cuisine}. ${restaurant.time} delivery to Sapele with ${restaurant.fee}.`}><section className="storefront"><img className="storefront-cover" src={restaurant.image} alt={restaurant.name} /><div className="storefront-meta"><div><span className="section-kicker">OPEN NOW</span><h2>{restaurant.name}</h2><p>{restaurant.cuisine} · {reviewSummary?.ratingCount ? Number(reviewSummary.ratingAverage).toFixed(1) : restaurant.rating} rating</p></div><div className="storefront-facts"><span><Clock3 size={15} /> {restaurant.time}</span><span><MapPin size={15} /> {restaurant.fee}</span></div></div><div className="storefront-menu"><span className="section-kicker">{grocery ? 'SHOP ESSENTIALS' : 'POPULAR MENU'}</span><div className="route-menu-grid">{restaurant.items.map((item) => <article className="route-menu-item" key={item.id}><img src={item.image} alt={item.name} loading="lazy" /><div><h3>{item.name}</h3><p>{item.description}</p><strong>{formatNaira(item.price)}</strong><button className="add-button" onClick={() => onAddToCart(item, restaurant)}>Add <ArrowRight size={14} /></button></div></article>)}</div></div>{!grocery && <section className="storefront-reviews"><div className="section-heading"><div><span className="section-kicker">REVIEWS</span><h2>What customers say.</h2></div><span className="review-summary"><Star size={16} fill="currentColor" /> {reviewSummary?.ratingCount ? Number(reviewSummary.ratingAverage).toFixed(1) : restaurant.rating}</span></div>{reviews.length === 0 ? <p className="review-empty">Reviews from delivered orders will appear here.</p> : <div className="review-feed">{reviews.map((review) => <article key={review.id}><div className="review-feed-rating">{[1, 2, 3, 4, 5].map((value) => <Star key={value} size={12} fill={value <= review.rating ? 'currentColor' : 'none'} />)}</div><p>{review.body || 'A customer enjoyed this order.'}</p><small>{new Date(review.createdAt).toLocaleDateString('en-NG')}</small></article>)}</div>}</section>}</section></PageFrame>
+  return <PageFrame eyebrow={grocery ? 'GROCERY STORE' : 'RESTAURANT MENU'} title={restaurant.name} intro={`${restaurant.cuisine}. ${restaurant.time}. ${restaurant.fee === 'Delivery calculated at checkout' ? 'Delivery is priced by distance at checkout.' : `Delivery: ${restaurant.fee}.`}`}><section className="storefront"><img className="storefront-cover" src={restaurant.image} alt={restaurant.name} /><div className="storefront-meta"><div><span className="section-kicker">OPEN NOW</span><h2>{restaurant.name}</h2><p>{restaurant.cuisine} · {reviewSummary?.ratingCount ? Number(reviewSummary.ratingAverage).toFixed(1) : restaurant.rating} rating</p></div><div className="storefront-facts"><span><Clock3 size={15} /> {restaurant.time}</span><span><MapPin size={15} /> {restaurant.fee}</span></div></div><div className="storefront-menu"><span className="section-kicker">{grocery ? 'SHOP ESSENTIALS' : 'POPULAR MENU'}</span><div className="route-menu-grid">{restaurant.items.map((item) => <article className="route-menu-item" key={item.id}><img src={item.image} alt={item.name} loading="lazy" /><div><h3>{item.name}</h3><p>{item.description}</p><strong>{formatNaira(item.price)}</strong><button className="add-button" onClick={() => onAddToCart(item, restaurant)}>Add <ArrowRight size={14} /></button></div></article>)}</div></div>{!grocery && <section className="storefront-reviews"><div className="section-heading"><div><span className="section-kicker">REVIEWS</span><h2>What customers say.</h2></div><span className="review-summary"><Star size={16} fill="currentColor" /> {reviewSummary?.ratingCount ? Number(reviewSummary.ratingAverage).toFixed(1) : restaurant.rating}</span></div>{reviews.length === 0 ? <p className="review-empty">Reviews from delivered orders will appear here.</p> : <div className="review-feed">{reviews.map((review) => <article key={review.id}><div className="review-feed-rating">{[1, 2, 3, 4, 5].map((value) => <Star key={value} size={12} fill={value <= review.rating ? 'currentColor' : 'none'} />)}</div><p>{review.body || 'A customer enjoyed this order.'}</p><small>{new Date(review.createdAt).toLocaleDateString('en-NG')}</small></article>)}</div>}</section>}</section></PageFrame>
 }
 
 function CartPage({ cart, onChangeQuantity, onCheckout }) {
@@ -1046,6 +1048,7 @@ function OrderPage({ orderId }) {
     }
   }
   return <PageFrame eyebrow="ORDER TRACKING" title={order.orderNumber} intro={`${order.restaurant || order.restaurantName} · ${order.address || 'Delivery address on file'}`}>
+    {order.live && <LiveOrderCard order={order} />}
     {order.actions && <OrderActionButtons order={{ ...order, restaurant: { name: order.restaurant } }} onChanged={(done) => done === 'remove' ? navigate('/account/orders') : setRefreshKey((key) => key + 1)} />}
     {error && <div className="profile-message">Status refresh failed: {error}. Showing the last server-confirmed status.</div>}
     {stages.length === 0 && <div className="submitted-card"><Clock3 size={24} /><h2>{currentStatus === 'PENDING_PAYMENT' ? 'Payment verification pending' : `Order status: ${currentStatus}`}</h2><p>{currentStatus === 'PENDING_PAYMENT' ? 'The restaurant will receive this order after the payment provider confirms your payment.' : 'Delivery tracking is not available for this order status.'}</p></div>}

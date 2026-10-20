@@ -26,6 +26,8 @@ import './orders/pricing.css'
 import './admin/deliveryPricing.css'
 import './admin/paymentSettings.css'
 import './address/sapeleAddress.css'
+import './live/live.css'
+import './admin/locationsAdmin.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
