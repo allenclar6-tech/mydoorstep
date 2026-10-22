@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Bike, Building2, Coins, Package, Plus, RefreshCw, Save, Trash2, Truck } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { AdjustmentCard, CommissionCard, PayoutSettingsCard } from './PayoutControls'
+import { openAdminReceipt, PartnerPayPanel } from './PartnerPayPanel'
 
 const token = () => { try { return localStorage.getItem('doorstep-admin-token') } catch { return null } }
 async function call(path, { method = 'GET', body } = {}) {
@@ -12,6 +13,20 @@ async function call(path, { method = 'GET', body } = {}) {
 }
 const money = (minor) => `₦${((minor || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`
 const toMinor = (naira) => Math.round(Number(naira || 0) * 100)
+const PAYOUT_STATUS = { PAID: ['paid', 'live'], FAILED: ['failed', 'warn'], AWAITING_CONFIRMATION: ['waiting for partner', 'neutral'], DISPUTED: ['not received', 'warn'], PROCESSING: ['processing', 'neutral'], PENDING: ['sending', 'neutral'] }
+
+function ResolvePayout({ payout, onDone }) {
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const resolve = async (action) => {
+    if (action === 'CANCEL' && !window.confirm('Cancel this payout? The money becomes owed to them again.')) return
+    setBusy(true); setError('')
+    try { await call(`/api/admin/finance/payouts/${payout.id}/resolve`, { method: 'POST', body: { action, note } }); onDone() } catch (resolveError) { setError(resolveError.message) } finally { setBusy(false) }
+  }
+  return <span className="fa-manual po-resolve"><input value={note} onChange={(event) => setNote(event.target.value)} placeholder={payout.status === 'DISPUTED' ? 'What your bank shows' : 'Note'} aria-label="Note" /><button type="button" className="row-more" disabled={busy || note.trim().length < 3} onClick={() => resolve('MARK_PAID')}>Mark received</button><button type="button" className="row-more" disabled={busy || note.trim().length < 3} onClick={() => resolve('CANCEL')}>Cancel payout</button>{error && <small className="fa-error">{error}</small>}</span>
+}
+
 const SOURCE_LABEL = { AUTOMATIC: 'automatic', SCHEDULED: 'scheduled', BULK: 'pay everyone', WITHDRAWAL: 'cash-out' }
 
 function SettingsForm({ onSaved }) {
@@ -78,25 +93,24 @@ function SettingsForm({ onSaved }) {
 
 function PayRow({ row, transfersEnabled, onPaid }) {
   const [manual, setManual] = useState(false)
-  const [reference, setReference] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const pay = async (method) => {
     setBusy(true); setError('')
     try {
-      await call('/api/admin/finance/payouts', { method: 'POST', body: { ...(row.riderId ? { riderId: row.riderId } : { restaurantId: row.restaurantId }), method, ...(method === 'MANUAL' ? { manualReference: reference } : {}) } })
+      await call('/api/admin/finance/payouts', { method: 'POST', body: { ...(row.riderId ? { riderId: row.riderId } : { restaurantId: row.restaurantId }), method } })
       onPaid()
     } catch (payError) { setError(payError.message) } finally { setBusy(false) }
   }
   return <li className="fa-owed">
     <span className="fa-owed-icon" aria-hidden="true">{row.riderId ? <Bike size={16} /> : <Building2 size={16} />}</span>
     <span className="fa-owed-main"><strong>{row.name}</strong><small>{row.account ? `${row.account.bankName} ••••${row.account.last4} · ${row.account.accountName}` : 'No bank account added yet'}</small>{error && <small className="fa-error">{error}</small>}
-      {manual && <span className="fa-manual"><input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Bank transfer reference" aria-label="Bank transfer reference" /><button type="button" className="admin-primary" disabled={busy || reference.trim().length < 3} onClick={() => pay('MANUAL')}>Record</button></span>}
     </span>
+    {manual && <PartnerPayPanel row={row} onClose={() => setManual(false)} onPaid={onPaid} />}
     <span className="fa-owed-amount"><b className={row.amountMinor < 0 ? 'is-negative' : ''}>{money(row.amountMinor)}</b>
       {row.amountMinor >= 100 && <span className="fa-owed-actions">
         {transfersEnabled && row.account?.transfersReady && <button type="button" className="admin-primary" disabled={busy} onClick={() => pay('PAYSTACK_TRANSFER')}>{busy ? 'Sending…' : 'Pay via Paystack'}</button>}
-        <button type="button" className="row-more" onClick={() => setManual((value) => !value)}>Paid by bank</button>
+        <button type="button" className="row-more" onClick={() => setManual(true)}>Pay manually</button>
       </span>}
       {row.amountMinor < 0 && <small className="fa-muted">Owes DOORSTEP; deducted from future earnings</small>}
     </span>
@@ -157,8 +171,8 @@ export function FinanceAdmin() {
 
     {payouts.length > 0 && <section className="fa-card"><h3>Payout history</h3><ul className="fa-list">{payouts.map((payout) => <li key={payout.id} className="fa-owed">
       <span className="fa-owed-icon" aria-hidden="true">{payout.party === 'RIDER' ? <Bike size={16} /> : <Building2 size={16} />}</span>
-      <span className="fa-owed-main"><strong>{payout.bankSnapshot?.accountName || payout.party}</strong><small>{new Date(payout.createdAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · {payout.method === 'MANUAL' ? `Bank ref ${payout.transferCode}` : 'Paystack transfer'}{SOURCE_LABEL[payout.source] ? ` · ${SOURCE_LABEL[payout.source]}` : ''}{payout.feeMinor > 0 ? ` · fee ${money(payout.feeMinor)}` : ''}</small>{payout.failureReason && <small className="fa-error">{payout.failureReason}</small>}</span>
-      <span className="fa-owed-amount"><b>{money(payout.amountMinor)}</b><span className={`sd-status is-${payout.status === 'PAID' ? 'live' : payout.status === 'FAILED' ? 'warn' : 'neutral'}`}>{payout.status.toLowerCase()}</span>{payout.status === 'PROCESSING' && <button type="button" className="row-more" onClick={() => refresh(payout)}>Check status</button>}</span>
+      <span className="fa-owed-main"><strong>{payout.bankSnapshot?.accountName || payout.party}</strong><small>{new Date(payout.createdAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · {payout.method === 'MANUAL' ? `Bank ref ${payout.transferCode}` : 'Paystack transfer'}{SOURCE_LABEL[payout.source] ? ` · ${SOURCE_LABEL[payout.source]}` : ''}{payout.feeMinor > 0 ? ` · fee ${money(payout.feeMinor)}` : ''}</small>{payout.failureReason && <small className="fa-error">{payout.failureReason}</small>}{payout.disputeNote && payout.status === 'DISPUTED' && <small className="fa-error">Partner says: {payout.disputeNote}</small>}{payout.confirmedAt && <small>Confirmed {new Date(payout.confirmedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</small>}{payout.receiptKey && <button type="button" className="text-link po-receipt" onClick={() => openAdminReceipt(payout.id).catch((openError) => setError(openError.message))}>View receipt</button>}{['AWAITING_CONFIRMATION', 'DISPUTED'].includes(payout.status) && <ResolvePayout payout={payout} onDone={load} />}</span>
+      <span className="fa-owed-amount"><b>{money(payout.amountMinor)}</b><span className={`sd-status is-${(PAYOUT_STATUS[payout.status] || [null, 'neutral'])[1]}`}>{(PAYOUT_STATUS[payout.status] || [payout.status.toLowerCase()])[0]}</span>{payout.status === 'PROCESSING' && <button type="button" className="row-more" onClick={() => refresh(payout)}>Check status</button>}</span>
     </li>)}</ul></section>}
 
     <PayoutSettingsCard onChanged={load} />

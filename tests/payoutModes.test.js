@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyTransferResult, availableBalance, createPayout, entryAvailable, payParty, runPayoutSweep } from '../server/payoutEngine.js'
+import { applyTransferResult, availableBalance, confirmPayout, createPayout, disputePayout, entryAvailable, payParty, remindAndAutoConfirm, resolvePayout, runPayoutSweep } from '../server/payoutEngine.js'
 import { defaultPayoutSettings, lastScheduledMoment, nextScheduledMoment, payoutSettingsSchema, startOfLagosDay, withdrawalFee } from '../server/payoutSettings.js'
 import { orderShares, riderFeeEntries, withBusinessCommission } from '../server/financeService.js'
 import { financeSettingsSchema } from '../server/financeSettings.js'
@@ -18,9 +18,10 @@ function fakeDb({ entries = [], orders = [], accounts = [] } = {}) {
       if ('in' in condition) return condition.in.includes(row[key])
       if ('not' in condition) return row[key] !== condition.not
       if ('gte' in condition) return row[key] >= condition.gte
+      if ('lt' in condition) return row[key] < condition.lt
       return false
     }
-    return row[key] === condition
+    return (row[key] ?? null) === condition
   })
   const update = (rows, where, data) => { const hit = rows.filter((row) => matches(row, where)); hit.forEach((row) => Object.assign(row, data)); return { count: hit.length } }
   Object.assign(db, {
@@ -39,6 +40,7 @@ function fakeDb({ entries = [], orders = [], accounts = [] } = {}) {
       create: async ({ data }) => { const row = { id: `p${db.payouts.length}`, createdAt: new Date(), ...data }; db.payouts.push(row); return row },
       findUnique: async ({ where }) => db.payouts.find((row) => matches(row, where)) || null,
       findFirst: async ({ where }) => db.payouts.find((row) => matches(row, where)) || null,
+      findMany: async ({ where }) => db.payouts.filter((row) => matches(row, where)),
       update: async ({ where, data }) => Object.assign(db.payouts.find((row) => row.id === where.id), data),
       updateMany: async ({ where, data }) => update(db.payouts, where, data),
     },
@@ -168,4 +170,39 @@ test('finance settings saved before the rider fee existed default to 6%', () => 
   const old = { commission: { doorstepRiderPercent: 15, ownRiderPercent: 10 }, riderPay: { enabled: false, bands: [], perKmAfterMinor: 0 }, split: { enabled: true, feeBearer: 'account' } }
   assert.equal(financeSettingsSchema.parse(old).riderFee.percent, 6)
   assert.equal(financeSettingsSchema.safeParse({ ...old, riderFee: { percent: 40 } }).success, false)
+})
+
+test('a manual bank payment only counts once the partner confirms it arrived', async () => {
+  const db = fakeDb({ entries: [{ party: 'RESTAURANT', restaurantId: 'r1', amountMinor: 700_000, status: 'DUE' }], accounts: [account] })
+  const { payout } = await createPayout(db, { party: 'RESTAURANT', restaurantId: 'r1', method: 'MANUAL', manualReference: 'GTB-778812', account })
+  assert.equal(payout.status, 'AWAITING_CONFIRMATION')
+  assert.equal(db.entries[0].status, 'PAYING', 'reserved, so nobody pays it twice, but not yet paid')
+  assert.ok(db.notifications.some((note) => note.userId === 'owner1' && /I received it/.test(note.body)))
+  const confirmed = await confirmPayout(db, payout.id, { userId: 'owner1' })
+  assert.equal(confirmed.status, 'PAID')
+  assert.equal(db.entries[0].status, 'PAID')
+  assert.equal(await confirmPayout(db, payout.id, { userId: 'owner1' }), null, 'confirming twice changes nothing')
+})
+
+test('a disputed payment is held until an admin marks it received or cancels it', async () => {
+  const db = fakeDb({ entries: [{ party: 'RIDER', riderId: 'd1', amountMinor: 250_000, status: 'DUE' }] })
+  const { payout } = await createPayout(db, { party: 'RIDER', riderId: 'd1', method: 'MANUAL', manualReference: 'OPAY-1' })
+  await disputePayout(db, payout.id, { userId: 'riderUser', note: 'Nothing in my OPay' })
+  assert.equal(db.payouts[0].status, 'DISPUTED')
+  assert.equal(db.entries[0].status, 'PAYING', 'neither paid nor owed again while it is checked')
+  assert.ok(db.notifications.some((note) => note.userId === 'admin1' && /Nothing in my OPay/.test(note.body)))
+  await resolvePayout(db, payout.id, { action: 'CANCEL', userId: 'admin1', note: 'Transfer reversed by bank' })
+  assert.equal(db.payouts[0].status, 'FAILED')
+  assert.deepEqual([db.entries[0].status, db.entries[0].payoutId], ['DUE', null], 'owed again, to be paid properly')
+})
+
+test('partners are reminded after a day and the payment is confirmed for them after three', async () => {
+  const db = fakeDb({ entries: [{ party: 'RESTAURANT', restaurantId: 'r1', amountMinor: 400_000, status: 'DUE' }], accounts: [account] })
+  const { payout } = await createPayout(db, { party: 'RESTAURANT', restaurantId: 'r1', method: 'MANUAL', manualReference: 'REF-9', account })
+  const sent = new Date(payout.createdAt)
+  assert.deepEqual(await remindAndAutoConfirm(db, new Date(sent.getTime() + 2 * HOUR)), { reminded: 0, confirmed: 0 })
+  assert.deepEqual(await remindAndAutoConfirm(db, new Date(sent.getTime() + 25 * HOUR)), { reminded: 1, confirmed: 0 })
+  assert.deepEqual(await remindAndAutoConfirm(db, new Date(sent.getTime() + 26 * HOUR)), { reminded: 0, confirmed: 0 }, 'one reminder only')
+  assert.deepEqual(await remindAndAutoConfirm(db, new Date(sent.getTime() + 73 * HOUR)), { reminded: 0, confirmed: 1 })
+  assert.equal(db.entries[0].status, 'PAID')
 })

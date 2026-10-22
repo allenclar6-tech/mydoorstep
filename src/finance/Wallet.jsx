@@ -20,6 +20,37 @@ const ENTRY_STATUS = {
 }
 const ENTRY_LABEL = { PARTNER_SHARE: 'Order earnings', ADJUSTMENT: 'Adjustment', RIDER_EARNING: 'Delivery earning', WITHDRAWAL_FEE: 'Cash-out fee', RIDER_SERVICE_FEE: 'DOORSTEP fee' }
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+async function openReceipt(payoutId) {
+  const response = await fetch(`${apiBase}/api/finance/payouts/${payoutId}/receipt`, { headers: { Authorization: `Bearer ${readToken()}` } })
+  if (!response.ok) throw new Error('Could not open the receipt.')
+  const url = URL.createObjectURL(await response.blob())
+  window.open(url, '_blank', 'noopener')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+/** DOORSTEP paid by bank transfer: the partner confirms it arrived (or says it didn't). */
+function ConfirmPayment({ payout, onDone }) {
+  const [disputing, setDisputing] = useState(false)
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const answer = async (received) => {
+    setBusy(true); setError('')
+    try { await call(`/api/finance/payouts/${payout.id}/confirm`, { method: 'POST', body: received ? { received: true } : { received: false, note } }); onDone() } catch (answerError) { setError(answerError.message) } finally { setBusy(false) }
+  }
+  const sentTo = payout.bankSnapshot ? `${payout.bankSnapshot.bankName} ••••${payout.bankSnapshot.last4}` : 'your bank account'
+  if (payout.status === 'DISPUTED') return <div className="wl-card wl-alert"><CircleAlert size={20} aria-hidden="true" /><div><strong>DOORSTEP is checking your {money(payout.amountMinor)} payment</strong><p>You said it hasn’t arrived: “{payout.disputeNote}”. We’ll update you here. If it shows up meanwhile, tell us.</p><button type="button" className="checkout-button" disabled={busy} onClick={() => answer(true)}>It has arrived now</button>{error && <p className="wl-error" role="alert">{error}</p>}</div></div>
+  return <div className="wl-card wl-confirm-pay"><BadgeCheck size={20} aria-hidden="true" /><div>
+    <strong>Did you receive {money(payout.amountMinor)}?</strong>
+    <p>DOORSTEP sent it to {sentTo} on {new Date(payout.createdAt).toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })}{payout.transferCode ? ` (ref ${payout.transferCode})` : ''}. Check your bank app, then confirm.</p>
+    {payout.hasReceipt && <button type="button" className="text-link" onClick={() => openReceipt(payout.id).catch((openError) => setError(openError.message))}>View DOORSTEP’s receipt</button>}
+    {!disputing ? <div className="wl-actions"><button type="button" className="quiet-button" onClick={() => setDisputing(true)}>I haven’t received it</button><button type="button" className="checkout-button" disabled={busy} onClick={() => answer(true)}>{busy ? 'Saving…' : 'Yes, I received it'}</button></div>
+      : <div className="wl-form wl-dispute"><label>What did you check?<input value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder="e.g. Nothing in my account since Monday" /></label><div className="wl-actions"><button type="button" className="quiet-button" onClick={() => setDisputing(false)}>Back</button><button type="button" className="checkout-button" disabled={busy || note.trim().length < 3} onClick={() => answer(false)}>Tell DOORSTEP</button></div></div>}
+    <p className="wl-muted">If you don’t answer within 3 days, it is marked as received.</p>
+    {error && <p className="wl-error" role="alert">{error}</p>}
+  </div></div>
+}
+
 const PAYOUT_LABEL = { WITHDRAWAL: 'Cash-out', AUTOMATIC: 'Automatic payout', SCHEDULED: 'Scheduled payout' }
 
 /** How and when DOORSTEP pays out, plus Cash out now (Glovo-style). */
@@ -154,6 +185,7 @@ export function Wallet({ kind }) {
     {!account && !editing && <div className="wl-card wl-alert"><CircleAlert size={20} aria-hidden="true" /><div><strong>Add a bank account to get paid</strong><p>{rider ? 'Your delivery earnings are paid into this account.' : 'Paystack sends your share of each card payment straight to this account, usually by the next working day.'}</p><button type="button" className="checkout-button" onClick={() => setEditing(true)}>Add bank account</button></div></div>}
     {account && !editing && <div className="wl-card wl-account"><Landmark size={20} aria-hidden="true" /><div><small>Payouts go to</small><strong>{account.bankName} {account.accountNumber}</strong><span>{account.accountName}</span>{!rider && <span className="wl-chip is-done">{account.splitReady ? 'Automatic payments on' : 'Automatic payments pending'}</span>}</div><button type="button" className="quiet-button" onClick={() => setEditing(true)}>Change</button></div>}
     {editing && <PayoutAccountForm current={account} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
+    {payouts.filter((entry) => ['AWAITING_CONFIRMATION', 'DISPUTED'].includes(entry.status)).map((entry) => <ConfirmPayment key={entry.id} payout={entry} onDone={load} />)}
     {payout && <PayoutPlan payout={payout} balances={balances} hasAccount={Boolean(account)} rider={rider} onCashedOut={load} />}
 
     <div className="wl-card wl-rates"><Info size={18} aria-hidden="true" /><div>
@@ -186,7 +218,7 @@ export function Wallet({ kind }) {
       <ul>{payouts.map((payout) => <li key={payout.id}>
         <span className="wl-st-icon" aria-hidden="true"><ArrowDownLeft size={16} /></span>
         <span className="wl-st-main"><strong>{payout.method === 'MANUAL' ? 'Bank transfer from DOORSTEP' : PAYOUT_LABEL[payout.source] || 'Paystack transfer'}</strong><small>{new Date(payout.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}{payout.feeMinor > 0 ? ` · fee ${money(payout.feeMinor)}` : ''}{payout.status === 'FAILED' ? ' · failed, the amount is owed again' : ''}</small></span>
-        <span className="wl-st-amount"><b>{money(payout.amountMinor)}</b><span className={`wl-chip is-${payout.status === 'PAID' ? 'done' : payout.status === 'FAILED' ? 'bad' : 'live'}`}>{payout.status === 'PAID' ? 'Sent' : payout.status === 'FAILED' ? 'Failed' : 'Processing'}</span></span>
+        <span className="wl-st-amount"><b>{money(payout.amountMinor)}</b><span className={`wl-chip is-${payout.status === 'PAID' ? 'done' : payout.status === 'FAILED' || payout.status === 'DISPUTED' ? 'bad' : payout.status === 'AWAITING_CONFIRMATION' ? 'warn' : 'live'}`}>{payout.status === 'PAID' ? 'Received' : payout.status === 'FAILED' ? 'Failed' : payout.status === 'AWAITING_CONFIRMATION' ? 'Confirm' : payout.status === 'DISPUTED' ? 'Being checked' : 'Processing'}</span></span>
       </li>)}</ul>
     </section>}
     <p className="wl-foot"><ShieldCheck size={14} aria-hidden="true" />Payments are processed by Paystack. DOORSTEP stores only the last 4 digits of your account.</p>

@@ -1022,6 +1022,12 @@ model Payout {
   source        String    @default("ADMIN")
   /// Cash-out fee kept by DOORSTEP; amountMinor is what was sent after the fee.
   feeMinor      Int       @default(0)
+  /// Manual payouts: receipt the admin attached, reminder sent, and the partner's confirmation or dispute.
+  receiptKey    String?
+  remindedAt    DateTime?
+  confirmedAt   DateTime?
+  confirmedById String?
+  disputeNote   String?
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
 

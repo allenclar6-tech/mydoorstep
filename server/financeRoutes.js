@@ -6,12 +6,16 @@ import { naira } from './financeService.js'
 import { FINANCE_SETTINGS_KEY, financeSettingsSchema, getFinanceSettings } from './financeSettings.js'
 import { balancesDue, riderFeeSource } from './financeLedger.js'
 import { riderFeeEntries } from './financeService.js'
-import { createRecipient, listBanks, maskAccount, PayoutError, resolveAccount, upsertSubaccount, verifyTransfer } from './paystackPayouts.js'
-import { applyTransferResult, availableBalance, createPayout, markScheduleRun, payParty, transfersEnabled } from './payoutEngine.js'
+import multer from 'multer'
+import { createRecipient, fetchRecipient, listBanks, maskAccount, PayoutError, resolveAccount, upsertSubaccount, verifyTransfer } from './paystackPayouts.js'
+import { applyTransferResult, availableBalance, confirmPayout, createPayout, disputePayout, markScheduleRun, payParty, resolvePayout, transfersEnabled } from './payoutEngine.js'
+import { readPrivateDocument, storePrivateDocument } from './uploadService.js'
 import { getPayoutSettings, lastScheduledMoment, nextScheduledMoment, PAYOUT_SETTINGS_KEY, payoutSettingsSchema, ruleFor, startOfLagosDay, withdrawalFee } from './payoutSettings.js'
 import { notifyAdmins, notifyUsers, restaurantTeamIds } from './notify.js'
 
 export { applyTransferResult } from './payoutEngine.js'
+
+const receiptUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } }).single('receipt')
 
 export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyPassword, fetchImpl }) {
   const router = Router()
@@ -88,7 +92,7 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
       const [grouped, entries, payouts, account] = await Promise.all([
         prisma.ledgerEntry.groupBy({ by: ['status'], where, _sum: { amountMinor: true } }),
         prisma.ledgerEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: 60, select: { id: true, type: true, amountMinor: true, status: true, description: true, createdAt: true, orderId: true, parcelBookingId: true } }),
-        prisma.payout.findMany({ where: { party: who.kind, ...who.where }, orderBy: { createdAt: 'desc' }, take: 20, select: { id: true, amountMinor: true, feeMinor: true, source: true, status: true, method: true, createdAt: true, completedAt: true, failureReason: true } }),
+        prisma.payout.findMany({ where: { party: who.kind, ...who.where }, orderBy: { createdAt: 'desc' }, take: 20, select: { id: true, amountMinor: true, feeMinor: true, source: true, status: true, method: true, transferCode: true, bankSnapshot: true, receiptKey: true, disputeNote: true, createdAt: true, completedAt: true, failureReason: true } }),
         prisma.payoutAccount.findFirst({ where: who.where }),
       ])
       const total = (status) => grouped.find((row) => row.status === status)?._sum.amountMinor || 0
@@ -120,7 +124,7 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
         },
         orders,
         rates: { doorstepRiderPercent: settings.commission.doorstepRiderPercent, ownRiderPercent: settings.commission.ownRiderPercent, riderFeePercent: settings.riderFee?.percent ?? 0, riderPay: settings.riderPay.enabled ? { bands: settings.riderPay.bands, perKmAfterMinor: settings.riderPay.perKmAfterMinor } : null },
-        entries, payouts,
+        entries, payouts: payouts.map(({ receiptKey, ...payout }) => ({ ...payout, hasReceipt: Boolean(receiptKey) })),
       })
     } catch (error) { return fail(response, error) }
   })
@@ -341,6 +345,111 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
       if (error?.code === 'P2025') return response.status(404).json({ error: 'RESTAURANT_NOT_FOUND' })
       return fail(response, error)
     }
+  })
+
+  // One partner, in full, for paying them by hand: contact details, bank account (full number from Paystack),
+  // and every owed line with its order, sales and commission percentage. Each view is audited.
+  router.get('/admin/finance/payees/:kind/:id', requireUser, requireAdmin, async (request, response) => {
+    try {
+      const kind = request.params.kind === 'rider' ? 'RIDER' : request.params.kind === 'business' ? 'RESTAURANT' : null
+      if (!kind) return response.status(404).json({ error: 'PAYEE_NOT_FOUND' })
+      const owner = kind === 'RIDER' ? { riderId: request.params.id } : { restaurantId: request.params.id }
+      const profile = kind === 'RIDER'
+        ? await prisma.rider.findUnique({ where: { id: request.params.id }, select: { id: true, status: true, vehicleType: true, network: true, user: { select: { firstName: true, lastName: true, phone: true, email: true } } } }).then((rider) => rider && { kind, id: rider.id, name: `${rider.user.firstName || ''} ${rider.user.lastName || ''}`.trim() || 'Rider', phone: rider.user.phone, email: rider.user.email, detail: [rider.vehicleType, rider.network === 'BUSINESS_OWNED' ? 'Business rider' : 'DOORSTEP rider'].filter(Boolean).join(' · '), status: rider.status })
+        : await prisma.restaurant.findUnique({ where: { id: request.params.id }, select: { id: true, name: true, phone: true, email: true, address: true, status: true, application: { select: { ownerName: true, ownerPhone: true, ownerEmail: true, whatsApp: true } } } }).then((business) => business && { kind, id: business.id, name: business.name, phone: business.application?.ownerPhone || business.phone, email: business.application?.ownerEmail || business.email, whatsApp: business.application?.whatsApp || null, owner: business.application?.ownerName || null, detail: business.address, status: business.status })
+      if (!profile) return response.status(404).json({ error: 'PAYEE_NOT_FOUND', message: 'That business or rider was not found.' })
+      const [account, settings, due, payouts] = await Promise.all([
+        prisma.payoutAccount.findFirst({ where: owner }),
+        getPayoutSettings(prisma),
+        prisma.ledgerEntry.findMany({ where: { party: kind, ...owner, status: 'DUE' }, orderBy: { createdAt: 'asc' }, take: 300, select: { id: true, type: true, amountMinor: true, description: true, orderId: true, createdAt: true } }),
+        prisma.payout.findMany({ where: owner, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, amountMinor: true, method: true, source: true, status: true, transferCode: true, createdAt: true, confirmedAt: true, disputeNote: true, receiptKey: true } }),
+      ])
+      let bank = null
+      if (account) {
+        bank = { bankName: account.bankName, accountName: account.accountName, accountNumber: null, last4: account.accountLast4, verifiedAt: account.verifiedAt, status: account.status }
+        if (account.paystackRecipientCode) {
+          try { bank.accountNumber = (await fetchRecipient(account.paystackRecipientCode, { fetchImpl })).accountNumber } catch (error) { bank.lookupError = error?.message || 'Paystack could not be reached for the full number.' }
+        }
+        await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'PAYOUT_ACCOUNT_VIEWED', entityType: 'PayoutAccount', entityId: account.id, metadata: { fullNumberShown: Boolean(bank.accountNumber) } } })
+      }
+      const orderIds = [...new Set(due.map((entry) => entry.orderId).filter(Boolean))]
+      const orders = orderIds.length ? await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, orderNumber: true, status: true, subtotalMinor: true, deliveryFeeMinor: true, commissionPercent: true, fulfilment: true, createdAt: true } }) : []
+      const orderOf = new Map(orders.map((order) => [order.id, order]))
+      const balance = await availableBalance(prisma, { party: kind, ...owner }, ruleFor(settings, kind).holdHours)
+      return response.json({
+        profile, bank, balance,
+        lines: due.map((entry) => {
+          const order = entry.orderId ? orderOf.get(entry.orderId) : null
+          return { ...entry, order: order ? { orderNumber: order.orderNumber, status: order.status, salesMinor: order.subtotalMinor, commissionPercent: order.commissionPercent == null ? null : Number(order.commissionPercent), commissionMinor: order.commissionPercent == null ? null : Math.round(order.subtotalMinor * Number(order.commissionPercent) / 100), deliveryFeeKeptMinor: order.fulfilment === 'BUSINESS_RIDER' ? order.deliveryFeeMinor : 0 } : null, cleared: balance.entryIds.includes(entry.id) }
+        }),
+        payouts: payouts.map(({ receiptKey, ...payout }) => ({ ...payout, hasReceipt: Boolean(receiptKey) })),
+      })
+    } catch (error) { return fail(response, error) }
+  })
+
+  // Receipt (screenshot or PDF) of a bank payment the admin made, shown to the partner when they confirm.
+  router.post('/admin/finance/payouts/:payoutId/receipt', requireUser, requireAdmin, (request, response, next) => receiptUpload(request, response, (error) => {
+    if (error) return response.status(400).json({ error: 'RECEIPT_UPLOAD_FAILED', message: error.code === 'LIMIT_FILE_SIZE' ? 'The receipt must be 5 MB or smaller.' : 'Could not read that file. Use a JPG, PNG or PDF.' })
+    return next()
+  }), async (request, response) => {
+    try {
+      if (!request.file) return response.status(400).json({ error: 'RECEIPT_REQUIRED', message: 'Choose a screenshot or PDF of the transfer.' })
+      const payout = await prisma.payout.findUnique({ where: { id: request.params.payoutId } })
+      if (!payout || payout.method !== 'MANUAL') return response.status(404).json({ error: 'PAYOUT_NOT_FOUND' })
+      const stored = await storePrivateDocument({ buffer: request.file.buffer, mimeType: request.file.mimetype, originalName: request.file.originalname, keyPrefix: `private/payout-receipts/${payout.id}/` })
+      await prisma.payout.update({ where: { id: payout.id }, data: { receiptKey: stored.storageKey } })
+      return response.status(201).json({ hasReceipt: true })
+    } catch (error) {
+      if (error?.code === 'UNSUPPORTED_DOCUMENT_TYPE') return response.status(400).json({ error: error.code, message: 'Upload a JPG or PNG screenshot, or a PDF.' })
+      return fail(response, error)
+    }
+  })
+
+  async function sendPayoutReceipt(response, payout) {
+    if (!payout?.receiptKey) return response.status(404).json({ error: 'RECEIPT_NOT_FOUND' })
+    const file = await readPrivateDocument(payout.receiptKey)
+    response.set('Content-Type', file.mimeType)
+    response.set('Cache-Control', 'private, no-store')
+    response.set('Content-Disposition', `inline; filename="doorstep-payout${file.mimeType === 'application/pdf' ? '.pdf' : file.mimeType === 'image/png' ? '.png' : '.jpg'}"`)
+    return response.send(file.buffer)
+  }
+  router.get('/admin/finance/payouts/:payoutId/receipt', requireUser, requireAdmin, async (request, response) => {
+    try { return await sendPayoutReceipt(response, await prisma.payout.findUnique({ where: { id: request.params.payoutId } })) } catch (error) { return fail(response, error) }
+  })
+  router.get('/finance/payouts/:payoutId/receipt', requireUser, async (request, response) => {
+    try {
+      const who = await payee(request.user)
+      return await sendPayoutReceipt(response, await prisma.payout.findFirst({ where: { id: request.params.payoutId, ...who.where } }))
+    } catch (error) { return fail(response, error) }
+  })
+
+  // The partner answers: "I received it" (the payout is complete) or "I haven't received it" (admins are alerted).
+  router.post('/finance/payouts/:payoutId/confirm', requireUser, async (request, response) => {
+    try {
+      const who = await payee(request.user)
+      const body = z.object({ received: z.boolean(), note: z.string().trim().max(500).optional() }).parse(request.body)
+      const payout = await prisma.payout.findFirst({ where: { id: request.params.payoutId, ...who.where } })
+      if (!payout) return response.status(404).json({ error: 'PAYOUT_NOT_FOUND' })
+      if (body.received) {
+        const confirmed = await confirmPayout(prisma, payout.id, { userId: request.user.id })
+        if (!confirmed) return response.status(409).json({ error: 'PAYOUT_NOT_WAITING', message: 'This payout has already been settled.' })
+        return response.json({ payout: { id: confirmed.id, status: confirmed.status } })
+      }
+      if (!body.note || body.note.length < 3) return response.status(400).json({ error: 'NOTE_REQUIRED', message: 'Tell DOORSTEP what you checked (e.g. "nothing in my GTBank account since Monday").' })
+      const disputed = await disputePayout(prisma, payout.id, { userId: request.user.id, note: body.note })
+      if (!disputed) return response.status(409).json({ error: 'PAYOUT_NOT_WAITING', message: 'This payout can no longer be disputed here. Contact DOORSTEP support.' })
+      return response.json({ payout: { id: disputed.id, status: disputed.status } })
+    } catch (error) { return fail(response, error) }
+  })
+
+  // Admin decision on a manual payout still waiting for the partner, or disputed by them.
+  router.post('/admin/finance/payouts/:payoutId/resolve', requireUser, requireAdmin, async (request, response) => {
+    try {
+      const body = z.object({ action: z.enum(['MARK_PAID', 'CANCEL']), note: z.string().trim().min(3, 'Add a short note.').max(300) }).parse(request.body)
+      const payout = await resolvePayout(prisma, request.params.payoutId, { action: body.action, userId: request.user.id, note: body.note })
+      if (!payout) return response.status(409).json({ error: 'PAYOUT_NOT_WAITING', message: 'This payout is already settled. Refresh.' })
+      return response.json({ payout })
+    } catch (error) { return fail(response, error) }
   })
 
   router.post('/admin/finance/payouts/:payoutId/refresh', requireUser, requireAdmin, async (request, response) => {

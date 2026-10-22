@@ -12,6 +12,10 @@ export const transfersEnabled = () => process.env.PAYSTACK_TRANSFERS_ENABLED ===
 // After an automatic transfer fails, that payee is left alone for a while instead of retrying every minute.
 export const AUTO_RETRY_AFTER_MS = 6 * 60 * 60_000
 const AUTO_SOURCES = ['AUTOMATIC', 'SCHEDULED']
+// A bank payment recorded by an admin waits for the partner to confirm it arrived. They are reminded after a day;
+// if they still haven't answered after three, it is treated as received (they can always raise it with support).
+export const CONFIRM_REMIND_AFTER_MS = 24 * 60 * 60_000
+export const CONFIRM_AUTO_AFTER_MS = 72 * 60 * 60_000
 const earningsLink = (party) => party === 'RIDER' ? '/rider/earnings' : '/restaurant/earnings'
 
 export const ownerOf = ({ restaurantId, riderId }) => riderId ? { riderId } : { restaurantId }
@@ -76,10 +80,11 @@ export async function availableBalance(db, { party, restaurantId, riderId }, hol
 
 /**
  * Pays owed entries to one business or rider. `entryIds` limits it to cleared money (null = everything owed).
- * MANUAL records a bank payment the admin already made; PAYSTACK_TRANSFER sends it from the Paystack balance.
+ * MANUAL records a bank payment the admin already made (it then waits for the partner to confirm receipt);
+ * PAYSTACK_TRANSFER sends it from the Paystack balance.
  * Returns { payout, unconfirmed }.
  */
-export async function createPayout(db, { party, restaurantId, riderId, entryIds = null, method, source = 'ADMIN', actorId = null, manualReference = null, feeMinor = 0, account, fetchImpl }) {
+export async function createPayout(db, { party, restaurantId, riderId, entryIds = null, method, source = 'ADMIN', actorId = null, manualReference = null, receiptKey = null, feeMinor = 0, account, fetchImpl }) {
   const owner = ownerOf({ restaurantId, riderId })
   if (method === 'PAYSTACK_TRANSFER') {
     if (!transfersEnabled()) throw Object.assign(new Error('Paystack transfers are off. Turn on Transfers in Paystack and set PAYSTACK_TRANSFERS_ENABLED=true on the API, or record a manual payout.'), { code: 'TRANSFERS_NOT_ENABLED', status: 409 })
@@ -93,20 +98,21 @@ export async function createPayout(db, { party, restaurantId, riderId, entryIds 
     const grossMinor = due.reduce((sum, entry) => sum + entry.amountMinor, 0)
     const amountMinor = grossMinor - feeMinor
     if (amountMinor < 100) throw Object.assign(new Error(grossMinor < 0 ? 'This payee owes DOORSTEP money; nothing to pay out.' : feeMinor && grossMinor > 0 ? 'The balance is too small to cover the cash-out fee.' : 'Nothing is owed right now.'), { code: 'NOTHING_TO_PAY', status: 409 })
-    const created = await transaction.payout.create({ data: { party, ...owner, amountMinor, feeMinor, method, source, status: manual ? 'PAID' : 'PENDING', reference, transferCode: manualReference, bankSnapshot: account ? { bankName: account.bankName, accountName: account.accountName, last4: account.accountLast4 } : null, createdById: actorId, completedAt: manual ? new Date() : null } })
-    const reserved = await transaction.ledgerEntry.updateMany({ where: { id: { in: due.map((entry) => entry.id) }, status: 'DUE' }, data: { status: manual ? 'PAID' : 'PAYING', payoutId: created.id } })
+    const created = await transaction.payout.create({ data: { party, ...owner, amountMinor, feeMinor, method, source, status: manual ? 'AWAITING_CONFIRMATION' : 'PENDING', reference, transferCode: manualReference, receiptKey, bankSnapshot: account ? { bankName: account.bankName, accountName: account.accountName, last4: account.accountLast4 } : null, createdById: actorId } })
+    // Reserved, not yet paid: a manual payment only counts once the partner confirms it arrived.
+    const reserved = await transaction.ledgerEntry.updateMany({ where: { id: { in: due.map((entry) => entry.id) }, status: 'DUE' }, data: { status: 'PAYING', payoutId: created.id } })
     if (reserved.count !== due.length) throw Object.assign(new Error('Balances changed while preparing the payout. Try again.'), { code: 'BALANCE_CHANGED', status: 409 })
     if (feeMinor > 0) {
       await transaction.ledgerEntry.createMany({ data: [
-        { party, ...owner, type: 'WITHDRAWAL_FEE', amountMinor: -feeMinor, status: manual ? 'PAID' : 'PAYING', payoutId: created.id, description: `Cash-out fee (${naira(feeMinor)})`, dedupeKey: `WITHDRAWAL_FEE:${created.id}` },
-        { party: 'PLATFORM', type: 'WITHDRAWAL_FEE', amountMinor: feeMinor, status: manual ? 'RETAINED' : 'PAYING', payoutId: created.id, description: `Cash-out fee on payout ${reference.slice(-8)}`, dedupeKey: `WITHDRAWAL_FEE_INCOME:${created.id}` },
+        { party, ...owner, type: 'WITHDRAWAL_FEE', amountMinor: -feeMinor, status: 'PAYING', payoutId: created.id, description: `Cash-out fee (${naira(feeMinor)})`, dedupeKey: `WITHDRAWAL_FEE:${created.id}` },
+        { party: 'PLATFORM', type: 'WITHDRAWAL_FEE', amountMinor: feeMinor, status: 'PAYING', payoutId: created.id, description: `Cash-out fee on payout ${reference.slice(-8)}`, dedupeKey: `WITHDRAWAL_FEE_INCOME:${created.id}` },
       ] })
     }
     await transaction.auditLog.create({ data: { actorId, action: `PAYOUT_${method}`, entityType: 'Payout', entityId: created.id, metadata: { source, amountMinor, feeMinor, entries: due.length, manualReference } } })
     return created
   })
   if (manual) {
-    await notifyUsers(db, await payeeUserIds(db, { party, ...owner }), { type: 'PAYMENT', title: `Payout of ${naira(payout.amountMinor)} sent`, body: `DOORSTEP paid you by bank transfer (ref ${manualReference}).`, link: earningsLink(party) })
+    await notifyUsers(db, await payeeUserIds(db, { party, ...owner }), { type: 'PAYMENT', title: `DOORSTEP sent you ${naira(payout.amountMinor)}`, body: `Paid to ${account ? `${account.bankName} ••••${account.accountLast4}` : 'your bank'} (ref ${manualReference}). Open Earnings and tap “I received it” once it shows in your account.`, link: earningsLink(party) })
     return { payout, unconfirmed: false }
   }
   try {
@@ -171,6 +177,8 @@ export async function markScheduleRun(db, party, momentIso) {
  * time (a missed run, e.g. during a deploy, happens as soon as the server is back). MANUAL does nothing.
  */
 export async function runPayoutSweep(db, { now = new Date(), fetchImpl } = {}) {
+  // Manual bank payments need no Paystack, so their reminders run either way.
+  await remindAndAutoConfirm(db, now)
   if (!transfersEnabled()) return { skipped: 'TRANSFERS_OFF' }
   const settings = await getPayoutSettings(db)
   const results = {}
@@ -192,4 +200,78 @@ export async function runPayoutSweep(db, { now = new Date(), fetchImpl } = {}) {
     }
   }
   return results
+}
+
+/**
+ * The partner confirms a manual payment reached their bank (or it is confirmed automatically after three days).
+ * Only then are its entries paid. Returns the payout, or null if it was not waiting.
+ */
+export async function confirmPayout(db, payoutId, { userId = null, auto = false } = {}) {
+  return db.$transaction(async (transaction) => {
+    const now = new Date()
+    const changed = await transaction.payout.updateMany({ where: { id: payoutId, status: { in: ['AWAITING_CONFIRMATION', 'DISPUTED'] } }, data: { status: 'PAID', completedAt: now, confirmedAt: now, confirmedById: userId } })
+    if (changed.count !== 1) return null
+    await transaction.ledgerEntry.updateMany({ where: { payoutId, party: 'PLATFORM', status: 'PAYING' }, data: { status: 'RETAINED' } })
+    await transaction.ledgerEntry.updateMany({ where: { payoutId, status: 'PAYING' }, data: { status: 'PAID' } })
+    const payout = await transaction.payout.findUnique({ where: { id: payoutId } })
+    await transaction.auditLog.create({ data: { actorId: userId, action: auto ? 'PAYOUT_AUTO_CONFIRMED' : 'PAYOUT_RECEIPT_CONFIRMED', entityType: 'Payout', entityId: payoutId, metadata: { amountMinor: payout.amountMinor } } })
+    if (!auto) await notifyAdmins(transaction, { type: 'PAYMENT', title: `Payout of ${naira(payout.amountMinor)} confirmed`, body: `${payout.bankSnapshot?.accountName || 'The partner'} confirmed they received bank payment ${payout.transferCode || payout.reference}.`, link: '/admin/finance' })
+    return payout
+  })
+}
+
+/** The partner says the money hasn't arrived: the payout is held (not paid, not owed again) until an admin decides. */
+export async function disputePayout(db, payoutId, { userId, note }) {
+  const changed = await db.payout.updateMany({ where: { id: payoutId, status: 'AWAITING_CONFIRMATION' }, data: { status: 'DISPUTED', disputeNote: note } })
+  if (changed.count !== 1) return null
+  const payout = await db.payout.findUnique({ where: { id: payoutId } })
+  await db.auditLog.create({ data: { actorId: userId, action: 'PAYOUT_DISPUTED', entityType: 'Payout', entityId: payoutId, metadata: { note } } })
+  await notifyAdmins(db, { type: 'PAYMENT', title: `Payout not received: ${naira(payout.amountMinor)}`, body: `${payout.bankSnapshot?.accountName || 'A partner'} says bank payment ${payout.transferCode || payout.reference} hasn't arrived: ${note}`, link: '/admin/finance' })
+  return payout
+}
+
+/**
+ * Admin decision on a manual payout that is waiting or disputed: MARK_PAID (with proof from the bank) or CANCEL
+ * (the money never left, so it is owed again).
+ */
+export async function resolvePayout(db, payoutId, { action, userId, note }) {
+  if (action === 'MARK_PAID') {
+    const payout = await confirmPayout(db, payoutId, { userId, auto: true })
+    if (!payout) return null
+    await db.auditLog.create({ data: { actorId: userId, action: 'PAYOUT_MARKED_PAID_BY_ADMIN', entityType: 'Payout', entityId: payoutId, metadata: { note } } })
+    await notifyUsers(db, await payeeUserIds(db, payout), { type: 'PAYMENT', title: `Payout of ${naira(payout.amountMinor)} marked as received`, body: `DOORSTEP checked with its bank: ${note}. If it still isn't in your account, contact DOORSTEP support.`, link: earningsLink(payout.party) })
+    return payout
+  }
+  return db.$transaction(async (transaction) => {
+    const changed = await transaction.payout.updateMany({ where: { id: payoutId, status: { in: ['AWAITING_CONFIRMATION', 'DISPUTED'] } }, data: { status: 'FAILED', completedAt: new Date(), failureReason: `Cancelled by DOORSTEP: ${note}` } })
+    if (changed.count !== 1) return null
+    await transaction.ledgerEntry.updateMany({ where: { payoutId, type: 'WITHDRAWAL_FEE', status: 'PAYING' }, data: { status: 'VOID' } })
+    await transaction.ledgerEntry.updateMany({ where: { payoutId, status: 'PAYING' }, data: { status: 'DUE', payoutId: null } })
+    const payout = await transaction.payout.findUnique({ where: { id: payoutId } })
+    await transaction.auditLog.create({ data: { actorId: userId, action: 'PAYOUT_CANCELLED', entityType: 'Payout', entityId: payoutId, metadata: { note } } })
+    await notifyUsers(transaction, await payeeUserIds(transaction, payout), { type: 'PAYMENT', title: 'Payout cancelled', body: `The ${naira(payout.amountMinor)} bank payment was cancelled (${note}). The money is back in your balance and will be paid again.`, link: earningsLink(payout.party) })
+    return payout
+  })
+}
+
+/** Reminds partners who haven't confirmed a manual payment, and confirms it for them after three days. */
+export async function remindAndAutoConfirm(db, now = new Date()) {
+  const waiting = await db.payout.findMany({ where: { status: 'AWAITING_CONFIRMATION', createdAt: { lt: new Date(now.getTime() - CONFIRM_REMIND_AFTER_MS) } }, take: 50 })
+  let reminded = 0
+  let confirmed = 0
+  for (const payout of waiting) {
+    if (now.getTime() - new Date(payout.createdAt).getTime() >= CONFIRM_AUTO_AFTER_MS) {
+      if (await confirmPayout(db, payout.id, { auto: true })) {
+        confirmed += 1
+        await notifyUsers(db, await payeeUserIds(db, payout), { type: 'PAYMENT', title: `Payout of ${naira(payout.amountMinor)} marked as received`, body: 'You didn’t confirm within 3 days, so it was marked as received. If it never arrived, contact DOORSTEP support with your bank statement.', link: earningsLink(payout.party) })
+      }
+    } else if (!payout.remindedAt) {
+      const marked = await db.payout.updateMany({ where: { id: payout.id, remindedAt: null }, data: { remindedAt: now } })
+      if (marked.count === 1) {
+        reminded += 1
+        await notifyUsers(db, await payeeUserIds(db, payout), { type: 'PAYMENT', title: `Did you receive ${naira(payout.amountMinor)}?`, body: `DOORSTEP sent it to ${payout.bankSnapshot?.bankName || 'your bank'} (ref ${payout.transferCode}). Please confirm in Earnings.`, link: earningsLink(payout.party) })
+      }
+    }
+  }
+  return { reminded, confirmed }
 }

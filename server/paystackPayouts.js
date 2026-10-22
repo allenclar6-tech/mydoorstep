@@ -94,4 +94,16 @@ export async function verifyTransfer(reference, { fetchImpl } = {}) {
   return { status: data?.status || null, transferCode: data?.transfer_code || null, reason: data?.reason || null }
 }
 
-export const maskAccount = (accountNumber) => `••••${String(accountNumber).slice(-4)}`
+/**
+ * Full bank details behind a transfer recipient. DOORSTEP stores only the last 4 digits, so an admin paying a
+ * partner by hand reads the full account number from Paystack when needed.
+ */
+export async function fetchRecipient(recipientCode, { fetchImpl } = {}) {
+  if (!/^RCP_[A-Za-z0-9]+$/.test(String(recipientCode))) throw new PayoutError('RECIPIENT_INVALID', 'This payout account has no Paystack record.')
+  const data = await paystack('GET', `/transferrecipient/${encodeURIComponent(recipientCode)}`, { fetchImpl })
+  const details = data?.details || {}
+  if (!details.account_number) throw new PayoutError('RECIPIENT_NOT_FOUND', 'Paystack did not return the account number.', 502)
+  return { accountNumber: details.account_number, accountName: details.account_name || data?.name || null, bankName: details.bank_name || null, bankCode: details.bank_code || null }
+}
+
+export const maskAccount =(accountNumber) => `••••${String(accountNumber).slice(-4)}`

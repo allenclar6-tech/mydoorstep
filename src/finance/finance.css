@@ -133,3 +133,37 @@
   .po-modes button { min-height: 0; }
   .po-commission label { flex: 1 1 120px; width: auto; }
 }
+
+/* Pay manually (admin) and confirm payment (partner) */
+.pp-backdrop { align-items: flex-end; background: rgba(10, 25, 18, .45); display: flex; inset: 0; justify-content: center; position: fixed; z-index: 60; }
+.pp-sheet { background: #f7f9f7; border-radius: 22px 22px 0 0; display: flex; flex-direction: column; gap: 12px; max-height: 92vh; max-width: 640px; overflow-y: auto; padding: 18px 16px 28px; width: 100%; }
+.pp-head { align-items: flex-start; display: flex; justify-content: space-between; gap: 10px; }
+.pp-head h3 { font-size: 1.2rem; font-weight: 800; margin: 2px 0 0; }
+.pp-close { background: #eef2ef; color: #14231d; }
+.pp-block { background: #fff; border: 1px solid #e3e8e2; border-radius: 18px; display: flex; flex-direction: column; gap: 8px; padding: 14px; }
+.pp-block h4 { align-items: center; display: flex; font-size: .92rem; font-weight: 800; gap: 6px; margin: 0; }
+.pp-contacts { display: flex; flex-wrap: wrap; gap: 6px; }
+.pp-contacts a { align-items: center; display: inline-flex; gap: 6px; text-decoration: none; }
+.pp-copy { align-items: center; border-top: 1px solid #eef2ef; display: grid; gap: 2px 10px; grid-template-columns: 1fr auto; padding-top: 8px; }
+.pp-copy small { color: #5b6b63; font-size: .72rem; font-weight: 700; grid-column: 1; }
+.pp-copy b { font-size: 1.05rem; grid-column: 1; letter-spacing: .02em; overflow-wrap: anywhere; }
+.pp-copy button { align-items: center; display: inline-flex; gap: 4px; grid-column: 2; grid-row: 1 / span 2; }
+.pp-lines { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.pp-lines li { align-items: flex-start; border-top: 1px solid #eef2ef; display: flex; gap: 10px; justify-content: space-between; padding: 8px 0; }
+.pp-lines li:first-child { border-top: 0; }
+.pp-lines li > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pp-lines small { color: #5b6b63; font-size: .74rem; overflow-wrap: anywhere; }
+.pp-lines .pp-hold { color: #8a5a00; font-weight: 700; }
+.pp-totals { background: #f3f6f4; border-radius: 12px; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: space-between; padding: 10px 12px; font-size: .84rem; }
+.pp-amount { font-size: .95rem; margin: 0; }
+.pp-amount b { color: #0e4f3c; font-size: 1.3rem; }
+.pp-scope { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pp-file input { min-height: 0 !important; padding: 8px 0 !important; border: 0 !important; }
+.pp-file small { align-items: center; display: flex; gap: 4px; color: #3e4f47; }
+.pp-done { align-items: center; background: #e2f3ea; border-radius: 14px; color: #0e4f3c; display: flex; font-weight: 700; gap: 8px; margin: 0; padding: 12px 14px; }
+.po-resolve { flex-wrap: wrap; }
+.po-receipt { align-self: flex-start; background: transparent; border: 0; color: #0e4f3c; cursor: pointer; font: inherit; font-size: .78rem; font-weight: 700; padding: 0; text-decoration: underline; }
+.wl-confirm-pay { background: #e9f6ef; border-color: #b9e0c9; }
+.wl-confirm-pay .text-link { align-self: flex-start; background: transparent; border: 0; color: #0e4f3c; cursor: pointer; font: inherit; font-size: .84rem; font-weight: 700; padding: 0; text-decoration: underline; }
+.wl-dispute { padding: 12px; }
+@media (min-width: 700px) { .pp-backdrop { align-items: center; } .pp-sheet { border-radius: 22px; max-height: 88vh; } }
