@@ -5,37 +5,16 @@ import { z } from 'zod'
 import { naira } from './financeService.js'
 import { FINANCE_SETTINGS_KEY, financeSettingsSchema, getFinanceSettings } from './financeSettings.js'
 import { balancesDue } from './financeLedger.js'
-import { createRecipient, listBanks, maskAccount, PayoutError, resolveAccount, sendTransfer, transferCertainlyNotSent, upsertSubaccount, verifyTransfer } from './paystackPayouts.js'
+import { createRecipient, listBanks, maskAccount, PayoutError, resolveAccount, upsertSubaccount, verifyTransfer } from './paystackPayouts.js'
+import { applyTransferResult, availableBalance, createPayout, markScheduleRun, payParty, transfersEnabled } from './payoutEngine.js'
+import { getPayoutSettings, lastScheduledMoment, nextScheduledMoment, PAYOUT_SETTINGS_KEY, payoutSettingsSchema, ruleFor, startOfLagosDay, withdrawalFee } from './payoutSettings.js'
 import { notifyAdmins, notifyUsers, restaurantTeamIds } from './notify.js'
 
-const transfersEnabled = () => process.env.PAYSTACK_TRANSFERS_ENABLED === 'true' && Boolean(process.env.PAYSTACK_SECRET_KEY)
-
-/** Applies a Paystack transfer result (webhook or verify) to a payout and its ledger entries. Idempotent. */
-export async function applyTransferResult(prisma, reference, status, reason = null) {
-  const payout = await prisma.payout.findUnique({ where: { reference } })
-  if (!payout || payout.status === 'PAID' || payout.status === 'FAILED') return payout
-  if (status === 'success') {
-    await prisma.$transaction(async (transaction) => {
-      const changed = await transaction.payout.updateMany({ where: { id: payout.id, status: { in: ['PENDING', 'PROCESSING'] } }, data: { status: 'PAID', completedAt: new Date(), failureReason: null } })
-      if (changed.count !== 1) return
-      await transaction.ledgerEntry.updateMany({ where: { payoutId: payout.id, status: 'PAYING' }, data: { status: 'PAID' } })
-      const userIds = payout.riderId ? [(await transaction.rider.findUnique({ where: { id: payout.riderId }, select: { userId: true } }))?.userId] : await restaurantTeamIds(transaction, payout.restaurantId)
-      await notifyUsers(transaction, userIds, { type: 'PAYMENT', title: `Payout of ${naira(payout.amountMinor)} sent`, body: 'DOORSTEP sent your earnings to your bank. Banks usually credit within minutes.', link: payout.riderId ? '/rider/earnings' : '/restaurant/earnings' })
-    })
-  } else if (['failed', 'reversed', 'abandoned', 'blocked', 'rejected'].includes(status)) {
-    await prisma.$transaction(async (transaction) => {
-      const changed = await transaction.payout.updateMany({ where: { id: payout.id, status: { in: ['PENDING', 'PROCESSING'] } }, data: { status: 'FAILED', completedAt: new Date(), failureReason: reason || status } })
-      if (changed.count !== 1) return
-      // The money was not sent, so it is owed again.
-      await transaction.ledgerEntry.updateMany({ where: { payoutId: payout.id, status: 'PAYING' }, data: { status: 'DUE', payoutId: null } })
-      await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Payout failed', body: `${naira(payout.amountMinor)} transfer ${payout.reference} ${status}${reason ? `: ${reason}` : ''}. The amount is owed again.`, link: '/admin/finance' })
-    })
-  }
-  return prisma.payout.findUnique({ where: { reference } })
-}
+export { applyTransferResult } from './payoutEngine.js'
 
 export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyPassword, fetchImpl }) {
   const router = Router()
+  const withdrawLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 6, standardHeaders: 'draft-7', legacyHeaders: false, handler: (_request, response) => response.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many cash-out attempts. Wait a few minutes.' }) })
   const resolveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false, handler: (_request, response) => response.status(429).json({ error: 'TOO_MANY_ATTEMPTS', message: 'Too many account checks. Wait a few minutes.' }) })
   const fail = (response, error) => {
     if (error instanceof PayoutError || (error?.code && error?.status)) return response.status(error.status || 400).json({ error: error.code, message: error.message })
@@ -108,7 +87,7 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
       const [grouped, entries, payouts, account] = await Promise.all([
         prisma.ledgerEntry.groupBy({ by: ['status'], where, _sum: { amountMinor: true } }),
         prisma.ledgerEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: 60, select: { id: true, type: true, amountMinor: true, status: true, description: true, createdAt: true, orderId: true, parcelBookingId: true } }),
-        prisma.payout.findMany({ where: { party: who.kind, ...who.where }, orderBy: { createdAt: 'desc' }, take: 20, select: { id: true, amountMinor: true, status: true, method: true, createdAt: true, completedAt: true, failureReason: true } }),
+        prisma.payout.findMany({ where: { party: who.kind, ...who.where }, orderBy: { createdAt: 'desc' }, take: 20, select: { id: true, amountMinor: true, feeMinor: true, source: true, status: true, method: true, createdAt: true, completedAt: true, failureReason: true } }),
         prisma.payoutAccount.findFirst({ where: who.where }),
       ])
       const total = (status) => grouped.find((row) => row.status === status)?._sum.amountMinor || 0
@@ -119,14 +98,50 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
         const commission = await prisma.commission.aggregate({ where: { order: { restaurantId: who.restaurantId } }, _sum: { amountMinor: true } })
         orders = { count: agg._count._all, salesMinor: agg._sum.subtotalMinor || 0, commissionMinor: commission._sum.amountMinor || 0 }
       }
+      const payoutSettings = await getPayoutSettings(prisma)
+      const rule = ruleFor(payoutSettings, who.kind)
+      const now = new Date()
+      const [balance, cashOutsToday] = await Promise.all([
+        availableBalance(prisma, { party: who.kind, ...who.where }, rule.holdHours, now),
+        prisma.payout.count({ where: { ...who.where, source: 'WITHDRAWAL', status: { not: 'FAILED' }, createdAt: { gte: startOfLagosDay(now) } } }),
+      ])
+      const withdrawals = payoutSettings.withdrawals
+      const cashOutReady = withdrawals.enabled && transfersEnabled() && Boolean(account?.paystackRecipientCode)
       return response.json({
         kind: who.kind,
         account: publicAccount(account),
-        balances: { dueMinor: total('DUE'), payingMinor: total('PAYING'), paidMinor: total('PAID'), settledBySplitMinor: total('SETTLED_BY_SPLIT'), awaitingPriceCount: entries.filter((entry) => entry.status === 'NEEDS_REVIEW').length },
+        balances: { dueMinor: total('DUE'), payingMinor: total('PAYING'), paidMinor: total('PAID'), settledBySplitMinor: total('SETTLED_BY_SPLIT'), awaitingPriceCount: entries.filter((entry) => entry.status === 'NEEDS_REVIEW').length, availableMinor: Math.max(0, balance.availableMinor), heldMinor: Math.max(0, balance.heldMinor) },
+        payout: {
+          mode: transfersEnabled() ? rule.mode : 'MANUAL',
+          frequency: rule.frequency, holdHours: rule.holdHours, minimumMinor: rule.minimumMinor,
+          nextAt: transfersEnabled() && rule.mode === 'SCHEDULED' ? nextScheduledMoment(now, rule) : null,
+          cashOut: { enabled: cashOutReady, feeMinor: withdrawals.feeMinor, feePercent: withdrawals.feePercent, minimumMinor: withdrawals.minimumMinor, remainingToday: Math.max(0, withdrawals.perDay - cashOutsToday), feeForAvailableMinor: balance.availableMinor > 0 ? withdrawalFee(balance.availableMinor, withdrawals) : 0 },
+        },
         orders,
         rates: { doorstepRiderPercent: settings.commission.doorstepRiderPercent, ownRiderPercent: settings.commission.ownRiderPercent, riderPay: settings.riderPay.enabled ? { bands: settings.riderPay.bands, perKmAfterMinor: settings.riderPay.perKmAfterMinor } : null },
         entries, payouts,
       })
+    } catch (error) { return fail(response, error) }
+  })
+
+  // Cash out now: the business or rider withdraws its cleared balance to its bank, less DOORSTEP's cash-out fee.
+  router.post('/finance/withdraw', requireUser, withdrawLimiter, async (request, response) => {
+    try {
+      const who = await payee(request.user)
+      const settings = await getPayoutSettings(prisma)
+      const withdrawals = settings.withdrawals
+      if (!withdrawals.enabled) return response.status(409).json({ error: 'CASH_OUT_OFF', message: 'Cash-outs are switched off. DOORSTEP pays you on its usual schedule.' })
+      if (!transfersEnabled()) return response.status(409).json({ error: 'TRANSFERS_NOT_ENABLED', message: 'Cash-outs aren’t available right now. DOORSTEP pays you on its usual schedule.' })
+      const account = await prisma.payoutAccount.findFirst({ where: who.where })
+      if (!account?.paystackRecipientCode || account.status !== 'ACTIVE') return response.status(409).json({ error: 'NO_PAYOUT_ACCOUNT', message: 'Add your bank account first.' })
+      const now = new Date()
+      const today = await prisma.payout.count({ where: { ...who.where, source: 'WITHDRAWAL', status: { not: 'FAILED' }, createdAt: { gte: startOfLagosDay(now) } } })
+      if (today >= withdrawals.perDay) return response.status(429).json({ error: 'CASH_OUT_LIMIT', message: `You can cash out ${withdrawals.perDay} time${withdrawals.perDay === 1 ? '' : 's'} a day. Try again tomorrow.` })
+      const balance = await availableBalance(prisma, { party: who.kind, ...who.where }, ruleFor(settings, who.kind).holdHours, now)
+      if (balance.availableMinor < withdrawals.minimumMinor) return response.status(409).json({ error: 'BELOW_CASH_OUT_MINIMUM', message: `You need at least ${naira(withdrawals.minimumMinor)} available to cash out. You have ${naira(Math.max(0, balance.availableMinor))}.` })
+      const feeMinor = withdrawalFee(balance.availableMinor, withdrawals)
+      const result = await createPayout(prisma, { party: who.kind, ...who.where, entryIds: balance.entryIds, method: 'PAYSTACK_TRANSFER', source: 'WITHDRAWAL', actorId: request.user.id, feeMinor, account, fetchImpl })
+      return response.status(result.unconfirmed ? 202 : 201).json({ payout: { id: result.payout.id, amountMinor: result.payout.amountMinor, feeMinor, status: result.payout.status } })
     } catch (error) { return fail(response, error) }
   })
 
@@ -176,7 +191,7 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
       const incomeBy = Object.fromEntries(income.map((row) => [row.type, row._sum.amountMinor || 0]))
       return response.json({
         transfersEnabled: transfersEnabled(),
-        income: { commissionMinor: incomeBy.ORDER_COMMISSION || 0, serviceFeesMinor: incomeBy.SERVICE_FEE || 0, deliveryFeesMinor: incomeBy.DELIVERY_FEE || 0, parcelRevenueMinor: incomeBy.PARCEL_REVENUE || 0 },
+        income: { commissionMinor: incomeBy.ORDER_COMMISSION || 0, serviceFeesMinor: incomeBy.SERVICE_FEE || 0, deliveryFeesMinor: incomeBy.DELIVERY_FEE || 0, parcelRevenueMinor: incomeBy.PARCEL_REVENUE || 0, cashOutFeesMinor: incomeBy.WITHDRAWAL_FEE || 0 },
         owed: balances.map((row) => {
           const account = accounts.find((entry) => (row.restaurantId && entry.restaurantId === row.restaurantId) || (row.riderId && entry.riderId === row.riderId))
           const name = row.restaurantId ? restaurants.find((entry) => entry.id === row.restaurantId)?.name : (() => { const rider = riders.find((entry) => entry.id === row.riderId); return rider ? `${rider.user.firstName} ${rider.user.lastName}` : null })()
@@ -216,53 +231,109 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
   })
 
   // Pays what one business or rider is owed: a Paystack Transfer, or a manual bank payment recorded by an admin.
+  // scope ALL pays everything owed (the admin's call); AVAILABLE pays only money that has cleared its hold.
   router.post('/admin/finance/payouts', requireUser, requireAdmin, async (request, response) => {
     try {
-      const body = z.object({ restaurantId: z.string().min(1).optional(), riderId: z.string().min(1).optional(), method: z.enum(['PAYSTACK_TRANSFER', 'MANUAL']), manualReference: z.string().trim().min(3).max(80).optional() })
+      const body = z.object({ restaurantId: z.string().min(1).optional(), riderId: z.string().min(1).optional(), method: z.enum(['PAYSTACK_TRANSFER', 'MANUAL']), manualReference: z.string().trim().min(3).max(80).optional(), scope: z.enum(['ALL', 'AVAILABLE']).default('ALL') })
         .refine((value) => Boolean(value.restaurantId) !== Boolean(value.riderId), 'Choose one business or rider.')
         .refine((value) => value.method !== 'MANUAL' || value.manualReference, 'Enter the bank transfer reference for a manual payout.').parse(request.body)
       const party = body.riderId ? 'RIDER' : 'RESTAURANT'
       const owner = body.riderId ? { riderId: body.riderId } : { restaurantId: body.restaurantId }
       const account = await prisma.payoutAccount.findFirst({ where: owner })
-      if (body.method === 'PAYSTACK_TRANSFER') {
-        if (!transfersEnabled()) return response.status(409).json({ error: 'TRANSFERS_NOT_ENABLED', message: 'Paystack transfers are off. Set PAYSTACK_TRANSFERS_ENABLED=true on the API after enabling Transfers in Paystack, or record a manual payout.' })
-        if (!account?.paystackRecipientCode) return response.status(409).json({ error: 'NO_PAYOUT_ACCOUNT', message: 'This payee has not added a verified bank account yet.' })
-      }
-      const reference = `dsp_payout_${randomUUID().replaceAll('-', '').slice(0, 24)}`
-      // Reserve the owed entries atomically so two admins can't pay the same money twice.
-      const payout = await prisma.$transaction(async (transaction) => {
-        const due = await transaction.ledgerEntry.findMany({ where: { ...owner, party, status: 'DUE' }, select: { id: true, amountMinor: true } })
-        const amountMinor = due.reduce((sum, entry) => sum + entry.amountMinor, 0)
-        if (amountMinor < 100) throw Object.assign(new Error(amountMinor < 0 ? 'This payee owes DOORSTEP money; nothing to pay out.' : 'Nothing is owed right now.'), { code: 'NOTHING_TO_PAY', status: 409 })
-        const created = await transaction.payout.create({ data: { party, ...owner, amountMinor, method: body.method, status: body.method === 'MANUAL' ? 'PAID' : 'PENDING', reference, transferCode: body.manualReference || null, bankSnapshot: account ? { bankName: account.bankName, accountName: account.accountName, last4: account.accountLast4 } : null, createdById: request.user.id, completedAt: body.method === 'MANUAL' ? new Date() : null } })
-        const reserved = await transaction.ledgerEntry.updateMany({ where: { id: { in: due.map((entry) => entry.id) }, status: 'DUE' }, data: { status: body.method === 'MANUAL' ? 'PAID' : 'PAYING', payoutId: created.id } })
-        if (reserved.count !== due.length) throw Object.assign(new Error('Balances changed while preparing the payout. Try again.'), { code: 'BALANCE_CHANGED', status: 409 })
-        await transaction.auditLog.create({ data: { actorId: request.user.id, action: `PAYOUT_${body.method}`, entityType: 'Payout', entityId: created.id, metadata: { amountMinor, entries: due.length, manualReference: body.manualReference || null } } })
-        return created
-      })
-      if (body.method === 'MANUAL') {
-        const userIds = body.riderId ? [(await prisma.rider.findUnique({ where: { id: body.riderId }, select: { userId: true } }))?.userId] : await restaurantTeamIds(prisma, body.restaurantId)
-        await notifyUsers(prisma, userIds, { type: 'PAYMENT', title: `Payout of ${naira(payout.amountMinor)} sent`, body: `DOORSTEP paid you by bank transfer (ref ${body.manualReference}).`, link: body.riderId ? '/rider/earnings' : '/restaurant/earnings' })
-        return response.status(201).json({ payout })
-      }
-      try {
-        const sent = await sendTransfer({ amountMinor: payout.amountMinor, recipientCode: account.paystackRecipientCode, reference, reason: `DOORSTEP payout ${reference.slice(-8)}` }, { fetchImpl })
-        if (sent.status === 'success') return response.status(201).json({ payout: await applyTransferResult(prisma, reference, 'success') })
-        const otp = sent.status === 'otp'
-        const updated = await prisma.payout.update({ where: { id: payout.id }, data: { status: 'PROCESSING', transferCode: sent.transferCode, failureReason: otp ? 'OTP_REQUIRED: finish it in the Paystack dashboard, or turn off transfer OTP in Paystack → Settings → Preferences' : null } })
-        return response.status(201).json({ payout: updated })
-      } catch (error) {
-        if (transferCertainlyNotSent(error)) {
-          await applyTransferResult(prisma, reference, 'failed', error.message)
-          throw error
-        }
-        // Outcome unknown (timeout or Paystack error): keep the entries reserved so nobody pays them again.
-        // The transfer webhook or the Refresh button settles it with Paystack's real status.
-        const pending = await prisma.payout.update({ where: { id: payout.id }, data: { status: 'PROCESSING', failureReason: 'UNCONFIRMED: Paystack did not confirm this transfer. Use Refresh to check its status before paying again.' } })
-        await notifyAdmins(prisma, { type: 'PAYMENT', title: 'Payout needs checking', body: `${naira(payout.amountMinor)} transfer ${reference} was not confirmed by Paystack. Press Refresh on it before paying again.`, link: '/admin/finance' }).catch(() => undefined)
-        return response.status(202).json({ payout: pending, unconfirmed: true })
-      }
+      const entryIds = body.scope === 'AVAILABLE' ? (await availableBalance(prisma, { party, ...owner }, ruleFor(await getPayoutSettings(prisma), party).holdHours)).entryIds : null
+      const result = await createPayout(prisma, { party, ...owner, entryIds, method: body.method, source: 'ADMIN', actorId: request.user.id, manualReference: body.manualReference || null, account, fetchImpl })
+      return response.status(result.unconfirmed ? 202 : 201).json(result)
     } catch (error) { return fail(response, error) }
+  })
+
+  // "Pay everyone now": sends every business and/or rider their cleared balance by Paystack Transfer.
+  router.post('/admin/finance/payouts/run', requireUser, requireAdmin, async (request, response) => {
+    try {
+      const body = z.object({ party: z.enum(['RESTAURANT', 'RIDER', 'ALL']).default('ALL') }).parse(request.body || {})
+      if (!transfersEnabled()) return response.status(409).json({ error: 'TRANSFERS_NOT_ENABLED', message: 'Paystack transfers are off, so payouts can only be recorded one by one as bank payments.' })
+      const settings = await getPayoutSettings(prisma)
+      const results = {}
+      for (const party of body.party === 'ALL' ? ['RESTAURANT', 'RIDER'] : [body.party]) {
+        results[party] = await payParty(prisma, party, { holdHours: ruleFor(settings, party).holdHours, minimumMinor: 100, source: 'BULK', actorId: request.user.id, respectBackoff: false, fetchImpl, limit: 100 })
+      }
+      await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'PAYOUTS_RUN', entityType: 'Payout', entityId: body.party, metadata: results } })
+      return response.json({ results })
+    } catch (error) { return fail(response, error) }
+  })
+
+  router.get('/admin/finance/payout-settings', requireUser, requireAdmin, async (_request, response) => {
+    try {
+      const settings = await getPayoutSettings(prisma)
+      const now = new Date()
+      const next = Object.fromEntries(['RESTAURANT', 'RIDER'].map((party) => { const rule = ruleFor(settings, party); return [party, rule.mode === 'SCHEDULED' ? nextScheduledMoment(now, rule) : null] }))
+      return response.json({ settings, transfersEnabled: transfersEnabled(), next })
+    } catch (error) { return fail(response, error) }
+  })
+
+  router.put('/admin/finance/payout-settings', requireUser, requireAdmin, async (request, response) => {
+    const parsed = payoutSettingsSchema.safeParse(request.body)
+    if (!parsed.success) return response.status(400).json({ error: 'INVALID_PAYOUT_SETTINGS', message: parsed.error.issues[0]?.message })
+    try {
+      const previous = await getPayoutSettings(prisma)
+      await prisma.platformSetting.upsert({ where: { key: PAYOUT_SETTINGS_KEY }, update: { value: parsed.data }, create: { key: PAYOUT_SETTINGS_KEY, value: parsed.data } })
+      // A newly chosen timetable starts at its next time, rather than paying out the moment it is saved.
+      const now = new Date()
+      for (const party of ['RESTAURANT', 'RIDER']) {
+        const before = ruleFor(previous, party)
+        const after = ruleFor(parsed.data, party)
+        const timetableChanged = before.mode !== after.mode || before.frequency !== after.frequency || before.weekday !== after.weekday || before.hour !== after.hour
+        if (after.mode === 'SCHEDULED' && timetableChanged) await markScheduleRun(prisma, party, lastScheduledMoment(now, after).toISOString())
+      }
+      await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'PAYOUT_SETTINGS_UPDATED', entityType: 'PlatformSetting', entityId: PAYOUT_SETTINGS_KEY, metadata: { previous, next: parsed.data } } })
+      return response.json({ settings: parsed.data, transfersEnabled: transfersEnabled() })
+    } catch (error) { return fail(response, error) }
+  })
+
+  // Manual credit (positive) or debit (negative) on a business's or rider's balance, e.g. a refund they covered.
+  router.post('/admin/finance/adjustments', requireUser, requireAdmin, async (request, response) => {
+    try {
+      const body = z.object({ restaurantId: z.string().min(1).optional(), riderId: z.string().min(1).optional(), amountMinor: z.number().int().min(-10_000_000).max(10_000_000).refine((value) => value !== 0, 'Enter an amount.'), note: z.string().trim().min(3, 'Say what the adjustment is for.').max(200) })
+        .refine((value) => Boolean(value.restaurantId) !== Boolean(value.riderId), 'Choose one business or rider.').parse(request.body)
+      const party = body.riderId ? 'RIDER' : 'RESTAURANT'
+      const owner = body.riderId ? { riderId: body.riderId } : { restaurantId: body.restaurantId }
+      const exists = body.riderId ? await prisma.rider.findUnique({ where: { id: body.riderId }, select: { userId: true } }) : await prisma.restaurant.findUnique({ where: { id: body.restaurantId }, select: { id: true } })
+      if (!exists) return response.status(404).json({ error: 'PAYEE_NOT_FOUND', message: 'That business or rider was not found.' })
+      const entry = await prisma.ledgerEntry.create({ data: { party, ...owner, type: 'ADJUSTMENT', amountMinor: body.amountMinor, status: 'DUE', description: body.note, dedupeKey: `MANUAL_ADJUSTMENT:${randomUUID()}` } })
+      await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'BALANCE_ADJUSTED', entityType: 'LedgerEntry', entityId: entry.id, metadata: { party, ...owner, amountMinor: body.amountMinor, note: body.note } } })
+      const userIds = body.riderId ? [exists.userId] : await restaurantTeamIds(prisma, body.restaurantId)
+      await notifyUsers(prisma, userIds, { type: 'PAYMENT', title: body.amountMinor > 0 ? `${naira(body.amountMinor)} added to your balance` : `${naira(-body.amountMinor)} deducted from your balance`, body: body.note, link: body.riderId ? '/rider/earnings' : '/restaurant/earnings' })
+      return response.status(201).json({ entry })
+    } catch (error) { return fail(response, error) }
+  })
+
+  // Businesses and riders, for adjustments and per-business commission rates.
+  router.get('/admin/finance/payees', requireUser, requireAdmin, async (_request, response) => {
+    try {
+      const [restaurants, riders] = await Promise.all([
+        prisma.restaurant.findMany({ where: { status: 'APPROVED' }, orderBy: { name: 'asc' }, take: 500, select: { id: true, name: true, commissionDoorstepRiderPercent: true, commissionOwnRiderPercent: true } }),
+        prisma.rider.findMany({ where: { status: 'APPROVED' }, take: 500, select: { id: true, network: true, user: { select: { firstName: true, lastName: true } } } }),
+      ])
+      return response.json({
+        restaurants: restaurants.map((entry) => ({ id: entry.id, name: entry.name, doorstepRiderPercent: entry.commissionDoorstepRiderPercent == null ? null : Number(entry.commissionDoorstepRiderPercent), ownRiderPercent: entry.commissionOwnRiderPercent == null ? null : Number(entry.commissionOwnRiderPercent) })),
+        riders: riders.filter((entry) => entry.network !== 'BUSINESS_OWNED').map((entry) => ({ id: entry.id, name: `${entry.user.firstName || ''} ${entry.user.lastName || ''}`.trim() || 'Rider' })).sort((a, b) => a.name.localeCompare(b.name)),
+      })
+    } catch (error) { return fail(response, error) }
+  })
+
+  // Negotiated commission for one business (null = platform rate). Applies to new orders only.
+  router.put('/admin/finance/restaurants/:restaurantId/commission', requireUser, requireAdmin, async (request, response) => {
+    try {
+      const percent = z.number().min(0).max(50).nullable()
+      const body = z.object({ doorstepRiderPercent: percent, ownRiderPercent: percent }).parse(request.body)
+      const restaurant = await prisma.restaurant.update({ where: { id: request.params.restaurantId }, data: { commissionDoorstepRiderPercent: body.doorstepRiderPercent, commissionOwnRiderPercent: body.ownRiderPercent }, select: { id: true, name: true } })
+      await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'BUSINESS_COMMISSION_SET', entityType: 'Restaurant', entityId: restaurant.id, metadata: body } })
+      const describe = (value) => value == null ? 'the standard rate' : `${value}%`
+      await notifyUsers(prisma, await restaurantTeamIds(prisma, restaurant.id), { type: 'PAYMENT', title: 'Your DOORSTEP commission was updated', body: body.doorstepRiderPercent == null && body.ownRiderPercent == null ? 'You are back on the standard commission rates.' : `New orders use ${describe(body.doorstepRiderPercent)} with DOORSTEP riders and ${describe(body.ownRiderPercent)} with your own riders.`, link: '/restaurant/earnings' })
+      return response.json({ restaurant: { ...restaurant, ...body } })
+    } catch (error) {
+      if (error?.code === 'P2025') return response.status(404).json({ error: 'RESTAURANT_NOT_FOUND' })
+      return fail(response, error)
+    }
   })
 
   router.post('/admin/finance/payouts/:payoutId/refresh', requireUser, requireAdmin, async (request, response) => {

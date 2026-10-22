@@ -24,10 +24,11 @@ import { cancelBlockedMessage, orderActions, removeOrderNotifications, retireOrd
 import { createAuthRouter } from './authRoutes.js'
 import { createSupportRouter } from './supportRoutes.js'
 import { recordOrderPaid, splitSettledTo, voidOrderMoney } from './financeLedger.js'
-import { orderShares, paystackSplit, plannedFulfilment, riderEarning } from './financeService.js'
+import { orderShares, paystackSplit, plannedFulfilment, riderEarning, withBusinessCommission } from './financeService.js'
 import { getFinanceSettings } from './financeSettings.js'
 import { fetchRoadRoutes } from './parcelService.js'
 import { applyTransferResult, createFinanceRouter } from './financeRoutes.js'
+import { runPayoutSweep } from './payoutEngine.js'
 import { createVerificationRouter } from './verificationRoutes.js'
 import { createDeliveryPricingRouter } from './deliveryPricingRoutes.js'
 import { createLocationRouter } from './locationRoutes.js'
@@ -2073,10 +2074,10 @@ function customerQuote(quote) {
 async function planOrderFinance(quote, destination) {
   const [settings, restaurant] = await Promise.all([
     getFinanceSettings(prisma),
-    prisma.restaurant.findUnique({ where: { id: quote.restaurantId }, select: { latitude: true, longitude: true, application: { select: { deliveryPreference: true } } } }),
+    prisma.restaurant.findUnique({ where: { id: quote.restaurantId }, select: { latitude: true, longitude: true, commissionDoorstepRiderPercent: true, commissionOwnRiderPercent: true, application: { select: { deliveryPreference: true } } } }),
   ])
   const fulfilment = plannedFulfilment(restaurant?.application?.deliveryPreference)
-  const shares = orderShares(quote, fulfilment, settings)
+  const shares = orderShares(quote, fulfilment, withBusinessCommission(settings, restaurant))
   // Published delivery pricing already measured the route and fixed the rider's pay for this order.
   if (quote.delivery) return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, ...orderPricingSnapshot(quote.delivery) }
   let deliveryDistanceMeters = null
@@ -2139,6 +2140,14 @@ async function runDispatchSweep() {
   try { await sweepDispatch(prisma, { notifyUsers, notifyAdmins }) } catch (error) { console.error('[dispatch] sweep failed', error?.message) } finally { sweeping = false }
 }
 
+// Payout loop: pays businesses and riders automatically or on their schedule (Admin → Money → Payouts).
+let payingOut = false
+async function runPayoutLoop() {
+  if (payingOut) return
+  payingOut = true
+  try { await runPayoutSweep(prisma) } catch (error) { console.error('[payouts] sweep failed', error?.message) } finally { payingOut = false }
+}
+
 export { app }
 
 if (process.env.NODE_ENV !== 'test') {
@@ -2148,4 +2157,5 @@ if (process.env.NODE_ENV !== 'test') {
   })
   deliveryRealtime.attach(server)
   if (process.env.DISPATCH_SWEEP !== 'off') setInterval(runDispatchSweep, 10_000).unref()
+  if (process.env.PAYOUT_SWEEP !== 'off') setInterval(runPayoutLoop, 60_000).unref()
 }

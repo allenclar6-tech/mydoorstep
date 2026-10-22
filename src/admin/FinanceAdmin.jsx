@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Bike, Building2, Coins, Package, Plus, RefreshCw, Save, Trash2, Truck } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
+import { AdjustmentCard, CommissionCard, PayoutSettingsCard } from './PayoutControls'
 
 const token = () => { try { return localStorage.getItem('doorstep-admin-token') } catch { return null } }
 async function call(path, { method = 'GET', body } = {}) {
@@ -11,6 +12,7 @@ async function call(path, { method = 'GET', body } = {}) {
 }
 const money = (minor) => `₦${((minor || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`
 const toMinor = (naira) => Math.round(Number(naira || 0) * 100)
+const SOURCE_LABEL = { AUTOMATIC: 'automatic', SCHEDULED: 'scheduled', BULK: 'pay everyone', WITHDRAWAL: 'cash-out' }
 
 function SettingsForm({ onSaved }) {
   const [form, setForm] = useState(null)
@@ -65,7 +67,7 @@ function SettingsForm({ onSaved }) {
       <legend>Paystack</legend>
       <label className="fa-switch"><input type="checkbox" checked={form.splitEnabled} onChange={(event) => update({ splitEnabled: event.target.checked })} /> Pay businesses automatically with Paystack split</label>
       <label>Who pays Paystack’s fee on split payments<select value={form.feeBearer} onChange={(event) => update({ feeBearer: event.target.value })}><option value="account">DOORSTEP</option><option value="all-proportional">Shared by size of share</option></select></label>
-      <p className="fa-muted">Rider payouts by Paystack Transfer are {transfersEnabled ? <b>on</b> : <><b>off</b>. Turn on Transfers in Paystack, then set PAYSTACK_TRANSFERS_ENABLED=true on the API. Until then, pay by bank and record it here.</>}</p>
+      <p className="fa-muted">Rider payouts by Paystack Transfer are {transfersEnabled ? <b>on</b> : <><b>off</b>. Turn on Transfers in Paystack, then set PAYSTACK_TRANSFERS_ENABLED=true on the API. Until then, pay by bank and record it under “To pay out”.</>} Payout timing is set under Payouts above.</p>
     </fieldset>
     {message && <p className="fa-muted" role="status">{message}</p>}
     <button type="submit" className="admin-primary" disabled={busy}><Save size={14} /> {busy ? 'Saving…' : 'Save settings'}</button>
@@ -115,17 +117,19 @@ export function FinanceAdmin() {
   const [overview, setOverview] = useState(null)
   const [review, setReview] = useState([])
   const [payouts, setPayouts] = useState([])
+  const [payees, setPayees] = useState(null)
+  const [platform, setPlatform] = useState(null)
   const [error, setError] = useState('')
   const load = useCallback(() => {
-    Promise.all([call('/api/admin/finance/overview'), call('/api/admin/finance/entries?status=NEEDS_REVIEW'), call('/api/admin/finance/payouts')])
-      .then(([overviewData, reviewData, payoutData]) => { setOverview(overviewData); setReview(reviewData.entries); setPayouts(payoutData.payouts); setError('') })
+    Promise.all([call('/api/admin/finance/overview'), call('/api/admin/finance/entries?status=NEEDS_REVIEW'), call('/api/admin/finance/payouts'), call('/api/admin/finance/payees'), call('/api/admin/finance/settings')])
+      .then(([overviewData, reviewData, payoutData, payeeData, settingsData]) => { setOverview(overviewData); setReview(reviewData.entries); setPayouts(payoutData.payouts); setPayees(payeeData); setPlatform(settingsData.settings.commission); setError('') })
       .catch((loadError) => setError(loadError.message))
   }, [])
   useEffect(() => { load() }, [load])
   const refresh = async (payout) => { try { await call(`/api/admin/finance/payouts/${payout.id}/refresh`, { method: 'POST' }); load() } catch (refreshError) { setError(refreshError.message) } }
 
   const income = overview?.income
-  const totalIncome = income ? income.commissionMinor + income.serviceFeesMinor + income.deliveryFeesMinor + income.parcelRevenueMinor : 0
+  const totalIncome = income ? income.commissionMinor + income.serviceFeesMinor + income.deliveryFeesMinor + income.parcelRevenueMinor + (income.cashOutFeesMinor || 0) : 0
   const owedTotal = overview?.owed.filter((row) => row.amountMinor > 0).reduce((sum, row) => sum + row.amountMinor, 0) || 0
   return <div className="fa">
     <div className="admin-intro"><div><span className="section-kicker">MONEY</span><h2>Where every naira goes.</h2></div><button type="button" className="row-more" onClick={load}><RefreshCw size={14} /> Refresh</button></div>
@@ -136,6 +140,7 @@ export function FinanceAdmin() {
       <div className="fa-stat"><span>Delivery fees</span><strong>{money(income?.deliveryFeesMinor)}</strong></div>
       <div className="fa-stat"><span>Service fees</span><strong>{money(income?.serviceFeesMinor)}</strong></div>
       <div className="fa-stat"><span><Package size={14} aria-hidden="true" />Package deliveries</span><strong>{money(income?.parcelRevenueMinor)}</strong></div>
+      {income?.cashOutFeesMinor > 0 && <div className="fa-stat"><span>Cash-out fees</span><strong>{money(income.cashOutFeesMinor)}</strong></div>}
       <div className="fa-stat is-owed"><span>Owed to businesses & riders</span><strong>{money(owedTotal)}</strong><small>{overview?.payoutsProcessing ? `${overview.payoutsProcessing} transfer(s) processing` : 'Ready to pay out'}</small></div>
     </section>
     <p className="fa-muted fa-pad">Rider pay and anything not settled automatically is paid from your DOORSTEP Paystack balance. Rider pay is not deducted from these income totals.</p>
@@ -149,10 +154,13 @@ export function FinanceAdmin() {
 
     {payouts.length > 0 && <section className="fa-card"><h3>Payout history</h3><ul className="fa-list">{payouts.map((payout) => <li key={payout.id} className="fa-owed">
       <span className="fa-owed-icon" aria-hidden="true">{payout.party === 'RIDER' ? <Bike size={16} /> : <Building2 size={16} />}</span>
-      <span className="fa-owed-main"><strong>{payout.bankSnapshot?.accountName || payout.party}</strong><small>{new Date(payout.createdAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · {payout.method === 'MANUAL' ? `Bank ref ${payout.transferCode}` : 'Paystack transfer'}</small>{payout.failureReason && <small className="fa-error">{payout.failureReason}</small>}</span>
+      <span className="fa-owed-main"><strong>{payout.bankSnapshot?.accountName || payout.party}</strong><small>{new Date(payout.createdAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · {payout.method === 'MANUAL' ? `Bank ref ${payout.transferCode}` : 'Paystack transfer'}{SOURCE_LABEL[payout.source] ? ` · ${SOURCE_LABEL[payout.source]}` : ''}{payout.feeMinor > 0 ? ` · fee ${money(payout.feeMinor)}` : ''}</small>{payout.failureReason && <small className="fa-error">{payout.failureReason}</small>}</span>
       <span className="fa-owed-amount"><b>{money(payout.amountMinor)}</b><span className={`sd-status is-${payout.status === 'PAID' ? 'live' : payout.status === 'FAILED' ? 'warn' : 'neutral'}`}>{payout.status.toLowerCase()}</span>{payout.status === 'PROCESSING' && <button type="button" className="row-more" onClick={() => refresh(payout)}>Check status</button>}</span>
     </li>)}</ul></section>}
 
+    <PayoutSettingsCard onChanged={load} />
+    <AdjustmentCard payees={payees} onDone={load} />
+    <CommissionCard payees={payees} platform={platform} onSaved={load} />
     <SettingsForm onSaved={load} />
   </div>
 }

@@ -101,3 +101,35 @@
   .fa-owed-amount { align-items: flex-start; margin-left: 46px; }
 }
 .wl-card .wl-chip { align-self: flex-start; }
+
+/* Payout plan and Cash out now (business/rider wallet) */
+.wl-split { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 6px; }
+.wl-split span { background: #f3f6f4; border-radius: 14px; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; }
+.wl-split small { color: #5b6b63; font-size: .72rem; font-weight: 700; }
+.wl-split b { font-size: 1.05rem; overflow-wrap: anywhere; }
+.wl-plan .checkout-button { align-items: center; display: inline-flex; gap: 8px; }
+.wl-confirm { background: #f3f6f4; border-radius: 16px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; padding: 12px; }
+.wl-confirm dl { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.wl-confirm dl div { display: flex; font-size: .88rem; justify-content: space-between; }
+.wl-confirm dd { font-weight: 700; margin: 0; }
+.wl-confirm .is-total { border-top: 1px solid #d6ddd8; font-size: 1rem; padding-top: 6px; }
+.wl-confirm .is-total dd { color: #0e4f3c; font-weight: 800; }
+
+/* Admin → Money → Payouts */
+.po-head { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
+.po-head h3, .fa-card h3 svg, .fa-bands legend svg { align-items: center; display: inline-flex; gap: 6px; vertical-align: -2px; }
+.po-banner { background: #fff8e6; border: 1px solid #f3dfa7; border-radius: 14px; color: #5c3d00; font-size: .82rem; line-height: 1.45; padding: 10px 12px; }
+.po-modes { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.po-modes button { align-items: flex-start; background: #fff; border: 1.5px solid #d6ddd8; border-radius: 14px; color: #14231d; cursor: pointer; display: flex; flex-direction: column; font: inherit; gap: 3px; min-height: 76px; padding: 10px; text-align: left; }
+.po-modes button svg { color: #5b6b63; }
+.po-modes button b { font-size: .88rem; }
+.po-modes button small { color: #5b6b63; font-size: .72rem; line-height: 1.3; }
+.po-modes button.is-on { background: #e2f3ea; border-color: #0e4f3c; }
+.po-modes button.is-on svg { color: #0e4f3c; }
+.po-commission { align-items: flex-end; }
+.po-commission label { width: 120px; }
+@media (max-width: 700px) {
+  .po-modes { grid-template-columns: 1fr; }
+  .po-modes button { min-height: 0; }
+  .po-commission label { flex: 1 1 120px; width: auto; }
+}

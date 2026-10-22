@@ -16,6 +16,14 @@ export function plannedFulfilment(deliveryPreference) {
   return deliveryPreference === 'OWN_RIDERS' ? 'BUSINESS_RIDER' : 'DOORSTEP_RIDER'
 }
 
+/** Finance settings with a business's negotiated commission (Admin → Money) in place of the platform rates. */
+export function withBusinessCommission(settings, restaurant) {
+  const doorstep = restaurant?.commissionDoorstepRiderPercent
+  const own = restaurant?.commissionOwnRiderPercent
+  if (doorstep == null && own == null) return settings
+  return { ...settings, commission: { doorstepRiderPercent: doorstep == null ? settings.commission.doorstepRiderPercent : Number(doorstep), ownRiderPercent: own == null ? settings.commission.ownRiderPercent : Number(own) } }
+}
+
 /**
  * Splits one paid order between DOORSTEP and the business.
  * - Commission is a percentage of the item subtotal only (never of fees).

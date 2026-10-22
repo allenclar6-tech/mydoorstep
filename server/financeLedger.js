@@ -1,4 +1,4 @@
-import { fulfilmentAdjustment, naira, orderPaidEntries, orderShares, riderEarning, splitSettledTo } from './financeService.js'
+import { fulfilmentAdjustment, naira, orderPaidEntries, orderShares, riderEarning, splitSettledTo, withBusinessCommission } from './financeService.js'
 import { getFinanceSettings } from './financeSettings.js'
 
 // Database side of the money rules. All writes are idempotent (LedgerEntry.dedupeKey is unique), so a webhook
@@ -53,7 +53,8 @@ export async function recordDeliveryCompleted(db, deliveryId) {
     const planned = plannedOrderShares(order, settings)
     const actualFulfilment = businessRider ? 'BUSINESS_RIDER' : 'DOORSTEP_RIDER'
     if (actualFulfilment !== planned.fulfilment) {
-      const actual = orderShares(order, actualFulfilment, settings)
+      const restaurant = await db.restaurant.findUnique({ where: { id: order.restaurantId }, select: { commissionDoorstepRiderPercent: true, commissionOwnRiderPercent: true } })
+      const actual = orderShares(order, actualFulfilment, withBusinessCommission(settings, restaurant))
       const adjustment = fulfilmentAdjustment(order, planned, actual)
       if (adjustment) entries.push(adjustment)
       if (actualFulfilment === 'BUSINESS_RIDER' && planned.deliveryFeeToPlatformMinor) entries.push({ orderId: order.id, party: 'PLATFORM', type: 'DELIVERY_FEE', amountMinor: -planned.deliveryFeeToPlatformMinor, status: 'RETAINED', description: `Delivery fee passed to the business for ${order.orderNumber}`, dedupeKey: `DELIVERY_FEE_REVERSAL:${order.id}` })

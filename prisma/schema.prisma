@@ -211,6 +211,9 @@ model Restaurant {
   coverImageUrl     String?
   prepTimeMinutes   Int?
   minimumOrderMinor Int                     @default(0)
+  /// Negotiated commission for this business (null = the platform rate in Admin → Money).
+  commissionDoorstepRiderPercent Decimal?   @db.Decimal(5, 2)
+  commissionOwnRiderPercent      Decimal?   @db.Decimal(5, 2)
   storeType         StoreType                @default(RESTAURANT)
   phone             String?
   email             String?
@@ -1014,10 +1017,16 @@ model Payout {
   failureReason String?
   bankSnapshot  Json?
   createdById   String?
+  /// ADMIN (paid from Admin → Money), BULK (Pay everyone), AUTOMATIC, SCHEDULED or WITHDRAWAL (cash-out by the payee).
+  source        String    @default("ADMIN")
+  /// Cash-out fee kept by DOORSTEP; amountMinor is what was sent after the fee.
+  feeMinor      Int       @default(0)
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
 
   @@index([party, status])
+  @@index([restaurantId, createdAt])
+  @@index([riderId, createdAt])
 }
 
 /// Sapele location directory (communities, quarters, streets, estates) with verification evidence and

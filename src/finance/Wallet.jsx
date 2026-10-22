@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowDownLeft, BadgeCheck, Banknote, Building2, CircleAlert, Clock3, Crosshair, Info, Landmark, ShieldCheck } from 'lucide-react'
+import { ArrowDownLeft, BadgeCheck, Banknote, Building2, CalendarClock, CircleAlert, Clock3, Crosshair, HandCoins, Info, Landmark, ShieldCheck, Zap } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 
 const readToken = () => { try { return localStorage.getItem('doorstep-token') } catch { return null } }
@@ -16,8 +16,50 @@ const ENTRY_STATUS = {
   PAID: ['Paid out', 'done'],
   SETTLED_BY_SPLIT: ['Paid by Paystack', 'done'],
   NEEDS_REVIEW: ['Being priced', 'neutral'],
+  VOID: ['Cancelled', 'neutral'],
 }
-const ENTRY_LABEL = { PARTNER_SHARE: 'Order earnings', ADJUSTMENT: 'Adjustment', RIDER_EARNING: 'Delivery earning' }
+const ENTRY_LABEL = { PARTNER_SHARE: 'Order earnings', ADJUSTMENT: 'Adjustment', RIDER_EARNING: 'Delivery earning', WITHDRAWAL_FEE: 'Cash-out fee' }
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const PAYOUT_LABEL = { WITHDRAWAL: 'Cash-out', AUTOMATIC: 'Automatic payout', SCHEDULED: 'Scheduled payout' }
+
+/** How and when DOORSTEP pays out, plus Cash out now (Glovo-style). */
+function PayoutPlan({ payout, balances, hasAccount, rider, onCashedOut }) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const { cashOut } = payout
+  const available = balances.availableMinor
+  const net = available - cashOut.feeForAvailableMinor
+  const next = payout.nextAt ? new Date(payout.nextAt).toLocaleString('en-NG', { weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
+  const hold = payout.holdHours ? ` ${payout.holdHours} hour${payout.holdHours === 1 ? '' : 's'} after` : ' once'
+  const plan = payout.mode === 'AUTOMATIC'
+    ? [Zap, 'Paid automatically', `Your money is sent to your bank${hold} ${rider ? 'each delivery is completed' : 'each order is delivered'}, when your cleared balance reaches ${money(payout.minimumMinor)}.`]
+    : payout.mode === 'SCHEDULED'
+      ? [CalendarClock, payout.frequency === 'DAILY' ? 'Paid every day' : 'Paid every week', `${next ? `Next payout: ${next}. ` : ''}Everything cleared by then is sent to your bank${payout.minimumMinor > 100 ? ` (from ${money(payout.minimumMinor)})` : ''}.`]
+      : [Banknote, 'Paid by DOORSTEP', 'DOORSTEP sends what you’re owed to your bank and you’ll get a notification each time.']
+  const [PlanIcon, planTitle, planText] = plan
+  const cashOutNow = async () => {
+    setBusy(true); setMessage('')
+    try {
+      const data = await call('/api/finance/withdraw', { method: 'POST' })
+      setConfirming(false)
+      setMessage(data.payout.status === 'PAID' ? `${money(data.payout.amountMinor)} is on its way to your bank.` : `${money(data.payout.amountMinor)} is being sent. We’ll notify you when your bank confirms it.`)
+      onCashedOut()
+    } catch (error) { setMessage(error.message) } finally { setBusy(false) }
+  }
+  return <div className="wl-card wl-plan"><PlanIcon size={20} aria-hidden="true" /><div>
+    <strong>{planTitle}</strong><p>{planText}</p>
+    <div className="wl-split"><span><small>Ready now</small><b>{money(available)}</b></span><span><small>On hold</small><b>{money(balances.heldMinor)}</b></span></div>
+    {balances.heldMinor > 0 && <p className="wl-muted">{rider ? 'Money on hold clears shortly after each delivery.' : 'Order money clears after the order is delivered'}{payout.holdHours ? ` and a ${payout.holdHours}-hour safety window.` : '.'}</p>}
+    {cashOut.enabled && hasAccount && !confirming && <button type="button" className="checkout-button" disabled={available < cashOut.minimumMinor || net < 100 || cashOut.remainingToday < 1} onClick={() => { setMessage(''); setConfirming(true) }}><HandCoins size={16} aria-hidden="true" /> Cash out now</button>}
+    {cashOut.enabled && hasAccount && !confirming && (available < cashOut.minimumMinor ? <p className="wl-muted">Cash out from {money(cashOut.minimumMinor)} ready.</p> : cashOut.remainingToday < 1 ? <p className="wl-muted">You’ve used today’s cash-outs. Try again tomorrow.</p> : null)}
+    {confirming && <div className="wl-confirm" role="group" aria-label="Confirm cash-out">
+      <dl><div><dt>Ready now</dt><dd>{money(available)}</dd></div><div><dt>Cash-out fee</dt><dd>−{money(cashOut.feeForAvailableMinor)}</dd></div><div className="is-total"><dt>To your bank</dt><dd>{money(net)}</dd></div></dl>
+      <div className="wl-actions"><button type="button" className="quiet-button" onClick={() => setConfirming(false)}>Cancel</button><button type="button" className="checkout-button" disabled={busy} onClick={cashOutNow}>{busy ? 'Sending…' : `Send ${money(net)}`}</button></div>
+    </div>}
+    {message && <p className="wl-muted" role="status">{message}</p>}
+  </div></div>
+}
 
 /** Add or change the bank account payouts go to. Paystack confirms the account name before anything is saved. */
 function PayoutAccountForm({ current, onSaved, onCancel }) {
@@ -96,7 +138,7 @@ export function Wallet({ kind }) {
 
   if (error) return <div className="wl"><p className="wl-error">{error}</p></div>
   if (!data) return <div className="wl"><p className="wl-muted" role="status">Loading your earnings…</p></div>
-  const { balances, account, rates, orders, payouts } = data
+  const { balances, account, rates, orders, payouts, payout } = data
 
   return <div className="wl">
     <section className="wl-hero">
@@ -112,6 +154,7 @@ export function Wallet({ kind }) {
     {!account && !editing && <div className="wl-card wl-alert"><CircleAlert size={20} aria-hidden="true" /><div><strong>Add a bank account to get paid</strong><p>{rider ? 'Your delivery earnings are paid into this account.' : 'Paystack sends your share of each card payment straight to this account, usually by the next working day.'}</p><button type="button" className="checkout-button" onClick={() => setEditing(true)}>Add bank account</button></div></div>}
     {account && !editing && <div className="wl-card wl-account"><Landmark size={20} aria-hidden="true" /><div><small>Payouts go to</small><strong>{account.bankName} {account.accountNumber}</strong><span>{account.accountName}</span>{!rider && <span className="wl-chip is-done">{account.splitReady ? 'Automatic payments on' : 'Automatic payments pending'}</span>}</div><button type="button" className="quiet-button" onClick={() => setEditing(true)}>Change</button></div>}
     {editing && <PayoutAccountForm current={account} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
+    {payout && <PayoutPlan payout={payout} balances={balances} hasAccount={Boolean(account)} rider={rider} onCashedOut={load} />}
 
     <div className="wl-card wl-rates"><Info size={18} aria-hidden="true" /><div>
       {rider ? (rates.riderPay ? <><strong>How your delivery pay is worked out</strong><p>By road distance from pickup to drop-off:</p><ul>{rates.riderPay.bands.map((band, index) => <li key={band.upToKm}><span>{index === 0 ? 'Up to' : `${rates.riderPay.bands[index - 1].upToKm}–`}{band.upToKm} km</span><b>{money(band.amountMinor)}</b></li>)}{rates.riderPay.perKmAfterMinor > 0 && <li><span>Each km after {rates.riderPay.bands.at(-1).upToKm} km</span><b>+{money(rates.riderPay.perKmAfterMinor)}</b></li>}</ul></> : <><strong>Delivery pay rates</strong><p>DOORSTEP hasn’t published the Sapele rate table yet. Your deliveries are still recorded and will be priced and paid.</p></>)
@@ -142,7 +185,7 @@ export function Wallet({ kind }) {
       <h3>Payouts</h3>
       <ul>{payouts.map((payout) => <li key={payout.id}>
         <span className="wl-st-icon" aria-hidden="true"><ArrowDownLeft size={16} /></span>
-        <span className="wl-st-main"><strong>{payout.method === 'MANUAL' ? 'Bank transfer from DOORSTEP' : 'Paystack transfer'}</strong><small>{new Date(payout.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}{payout.status === 'FAILED' ? ' · failed, the amount is owed again' : ''}</small></span>
+        <span className="wl-st-main"><strong>{payout.method === 'MANUAL' ? 'Bank transfer from DOORSTEP' : PAYOUT_LABEL[payout.source] || 'Paystack transfer'}</strong><small>{new Date(payout.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}{payout.feeMinor > 0 ? ` · fee ${money(payout.feeMinor)}` : ''}{payout.status === 'FAILED' ? ' · failed, the amount is owed again' : ''}</small></span>
         <span className="wl-st-amount"><b>{money(payout.amountMinor)}</b><span className={`wl-chip is-${payout.status === 'PAID' ? 'done' : payout.status === 'FAILED' ? 'bad' : 'live'}`}>{payout.status === 'PAID' ? 'Sent' : payout.status === 'FAILED' ? 'Failed' : 'Processing'}</span></span>
       </li>)}</ul>
     </section>}

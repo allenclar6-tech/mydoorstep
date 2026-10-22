@@ -36,16 +36,44 @@ No official published Sapele payout rate could be found, so none is built in.
 
 The rate card can also be edited, together with customer delivery fees, in **Admin → Delivery pricing** (see [DELIVERY_PRICING.md](DELIVERY_PRICING.md)). Once delivery pricing is published, each order stores the rider's pay at checkout and that amount is what the rider is paid.
 
+## Payouts (Admin → Money → Payouts)
+
+Set separately for businesses and for riders:
+
+| Mode | What happens |
+|---|---|
+| **Automatic** | Money is sent as soon as it clears and the balance reaches the minimum. The server checks every minute. |
+| **Scheduled** | Everything cleared is sent daily or weekly at a set time, Lagos time (Glovo-style weekly payouts). A run missed during a deploy happens as soon as the server is back. |
+| **Manual** (default) | Nothing moves until an admin pays from "To pay out", by Paystack Transfer or as a recorded bank payment. |
+
+- **When money clears:**
+  - Order money clears once the order is **delivered** and the hold (default 24 hours for businesses) has passed. Customers get time to complain before money leaves.
+  - Rider and package earnings clear after the rider hold (default none).
+  - Deductions apply at once. Admin credits clear immediately.
+- **Every payment method is treated the same.** Card orders without a split, saved-card orders and bank-transfer orders (once an admin confirms the money arrived) all credit the business's balance with the same commission percentage. They are then paid by the rules above. Card orders with a Paystack split still settle straight to the business.
+- **Cash out now:** when switched on, a business or rider can withdraw its cleared balance any time from Earnings.
+  - The fee is a flat amount plus an optional percentage, and is DOORSTEP income.
+  - A minimum amount and a daily limit apply.
+  - If the transfer fails, the fee is not charged and the money returns to the balance.
+- **Pay everyone now** sends every cleared balance in one go.
+- **Credit or debit a balance:** for refunds a business covered, bonuses or penalties. The payee sees the reason.
+- **Commission per business:** negotiated rates for one business, used for new orders only. Empty fields use the standard rates.
+- **Safety:**
+  - Every payout reserves the exact ledger rows it pays in one transaction, so no naira can be paid twice.
+  - After an automatic transfer fails, that payee is left alone for 6 hours and admins are notified.
+  - Set `PAYOUT_SWEEP=off` on Render to stop the automatic/scheduled loop without changing settings.
+
 ## Setup
 
 1. **Saved payout accounts.** Businesses and riders open **Earnings → Add bank account**.
    - Paystack confirms the account name.
    - Changing the account needs their password and notifies them and the admins.
 2. **Paystack split.** Works with the existing Paystack keys and needs nothing extra. Who pays Paystack's fee is set in Admin → Money (DOORSTEP by default).
-3. **Paystack Transfers (optional, for one-tap payouts):**
+3. **Paystack Transfers (needed for automatic, scheduled, "Pay everyone" and cash-out payouts):**
    1. Enable Transfers in the Paystack dashboard.
    2. Fund the balance.
    3. Optionally turn off transfer OTP under Settings → Preferences.
    4. Set `PAYSTACK_TRANSFERS_ENABLED=true` on the Render API service.
    5. Add the transfer events (`transfer.success`, `transfer.failed`, `transfer.reversed`) to the existing webhook URL `https://mydoorstep-api.onrender.com/api/payments/webhook`.
-4. **Database.** Migration `20261020110000_finance_ledger` is additive. Earlier orders keep their recorded commission. New ledger rows start with new payments.
+   6. Choose the payout modes in Admin → Money → Payouts. Everything stays manual until you do.
+4. **Database.** Migrations `20261020110000_finance_ledger` and `20261022100000_payout_modes` are additive. Earlier orders keep their recorded commission. New ledger rows start with new payments.

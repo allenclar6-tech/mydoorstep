@@ -3,7 +3,7 @@
 import { isPoint, measureDelivery, priceDelivery, toPoint, zoneForPoint, zoneForText } from './deliveryPricing.js'
 import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { getFinanceSettings } from './financeSettings.js'
-import { plannedFulfilment } from './financeService.js'
+import { plannedFulfilment, withBusinessCommission } from './financeService.js'
 import { areaForAddress } from './sapeleDirectory.js'
 import { deliveryZones } from './locations.js'
 import { fetchRoadRoutes } from './parcelService.js'
@@ -74,7 +74,7 @@ export async function quoteOrderDelivery({ db, restaurant, destination, subtotal
     if (!pickupPoint) extraWarnings.push('PICKUP_NOT_PINNED')
   }
   distance.warnings = [...distance.warnings, ...extraWarnings]
-  const priced = priceDelivery({ distance, pickupZone, dropoffZone: dropoff.zone, subtotalMinor, fulfilment, pricing, finance })
+  const priced = priceDelivery({ distance, pickupZone, dropoffZone: dropoff.zone, subtotalMinor, fulfilment, pricing, finance: withBusinessCommission(finance, restaurant) })
   if (priced.warnings.includes('BEYOND_MAX_DISTANCE') && distance.source !== 'ASSUMED') {
     throw new DeliveryQuoteError('DELIVERY_TOO_FAR', `This address is about ${priced.km} km from the store. DOORSTEP delivers up to ${pricing.distance.maxDeliveryKm} km in Sapele.`, 422)
   }
