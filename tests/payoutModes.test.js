@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { applyTransferResult, availableBalance, createPayout, entryAvailable, payParty, runPayoutSweep } from '../server/payoutEngine.js'
 import { defaultPayoutSettings, lastScheduledMoment, nextScheduledMoment, payoutSettingsSchema, startOfLagosDay, withdrawalFee } from '../server/payoutSettings.js'
-import { orderShares, withBusinessCommission } from '../server/financeService.js'
+import { orderShares, riderFeeEntries, withBusinessCommission } from '../server/financeService.js'
+import { financeSettingsSchema } from '../server/financeSettings.js'
+import { riderFeeSource } from '../server/financeLedger.js'
 
 process.env.PAYSTACK_SECRET_KEY = 'sk_test_unit'
 const HOUR = 3_600_000
@@ -145,4 +147,25 @@ test('the sweep does nothing while transfers are off or payouts are manual', asy
   const result = await runPayoutSweep(db, { fetchImpl: transfer.fetchImpl })
   assert.equal(result.RESTAURANT.paid, 1)
   assert.equal(transfer.calls[0].body.amount, 500_000)
+})
+
+test('DOORSTEP keeps 6% of each rider earning, shown as its own line', () => {
+  const settings = { riderFee: { percent: 6 } }
+  const earning = { riderId: 'd1', orderId: 'o1', type: 'RIDER_EARNING', amountMinor: 100_000, description: 'DSP-20261022-AB12CD · 3.2 km' }
+  const [riderLine, income] = riderFeeEntries(riderFeeSource(earning), earning.amountMinor, settings)
+  assert.deepEqual([riderLine.party, riderLine.amountMinor, riderLine.status], ['RIDER', -6_000, 'DUE'])
+  assert.deepEqual([income.party, income.amountMinor, income.status], ['PLATFORM', 6_000, 'RETAINED'])
+  assert.match(riderLine.description, /6%.*DSP-20261022-AB12CD$/)
+  assert.equal(riderLine.dedupeKey, 'RIDER_SERVICE_FEE:order:o1', 'written once per delivery')
+  assert.deepEqual(riderFeeEntries(riderFeeSource(earning), 100_000, { riderFee: { percent: 0 } }), [])
+  // The fee waits for its earning to clear instead of being deducted early.
+  const now = new Date()
+  assert.equal(entryAvailable({ ...riderLine, createdAt: now }, 'DELIVERED', 2, now), false)
+  assert.equal(entryAvailable({ ...riderLine, createdAt: new Date(now - 3 * HOUR) }, 'DELIVERED', 2, now), true)
+})
+
+test('finance settings saved before the rider fee existed default to 6%', () => {
+  const old = { commission: { doorstepRiderPercent: 15, ownRiderPercent: 10 }, riderPay: { enabled: false, bands: [], perKmAfterMinor: 0 }, split: { enabled: true, feeBearer: 'account' } }
+  assert.equal(financeSettingsSchema.parse(old).riderFee.percent, 6)
+  assert.equal(financeSettingsSchema.safeParse({ ...old, riderFee: { percent: 40 } }).success, false)
 })

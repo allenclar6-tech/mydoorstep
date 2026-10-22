@@ -1,4 +1,4 @@
-import { fulfilmentAdjustment, naira, orderPaidEntries, orderShares, riderEarning, splitSettledTo, withBusinessCommission } from './financeService.js'
+import { fulfilmentAdjustment, naira, orderPaidEntries, orderShares, riderEarning, riderFeeEntries, splitSettledTo, withBusinessCommission } from './financeService.js'
 import { getFinanceSettings } from './financeSettings.js'
 
 // Database side of the money rules. All writes are idempotent (LedgerEntry.dedupeKey is unique), so a webhook
@@ -72,8 +72,15 @@ export async function recordDeliveryCompleted(db, deliveryId) {
     riderEntry = { parcelBookingId: booking.id, party: 'RIDER', riderId: delivery.rider.id, type: 'RIDER_EARNING', amountMinor: earning.amountMinor ?? 0, status: earning.amountMinor == null ? 'NEEDS_REVIEW' : 'DUE', description: earning.amountMinor == null ? `${booking.reference}: rider rates not published — DOORSTEP will set this amount` : `${booking.reference} · ${(booking.distanceMeters / 1000).toFixed(1)} km`, dedupeKey: `RIDER_EARNING:parcel:${booking.id}` }
   }
   if (riderEntry) entries.push(riderEntry)
+  // DOORSTEP's percentage fee on the rider's earning; unpriced earnings get it when an admin sets the amount.
+  if (riderEntry?.status === 'DUE') entries.push(...riderFeeEntries(riderFeeSource(riderEntry), riderEntry.amountMinor, settings))
   await writeEntries(db, entries)
   return riderEntry
+}
+
+/** Identifies the delivery behind a rider earning, for its fee rows. */
+export function riderFeeSource(entry) {
+  return { riderId: entry.riderId, orderId: entry.orderId || null, parcelBookingId: entry.parcelBookingId || null, source: entry.orderId ? `order:${entry.orderId}` : `parcel:${entry.parcelBookingId}`, label: entry.description.split(' · ')[0].split(':')[0] }
 }
 
 /** Money each party is owed right now (DUE entries, including negative adjustments). */

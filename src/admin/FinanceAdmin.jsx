@@ -23,7 +23,7 @@ function SettingsForm({ onSaved }) {
     call('/api/admin/finance/settings').then((data) => {
       setTransfersEnabled(data.transfersEnabled)
       const value = data.settings
-      setForm({ doorstep: value.commission.doorstepRiderPercent, own: value.commission.ownRiderPercent, riderEnabled: value.riderPay.enabled, bands: value.riderPay.bands.map((band) => ({ upToKm: band.upToKm, naira: band.amountMinor / 100 })), perKm: (value.riderPay.perKmAfterMinor || 0) / 100, splitEnabled: value.split.enabled, feeBearer: value.split.feeBearer })
+      setForm({ doorstep: value.commission.doorstepRiderPercent, own: value.commission.ownRiderPercent, riderEnabled: value.riderPay.enabled, bands: value.riderPay.bands.map((band) => ({ upToKm: band.upToKm, naira: band.amountMinor / 100 })), perKm: (value.riderPay.perKmAfterMinor || 0) / 100, splitEnabled: value.split.enabled, feeBearer: value.split.feeBearer, riderFee: value.riderFee?.percent ?? 6 })
     }).catch((error) => setMessage(error.message))
   }, [])
   if (!form) return <section className="fa-card"><p className="fa-muted">{message || 'Loading settings…'}</p></section>
@@ -37,6 +37,7 @@ function SettingsForm({ onSaved }) {
         commission: { doorstepRiderPercent: Number(form.doorstep), ownRiderPercent: Number(form.own) },
         riderPay: { enabled: form.riderEnabled, bands: form.bands.filter((band) => band.upToKm !== '' && band.naira !== '').map((band) => ({ upToKm: Number(band.upToKm), amountMinor: toMinor(band.naira) })), perKmAfterMinor: toMinor(form.perKm) },
         split: { enabled: form.splitEnabled, feeBearer: form.feeBearer },
+        riderFee: { percent: Number(form.riderFee) },
       } })
       setMessage('Saved. New orders and deliveries use these rates; past ones keep theirs.')
       onSaved?.()
@@ -59,6 +60,7 @@ function SettingsForm({ onSaved }) {
         <button type="button" className="fa-icon" aria-label="Remove band" onClick={() => update({ bands: form.bands.filter((_, position) => position !== index) })}><Trash2 size={16} /></button>
       </div>)}
       <button type="button" className="row-more" onClick={() => update({ bands: [...form.bands, { upToKm: '', naira: '' }] })}><Plus size={14} /> Add distance band</button>
+      <label>DOORSTEP fee on each delivery (% of the rider’s earning)<input type="number" min="0" max="30" step="0.5" required value={form.riderFee} onChange={(event) => update({ riderFee: event.target.value })} /><small className="fa-muted">Shown to riders as a separate line. Applies to deliveries completed from now on.</small></label>
       <label>Each extra km after the last band (₦, 0 = flat)<input type="number" min="0" step="10" value={form.perKm} onChange={(event) => update({ perKm: event.target.value })} /></label>
       <label className="fa-switch"><input type="checkbox" checked={form.riderEnabled} onChange={(event) => update({ riderEnabled: event.target.checked })} /> Use these rates for rider pay</label>
     </fieldset>
@@ -129,7 +131,7 @@ export function FinanceAdmin() {
   const refresh = async (payout) => { try { await call(`/api/admin/finance/payouts/${payout.id}/refresh`, { method: 'POST' }); load() } catch (refreshError) { setError(refreshError.message) } }
 
   const income = overview?.income
-  const totalIncome = income ? income.commissionMinor + income.serviceFeesMinor + income.deliveryFeesMinor + income.parcelRevenueMinor + (income.cashOutFeesMinor || 0) : 0
+  const totalIncome = income ? income.commissionMinor + income.serviceFeesMinor + income.deliveryFeesMinor + income.parcelRevenueMinor + (income.cashOutFeesMinor || 0) + (income.riderFeesMinor || 0) : 0
   const owedTotal = overview?.owed.filter((row) => row.amountMinor > 0).reduce((sum, row) => sum + row.amountMinor, 0) || 0
   return <div className="fa">
     <div className="admin-intro"><div><span className="section-kicker">MONEY</span><h2>Where every naira goes.</h2></div><button type="button" className="row-more" onClick={load}><RefreshCw size={14} /> Refresh</button></div>
@@ -140,6 +142,7 @@ export function FinanceAdmin() {
       <div className="fa-stat"><span>Delivery fees</span><strong>{money(income?.deliveryFeesMinor)}</strong></div>
       <div className="fa-stat"><span>Service fees</span><strong>{money(income?.serviceFeesMinor)}</strong></div>
       <div className="fa-stat"><span><Package size={14} aria-hidden="true" />Package deliveries</span><strong>{money(income?.parcelRevenueMinor)}</strong></div>
+      <div className="fa-stat"><span>Rider delivery fees</span><strong>{money(income?.riderFeesMinor)}</strong></div>
       {income?.cashOutFeesMinor > 0 && <div className="fa-stat"><span>Cash-out fees</span><strong>{money(income.cashOutFeesMinor)}</strong></div>}
       <div className="fa-stat is-owed"><span>Owed to businesses & riders</span><strong>{money(owedTotal)}</strong><small>{overview?.payoutsProcessing ? `${overview.payoutsProcessing} transfer(s) processing` : 'Ready to pay out'}</small></div>
     </section>

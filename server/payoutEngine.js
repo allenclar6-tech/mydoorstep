@@ -48,11 +48,11 @@ export async function applyTransferResult(prisma, reference, status, reason = nu
 }
 
 /**
- * Has this owed entry cleared? Deductions always apply straight away. Order money clears once the order is
+ * Has this owed entry cleared? Deductions apply straight away, except DOORSTEP's rider fee, which clears with its earning. Order money clears once the order is
  * delivered and the hold has passed; package earnings after the hold; admin credits immediately.
  */
 export function entryAvailable(entry, orderStatus, holdHours, now = new Date()) {
-  if (entry.amountMinor < 0) return true
+  if (entry.amountMinor < 0 && entry.type !== 'RIDER_SERVICE_FEE') return true
   if (!entry.orderId && !entry.parcelBookingId) return true
   if (now.getTime() - new Date(entry.createdAt).getTime() < holdHours * 3_600_000) return false
   if (entry.orderId) return orderStatus === 'DELIVERED'
@@ -61,7 +61,7 @@ export function entryAvailable(entry, orderStatus, holdHours, now = new Date()) 
 
 /** What one business or rider could be paid right now, and what is still on hold. */
 export async function availableBalance(db, { party, restaurantId, riderId }, holdHours, now = new Date()) {
-  const due = await db.ledgerEntry.findMany({ where: { party, ...ownerOf({ restaurantId, riderId }), status: 'DUE' }, select: { id: true, amountMinor: true, orderId: true, parcelBookingId: true, createdAt: true } })
+  const due = await db.ledgerEntry.findMany({ where: { party, ...ownerOf({ restaurantId, riderId }), status: 'DUE' }, select: { id: true, type: true, amountMinor: true, orderId: true, parcelBookingId: true, createdAt: true } })
   const orderIds = [...new Set(due.map((entry) => entry.orderId).filter(Boolean))]
   const orders = orderIds.length ? await db.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, status: true } }) : []
   const statusOf = new Map(orders.map((order) => [order.id, order.status]))

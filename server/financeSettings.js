@@ -26,6 +26,9 @@ export const financeSettingsSchema = z.object({
     // Who pays Paystack's processing fee on split payments: 'account' = DOORSTEP, 'all-proportional' = shared by share size.
     feeBearer: z.enum(['account', 'all-proportional']),
   }),
+  // DOORSTEP's service fee on each completed delivery, as a percentage of the rider's earning (Glovo-style).
+  // Settings saved before this existed get the default.
+  riderFee: z.object({ percent: z.number().min(0).max(30) }).default({ percent: 6 }),
 })
 
 export async function getFinanceSettings(db) {

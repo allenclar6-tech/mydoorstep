@@ -4,7 +4,8 @@ import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { naira } from './financeService.js'
 import { FINANCE_SETTINGS_KEY, financeSettingsSchema, getFinanceSettings } from './financeSettings.js'
-import { balancesDue } from './financeLedger.js'
+import { balancesDue, riderFeeSource } from './financeLedger.js'
+import { riderFeeEntries } from './financeService.js'
 import { createRecipient, listBanks, maskAccount, PayoutError, resolveAccount, upsertSubaccount, verifyTransfer } from './paystackPayouts.js'
 import { applyTransferResult, availableBalance, createPayout, markScheduleRun, payParty, transfersEnabled } from './payoutEngine.js'
 import { getPayoutSettings, lastScheduledMoment, nextScheduledMoment, PAYOUT_SETTINGS_KEY, payoutSettingsSchema, ruleFor, startOfLagosDay, withdrawalFee } from './payoutSettings.js'
@@ -118,7 +119,7 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
           cashOut: { enabled: cashOutReady, feeMinor: withdrawals.feeMinor, feePercent: withdrawals.feePercent, minimumMinor: withdrawals.minimumMinor, remainingToday: Math.max(0, withdrawals.perDay - cashOutsToday), feeForAvailableMinor: balance.availableMinor > 0 ? withdrawalFee(balance.availableMinor, withdrawals) : 0 },
         },
         orders,
-        rates: { doorstepRiderPercent: settings.commission.doorstepRiderPercent, ownRiderPercent: settings.commission.ownRiderPercent, riderPay: settings.riderPay.enabled ? { bands: settings.riderPay.bands, perKmAfterMinor: settings.riderPay.perKmAfterMinor } : null },
+        rates: { doorstepRiderPercent: settings.commission.doorstepRiderPercent, ownRiderPercent: settings.commission.ownRiderPercent, riderFeePercent: settings.riderFee?.percent ?? 0, riderPay: settings.riderPay.enabled ? { bands: settings.riderPay.bands, perKmAfterMinor: settings.riderPay.perKmAfterMinor } : null },
         entries, payouts,
       })
     } catch (error) { return fail(response, error) }
@@ -191,7 +192,7 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
       const incomeBy = Object.fromEntries(income.map((row) => [row.type, row._sum.amountMinor || 0]))
       return response.json({
         transfersEnabled: transfersEnabled(),
-        income: { commissionMinor: incomeBy.ORDER_COMMISSION || 0, serviceFeesMinor: incomeBy.SERVICE_FEE || 0, deliveryFeesMinor: incomeBy.DELIVERY_FEE || 0, parcelRevenueMinor: incomeBy.PARCEL_REVENUE || 0, cashOutFeesMinor: incomeBy.WITHDRAWAL_FEE || 0 },
+        income: { commissionMinor: incomeBy.ORDER_COMMISSION || 0, serviceFeesMinor: incomeBy.SERVICE_FEE || 0, deliveryFeesMinor: incomeBy.DELIVERY_FEE || 0, parcelRevenueMinor: incomeBy.PARCEL_REVENUE || 0, cashOutFeesMinor: incomeBy.WITHDRAWAL_FEE || 0, riderFeesMinor: incomeBy.RIDER_SERVICE_FEE || 0 },
         owed: balances.map((row) => {
           const account = accounts.find((entry) => (row.restaurantId && entry.restaurantId === row.restaurantId) || (row.riderId && entry.riderId === row.riderId))
           const name = row.restaurantId ? restaurants.find((entry) => entry.id === row.restaurantId)?.name : (() => { const rider = riders.find((entry) => entry.id === row.riderId); return rider ? `${rider.user.firstName} ${rider.user.lastName}` : null })()
@@ -216,7 +217,13 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
       const body = z.object({ amountMinor: z.number().int().min(0).max(10_000_000), note: z.string().trim().max(200).optional() }).parse(request.body)
       const entry = await prisma.ledgerEntry.findUnique({ where: { id: request.params.entryId } })
       if (!entry || entry.status !== 'NEEDS_REVIEW') return response.status(409).json({ error: 'NOT_AWAITING_PRICE' })
-      const updated = await prisma.ledgerEntry.update({ where: { id: entry.id }, data: { amountMinor: body.amountMinor, status: 'DUE', description: `${entry.description.split(':')[0]} · set by DOORSTEP${body.note ? `: ${body.note}` : ''}` } })
+      const settings = await getFinanceSettings(prisma)
+      const updated = await prisma.$transaction(async (transaction) => {
+        const priced = await transaction.ledgerEntry.update({ where: { id: entry.id }, data: { amountMinor: body.amountMinor, status: 'DUE', description: `${entry.description.split(':')[0]} · set by DOORSTEP${body.note ? `: ${body.note}` : ''}` } })
+        const fees = riderFeeEntries(riderFeeSource(priced), body.amountMinor, settings)
+        if (fees.length) await transaction.ledgerEntry.createMany({ data: fees, skipDuplicates: true })
+        return priced
+      })
       await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'RIDER_EARNING_PRICED', entityType: 'LedgerEntry', entityId: entry.id, metadata: { amountMinor: body.amountMinor, note: body.note || null } } })
       if (entry.riderId) {
         const rider = await prisma.rider.findUnique({ where: { id: entry.riderId }, select: { userId: true } })

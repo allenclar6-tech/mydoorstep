@@ -12,6 +12,10 @@
    - the service fee;
    - the delivery fee, when a DOORSTEP rider delivers.
 4. **Riders.** Each completed delivery records the rider's earning from the Sapele distance rate table, using road distance from pickup to drop-off. Riders are paid from Admin → Money, either by Paystack Transfer or as a recorded bank payment.
+   - **DOORSTEP's rider fee:** DOORSTEP keeps a percentage of each delivery earning (default **6%**, changed in Admin → Money → Commission & rider pay).
+     - The rider's statement shows the full earning and the fee as separate lines.
+     - The fee clears together with its earning, and counts as DOORSTEP income.
+     - A rate change applies to deliveries completed afterwards.
 5. **Business-owned riders** are paid by their business. DOORSTEP doesn't record an earning for them.
 
 ## Commission (Admin → Money → Commission & rider pay)

@@ -9,7 +9,23 @@ export const defaultFinanceSettings = Object.freeze({
   commission: { doorstepRiderPercent: 15, ownRiderPercent: 10 },
   riderPay: { enabled: false, bands: [], perKmAfterMinor: 0 },
   split: { enabled: true, feeBearer: 'account' },
+  riderFee: { percent: 6 },
 })
+
+/**
+ * DOORSTEP's fee on one rider earning: the rider's statement shows the full earning and the fee as a deduction,
+ * and the fee is DOORSTEP income. `source` identifies the delivery (e.g. `order:<id>`) so it is written once.
+ */
+export function riderFeeEntries({ riderId, orderId = null, parcelBookingId = null, source, label }, earningMinor, settings) {
+  const percent = settings.riderFee?.percent ?? 0
+  const feeMinor = Math.round(earningMinor * percent / 100)
+  if (!(feeMinor > 0)) return []
+  const base = { ...(orderId ? { orderId } : {}), ...(parcelBookingId ? { parcelBookingId } : {}) }
+  return [
+    { ...base, party: 'RIDER', riderId, type: 'RIDER_SERVICE_FEE', amountMinor: -feeMinor, status: 'DUE', description: `DOORSTEP fee (${percent}%) on ${label}`, dedupeKey: `RIDER_SERVICE_FEE:${source}` },
+    { ...base, party: 'PLATFORM', type: 'RIDER_SERVICE_FEE', amountMinor: feeMinor, status: 'RETAINED', description: `${percent}% rider fee on ${label}`, dedupeKey: `RIDER_SERVICE_FEE_INCOME:${source}` },
+  ]
+}
 
 /** Who is meant to deliver, from the business's delivery preference. "BOTH" defaults to DOORSTEP riders. */
 export function plannedFulfilment(deliveryPreference) {

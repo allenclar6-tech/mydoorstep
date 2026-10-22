@@ -18,7 +18,7 @@ const ENTRY_STATUS = {
   NEEDS_REVIEW: ['Being priced', 'neutral'],
   VOID: ['Cancelled', 'neutral'],
 }
-const ENTRY_LABEL = { PARTNER_SHARE: 'Order earnings', ADJUSTMENT: 'Adjustment', RIDER_EARNING: 'Delivery earning', WITHDRAWAL_FEE: 'Cash-out fee' }
+const ENTRY_LABEL = { PARTNER_SHARE: 'Order earnings', ADJUSTMENT: 'Adjustment', RIDER_EARNING: 'Delivery earning', WITHDRAWAL_FEE: 'Cash-out fee', RIDER_SERVICE_FEE: 'DOORSTEP fee' }
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const PAYOUT_LABEL = { WITHDRAWAL: 'Cash-out', AUTOMATIC: 'Automatic payout', SCHEDULED: 'Scheduled payout' }
 
@@ -157,7 +157,7 @@ export function Wallet({ kind }) {
     {payout && <PayoutPlan payout={payout} balances={balances} hasAccount={Boolean(account)} rider={rider} onCashedOut={load} />}
 
     <div className="wl-card wl-rates"><Info size={18} aria-hidden="true" /><div>
-      {rider ? (rates.riderPay ? <><strong>How your delivery pay is worked out</strong><p>By road distance from pickup to drop-off:</p><ul>{rates.riderPay.bands.map((band, index) => <li key={band.upToKm}><span>{index === 0 ? 'Up to' : `${rates.riderPay.bands[index - 1].upToKm}–`}{band.upToKm} km</span><b>{money(band.amountMinor)}</b></li>)}{rates.riderPay.perKmAfterMinor > 0 && <li><span>Each km after {rates.riderPay.bands.at(-1).upToKm} km</span><b>+{money(rates.riderPay.perKmAfterMinor)}</b></li>}</ul></> : <><strong>Delivery pay rates</strong><p>DOORSTEP hasn’t published the Sapele rate table yet. Your deliveries are still recorded and will be priced and paid.</p></>)
+      {rider ? (rates.riderPay ? <><strong>How your delivery pay is worked out</strong><p>By road distance from pickup to drop-off{rates.riderFeePercent > 0 ? `. DOORSTEP keeps ${rates.riderFeePercent}% of each delivery earning as its service fee` : ''}:</p><ul>{rates.riderPay.bands.map((band, index) => <li key={band.upToKm}><span>{index === 0 ? 'Up to' : `${rates.riderPay.bands[index - 1].upToKm}–`}{band.upToKm} km</span><b>{money(band.amountMinor)}</b></li>)}{rates.riderPay.perKmAfterMinor > 0 && <li><span>Each km after {rates.riderPay.bands.at(-1).upToKm} km</span><b>+{money(rates.riderPay.perKmAfterMinor)}</b></li>}</ul></> : <><strong>Delivery pay rates</strong><p>DOORSTEP hasn’t published the Sapele rate table yet. Your deliveries are still recorded and will be priced and paid.{rates.riderFeePercent > 0 ? ` DOORSTEP keeps ${rates.riderFeePercent}% of each delivery earning as its service fee.` : ''}</p></>)
         : <><strong>How DOORSTEP’s commission works</strong><p><b>{rates.doorstepRiderPercent}%</b> of the item total when a DOORSTEP rider delivers. <b>{rates.ownRiderPercent}%</b> when your own rider delivers, and you also keep that order’s delivery fee. Service and delivery fees are never counted as your sales.</p></>}
     </div></div>
 
