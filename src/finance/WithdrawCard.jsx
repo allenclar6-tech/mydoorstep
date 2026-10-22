@@ -17,7 +17,6 @@ const money = (minor) => `₦${((minor || 0) / 100).toLocaleString('en-NG', { ma
 const when = (value) => new Date(value).toLocaleString('en-NG', { weekday: 'short', hour: 'numeric', minute: '2-digit' })
 
 const BLOCKED = {
-  WITHDRAWALS_OFF: 'Withdrawals aren’t switched on yet. DOORSTEP pays you on its usual schedule.',
   NO_ACCOUNT: 'Add your bank account below to withdraw.',
   DAILY_LIMIT: 'You’ve used today’s withdrawals. You can withdraw again tomorrow.',
   FEE_TOO_HIGH: 'Your ready balance is too small to cover the withdrawal fee.',
@@ -40,7 +39,6 @@ export function WithdrawCard({ onAddAccount, onChanged }) {
 
   if (error && !options) return null
   if (!options) return <section className="wd-card is-loading" aria-busy="true"><p>Checking what you can withdraw…</p></section>
-  if (options.mode === 'OFF') return null
 
   const instant = options.mode === 'INSTANT'
   const withdraw = async () => {

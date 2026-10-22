@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, Bike, Bell, Check, Clock3, DollarSign, MapPin, Menu, Package, Settings, ShieldCheck, Store, Truck, MessageCircle } from 'lucide-react'
+import { ArrowRight, Bike, Bell, Check, Clock3, DollarSign, Wallet as Wallet2, MapPin, Menu, Package, Settings, ShieldCheck, Store, Truck, MessageCircle } from 'lucide-react'
 import { formatNaira } from './data'
 import { SessionSignOutButton } from './authControls'
 import { RiderAccount } from './RiderAccount'
@@ -8,6 +8,7 @@ import { NotificationBell, WorkspaceInbox } from './notifications/NotificationCe
 import { ProfileCompletenessCard } from './account/ProfileCompleteness'
 import { HelpPage } from './support/HelpChat'
 import { Wallet } from './finance/Wallet'
+import { WithdrawBanner, WithdrawButton } from './finance/WithdrawButton'
 import { SignInMethodsPage } from './auth/AltSignIn'
 import { AvailabilityLocationToggle, RiderParcelJobs } from './rider/RiderParcelJobs'
 import { LocationReviews } from './rider/LocationReviews'
@@ -18,7 +19,7 @@ import { AlertSoundControl } from './live/AlertSoundControl'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 
-const riderNav = [['Dashboard', '/rider/dashboard', Truck], ['Available deliveries', '/rider/deliveries', Package], ['Delivery history', '/rider/history', Clock3], ['Earnings', '/rider/earnings', DollarSign], ['Local checks', '/rider/locations', MapPin], ['Verification', '/rider/verification', ShieldCheck], ['Rider account', '/rider/account', Settings]]
+const riderNav = [['Dashboard', '/rider/dashboard', Truck], ['Available deliveries', '/rider/deliveries', Package], ['Delivery history', '/rider/history', Clock3], ['Earnings', '/rider/earnings', DollarSign], ['Withdraw funds', '/rider/earnings#withdraw', Wallet2], ['Local checks', '/rider/locations', MapPin], ['Verification', '/rider/verification', ShieldCheck], ['Rider account', '/rider/account', Settings]]
 const stages = ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED']
 
 function RiderShell({ path, children }) {
@@ -26,7 +27,7 @@ function RiderShell({ path, children }) {
   const [user, setUser] = useState(null)
   useEffect(() => { fetch(`${apiBase}/api/auth/me`, { headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` } }).then((response) => response.ok ? response.json() : null).then((body) => body?.user && setUser(body.user)).catch(() => undefined) }, [])
   const name = user ? `${user.firstName} ${user.lastName}` : 'Rider'
-  return <div className="portal-shell"><aside className={open ? 'portal-sidebar is-open' : 'portal-sidebar'}><div className="portal-logo"><span className="brand-mark">✦</span><span>doorstep<span>rider</span></span></div><div className="portal-restaurant"><div className="portal-avatar">{name.charAt(0)}</div><div><strong>{name}</strong><small>Authenticated rider</small></div></div><nav>{riderNav.map(([label, href, Icon]) => <button className={path === href ? 'portal-nav active' : 'portal-nav'} key={href} onClick={() => { navigate(href); setOpen(false) }}><Icon size={17} />{label}</button>)}</nav><div className="portal-sidebar-bottom"><button className="portal-nav" onClick={() => { navigate('/rider/notifications'); setOpen(false) }}><Bell size={17} />Notifications</button><button className="portal-nav" onClick={() => { navigate('/rider/support'); setOpen(false) }}><MessageCircle size={17} />Help chat</button><button className="portal-nav" onClick={() => { navigate('/rider/account'); setOpen(false) }}><Settings size={17} />Account settings</button><SessionSignOutButton className="portal-nav" /></div></aside><main className="portal-main"><header className="portal-header"><button className="portal-menu-toggle" onClick={() => setOpen(!open)} aria-label="Open rider menu"><Menu size={21} /></button><div><span className="section-kicker">RIDER PORTAL</span><h1>{user ? `Hi, ${user.firstName}` : 'Rider workspace'}</h1></div><div className="portal-header-actions"><NotificationBell className="portal-bell" label="Rider notifications" /><button className="portal-bell" aria-label="Open rider account" onClick={() => navigate('/rider/account')}><Settings size={18} /></button></div></header>{children}</main>{open && <button type="button" className="ws-sheet-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />}<WorkspaceTabBar label="Rider navigation" path={path} onMore={() => setOpen(true)} items={[{ label: 'Today', href: '/rider/dashboard', icon: Truck, match: (current) => current === '/rider/dashboard' || current === '/rider' }, { label: 'Jobs', href: '/rider/deliveries', icon: Package }, { label: 'History', href: '/rider/history', icon: Clock3 }, { label: 'Earnings', href: '/rider/earnings', icon: DollarSign }]} /></div>
+  return <div className="portal-shell"><aside className={open ? 'portal-sidebar is-open' : 'portal-sidebar'}><div className="portal-logo"><span className="brand-mark">✦</span><span>doorstep<span>rider</span></span></div><div className="portal-restaurant"><div className="portal-avatar">{name.charAt(0)}</div><div><strong>{name}</strong><small>Authenticated rider</small></div></div><nav>{riderNav.map(([label, href, Icon]) => <button className={path === href ? 'portal-nav active' : 'portal-nav'} key={href} onClick={() => { navigate(href); setOpen(false) }}><Icon size={17} />{label}</button>)}</nav><div className="portal-sidebar-bottom"><button className="portal-nav" onClick={() => { navigate('/rider/notifications'); setOpen(false) }}><Bell size={17} />Notifications</button><button className="portal-nav" onClick={() => { navigate('/rider/support'); setOpen(false) }}><MessageCircle size={17} />Help chat</button><button className="portal-nav" onClick={() => { navigate('/rider/account'); setOpen(false) }}><Settings size={17} />Account settings</button><SessionSignOutButton className="portal-nav" /></div></aside><main className="portal-main"><header className="portal-header"><button className="portal-menu-toggle" onClick={() => setOpen(!open)} aria-label="Open rider menu"><Menu size={21} /></button><div><span className="section-kicker">RIDER PORTAL</span><h1>{user ? `Hi, ${user.firstName}` : 'Rider workspace'}</h1></div><div className="portal-header-actions"><WithdrawButton earningsHref="/rider/earnings" /><NotificationBell className="portal-bell" label="Rider notifications" /><button className="portal-bell" aria-label="Open rider account" onClick={() => navigate('/rider/account')}><Settings size={18} /></button></div></header>{children}</main>{open && <button type="button" className="ws-sheet-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />}<WorkspaceTabBar label="Rider navigation" path={path} onMore={() => setOpen(true)} items={[{ label: 'Today', href: '/rider/dashboard', icon: Truck, match: (current) => current === '/rider/dashboard' || current === '/rider' }, { label: 'Jobs', href: '/rider/deliveries', icon: Package }, { label: 'History', href: '/rider/history', icon: Clock3 }, { label: 'Earnings', href: '/rider/earnings', icon: DollarSign }]} /></div>
 }
 
 function RiderIntro({ eyebrow, title, action }) { return <div className="portal-intro"><div><span className="section-kicker">{eyebrow}</span><h2>{title}</h2></div>{action}</div> }
@@ -207,6 +208,7 @@ function RiderDashboard() {
     </section>
     <AvailabilityLocationToggle online={online} />
     <AlertSoundControl />
+    <WithdrawBanner earningsHref="/rider/earnings" title="Your earnings balance" />
     <section className="rider-layout">
       <div className="rider-work-column">
         {!delivery && approved && <RiderOfferCard online={online} busy={Boolean(delivery || activeParcel)} onAccepted={() => { loadActive(); loadSummary() }} />}

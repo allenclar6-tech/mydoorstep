@@ -64,7 +64,7 @@ const credit = (amountMinor) => ({ party: 'RESTAURANT', restaurantId: 'r1', type
 test('without Paystack Transfers, a partner can still request a withdrawal and the money is set aside at once', async () => {
   delete process.env.PAYSTACK_TRANSFERS_ENABLED
   const db = fakeDb({ entries: [credit(442_000)], accounts: [account] })
-  assert.equal((await withdrawalOptions(db, who)).mode, 'OFF', 'off until an admin turns withdrawals on')
+  assert.equal((await withdrawalOptions(db, who)).mode, 'REQUEST', 'partners can always ask, even before cash-outs are switched on')
   withdrawalsOn(db)
   const options = await withdrawalOptions(db, who)
   assert.equal(options.mode, 'REQUEST')
@@ -106,7 +106,7 @@ test('below the minimum, with no bank account, or past the daily limit, a withdr
   assert.equal((await withdrawalOptions(limited, who)).blocked, 'DAILY_LIMIT')
 })
 
-test('with Paystack Transfers on, the partner withdraws instantly, and an admin can send a request by Paystack', async () => {
+test('with Paystack Transfers and cash-out on, the partner withdraws instantly, and an admin can send a request by Paystack', async () => {
   process.env.PAYSTACK_TRANSFERS_ENABLED = 'true'
   const db = fakeDb({ entries: [credit(300_000)], accounts: [account] })
   withdrawalsOn(db)

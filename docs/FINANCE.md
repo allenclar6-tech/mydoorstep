@@ -59,7 +59,8 @@ Set separately for businesses and for riders:
   - The fee is a flat amount plus an optional percentage, and is DOORSTEP income.
   - A minimum amount and a daily limit apply.
   - If the transfer fails, the fee is not charged and the money returns to the balance.
-- **Withdrawals without Paystack Transfers:** when "Cash out now" is on but Transfers aren't set up yet, partners still get a **Withdraw** button. It creates a **withdrawal request**:
+- **Withdraw button everywhere:** every business, grocery and rider screen has a **Withdraw** button in the header showing the ready balance, plus a balance banner on the dashboard. Both open the withdrawal sheet.
+- **Withdrawal requests:** partners can always ask for their money. If "Cash out now" and Paystack Transfers are both on, it is sent instantly. Otherwise the **Withdraw** button creates a **withdrawal request**:
   - The exact cleared ledger lines are set aside at once (status `REQUESTED`), so the same money can't be withdrawn twice. The partner can cancel until it's sent.
   - Admins are notified and see it under **Admin → Money → Withdrawal requests**, with the full account number from Paystack, copy buttons and the exact amount.
   - The admin either taps **Send by Paystack** (once Transfers are on), taps **I paid it from my bank** (then enters the bank reference and an optional receipt), or taps **Decline** with a reason (the money returns to the balance, with no fee).

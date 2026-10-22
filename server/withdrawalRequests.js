@@ -42,15 +42,16 @@ export async function withdrawalOptions(prisma, { kind, owner }, now = new Date(
   const feeMinor = available > 0 ? withdrawalFee(available, w) : 0
   const accountReady = Boolean(account && account.status === 'ACTIVE' && account.paystackRecipientCode)
   const instant = w.enabled && transfersEnabled() && accountReady
+  // Partners can always ASK for a withdrawal. The admin's "Cash out now" switch only decides whether it is
+  // sent instantly by Paystack (when Transfers are on) instead of being approved by DOORSTEP.
   let blocked = null
-  if (!w.enabled) blocked = 'WITHDRAWALS_OFF'
-  else if (!accountReady) blocked = 'NO_ACCOUNT'
+  if (!accountReady) blocked = 'NO_ACCOUNT'
   else if (open) blocked = 'OPEN_REQUEST'
   else if (today >= w.perDay) blocked = 'DAILY_LIMIT'
   else if (available < w.minimumMinor) blocked = 'BELOW_MINIMUM'
   else if (available - feeMinor < 100) blocked = 'FEE_TOO_HIGH'
   return {
-    mode: !w.enabled ? 'OFF' : instant ? 'INSTANT' : 'REQUEST',
+    mode: instant ? 'INSTANT' : 'REQUEST',
     blocked,
     availableMinor: available,
     heldMinor: Math.max(0, balance.heldMinor),
@@ -69,7 +70,6 @@ export async function withdrawalOptions(prisma, { kind, owner }, now = new Date(
 export async function createWithdrawalRequest(prisma, who, { actorId, now = new Date() } = {}) {
   const options = await withdrawalOptions(prisma, who, now)
   const messages = {
-    WITHDRAWALS_OFF: 'Withdrawals are switched off right now. DOORSTEP pays you on its usual schedule.',
     NO_ACCOUNT: 'Add your bank account first (Earnings → Add bank account).',
     OPEN_REQUEST: 'You already have a withdrawal on its way. You can request another once it’s done.',
     DAILY_LIMIT: 'You’ve reached today’s withdrawal limit. Try again tomorrow.',
