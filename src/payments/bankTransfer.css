@@ -1,0 +1,53 @@
+/* Bank transfer checkout */
+.bt-card { background: #fff; border: 1px solid var(--t-line, #e3e8e2); border-radius: 22px; box-shadow: var(--t-shadow-sm, none); box-sizing: border-box; color: var(--t-ink, #14231d); display: flex; flex-direction: column; gap: 14px; margin: 0 auto 120px; max-width: 560px; padding: 20px 18px; text-align: left; width: 100%; }
+.bt-card *, .bt-card *::before, .bt-card *::after { box-sizing: border-box; }
+.bt-card h2 { font-size: 1.25rem; margin: 0; }
+.bt-kicker { color: var(--t-green-600, #007c63); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
+.bt-status { align-items: flex-start; border-radius: 16px; display: flex; gap: 12px; padding: 14px; }
+.bt-status > svg { flex: 0 0 auto; margin-top: 1px; }
+.bt-status div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bt-status strong { font-size: 1.05rem; }
+.bt-status small { font-size: .84rem; line-height: 1.45; }
+.bt-status.is-wait { background: var(--t-gold-100, #fff3d4); color: var(--t-gold-800, #7a5300); }
+.bt-status.is-ok { background: #e7f5ef; color: #0b5a45; }
+.bt-status.is-bad { background: #fdecea; color: #8c1d18; }
+.bt-lead { font-size: .95rem; margin: 2px 0 0; }
+.bt-details { border: 1px solid var(--t-line, #e3e8e2); border-radius: 16px; margin: 0; overflow: hidden; }
+.bt-row { align-items: center; border-bottom: 1px solid var(--t-line, #e3e8e2); display: grid; gap: 4px 12px; grid-template-columns: 1fr; padding: 11px 14px; }
+.bt-row:last-child { border-bottom: 0; }
+.bt-row dt { color: var(--t-muted, #5b6b63); font-size: .72rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.bt-row dd { align-items: center; display: flex; gap: 10px; justify-content: space-between; margin: 0; min-width: 0; }
+.bt-row dd > span { font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; }
+.bt-row.is-strong dd > span { font-size: 1.3rem; font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: .02em; }
+.bt-copy { align-items: center; background: var(--t-mint-100, #e6f2eb); border: 0; border-radius: 999px; color: var(--t-forest-800, #123d2d); cursor: pointer; display: inline-flex; flex: 0 0 auto; font: inherit; font-size: .8rem; font-weight: 800; gap: 5px; min-height: 36px; padding: 0 14px; }
+.bt-copy.is-done { background: var(--t-green-600, #007c63); color: #fff; }
+.bt-note { align-items: flex-start; color: var(--t-muted, #5b6b63); display: flex; font-size: .82rem; gap: 6px; line-height: 1.5; margin: 0; }
+.bt-note svg { flex: 0 0 auto; margin-top: 3px; }
+.bt-receipt { background: #f6f8f6; border-radius: 18px; display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.bt-receipt h3 { align-items: center; display: flex; font-size: 1rem; gap: 8px; margin: 0; }
+.bt-receipt > p { color: var(--t-muted, #5b6b63); font-size: .84rem; margin: 0; }
+.bt-drop { align-items: center; background: #fff; border: 2px dashed var(--t-line-strong, #cfd9d2); border-radius: 16px; color: var(--t-ink, #14231d); cursor: pointer; display: flex; flex-direction: column; font: inherit; gap: 4px; justify-content: center; min-height: 130px; overflow: hidden; padding: 14px; text-align: center; width: 100%; }
+.bt-drop.has-file { border-color: var(--t-green-600, #007c63); border-style: solid; }
+.bt-drop img { border-radius: 10px; display: block; max-height: 240px; max-width: 100%; object-fit: contain; }
+.bt-drop b { font-size: .92rem; overflow-wrap: anywhere; }
+.bt-drop small { color: var(--t-muted, #5b6b63); font-size: .76rem; }
+.bt-fields { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.bt-fields label { display: flex; flex-direction: column; font-size: .8rem; font-weight: 800; gap: 4px; }
+.bt-fields label span { color: var(--t-muted, #5b6b63); font-weight: 600; }
+.bt-fields input { background: #fff; border: 1.5px solid var(--t-line-strong, #cfd9d2); border-radius: 12px; color: inherit; font: inherit; font-size: .95rem; min-height: 46px; padding: 0 12px; width: 100%; }
+.bt-receipt-done { align-items: center; background: #e7f5ef; border-radius: 16px; color: #0b5a45; display: flex; flex-wrap: wrap; gap: 10px; padding: 14px; }
+.bt-receipt-done > div { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 180px; }
+.bt-receipt-done small { font-size: .82rem; line-height: 1.45; }
+.bt-receipt-icon { display: flex; }
+.bt-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.bt-primary, .bt-ghost { align-items: center; border-radius: 999px; cursor: pointer; display: inline-flex; font: inherit; font-size: .92rem; font-weight: 800; gap: 8px; justify-content: center; min-height: 48px; padding: 0 20px; }
+.bt-primary { background: var(--t-forest-800, #123d2d); border: 0; color: #fff; flex: 1 1 200px; }
+.bt-ghost { background: #fff; border: 1.5px solid var(--t-line-strong, #cfd9d2); color: var(--t-ink, #14231d); }
+.bt-primary:disabled { cursor: not-allowed; opacity: .55; }
+.bt-link { align-self: flex-start; background: none; border: 0; color: var(--t-green-600, #007c63); cursor: pointer; font: inherit; font-size: .84rem; font-weight: 800; padding: 4px 0; }
+.bt-error { background: #fdecea; border-radius: 12px; color: #8c1d18; font-size: .86rem; margin: 0; padding: 10px 12px; }
+.bt-check-note { background: var(--t-gold-100, #fff3d4); border-radius: 12px; color: var(--t-gold-800, #7a5300); font-size: .86rem; line-height: 1.45; margin: 0; padding: 10px 12px; }
+.bt-checked { color: var(--t-muted, #5b6b63); font-size: .76rem; margin: -4px 0 0; text-align: center; }
+.is-spinning { animation: bt-spin .8s linear infinite; }
+@keyframes bt-spin { to { transform: rotate(360deg); } }
+@media (min-width: 520px) { .bt-row { grid-template-columns: 150px 1fr; } }

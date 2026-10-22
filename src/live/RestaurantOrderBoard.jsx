@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bike, Check, ChefHat, Clock3, PackageCheck, Phone, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { formatNaira } from '../data'
+import { playAlert } from '../notifications/sound'
 
 const authHeaders = () => { let token = null; try { token = localStorage.getItem('doorstep-token') } catch { token = null } return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
 const TABS = [
@@ -17,7 +18,17 @@ const minutesSince = (value) => value ? Math.max(0, Math.round((Date.now() - new
 function riderLine(order) {
   const delivery = order.delivery
   if (!delivery || ['PAID', 'DELIVERED', 'CANCELLED', 'REJECTED', 'REFUNDED'].includes(order.status)) return null
-  if (!delivery.riderId) return { tone: 'wait', text: delivery.status === 'REQUESTED' ? 'Offering to the nearest rider…' : 'Finding a rider…' }
+  if (!delivery.riderId) {
+    const search = order.riderSearch
+    const left = search?.offerEndsAt ? Math.max(0, Math.round((new Date(search.offerEndsAt).getTime() - Date.now()) / 1000)) : null
+    const text = {
+      OFFERED: `Offered to a rider — waiting for them to accept${left ? ` (${left}s)` : ''}`,
+      NO_RIDERS_ONLINE: 'No riders are online right now. DOORSTEP has been alerted and will send one — keep the order ready.',
+      ALL_RIDERS_BUSY: `All ${search?.online || ''} online rider${search?.online === 1 ? ' is' : 's are'} on deliveries. Yours is next in line.`.replace('All  ', 'All '),
+      SEARCHING: `Finding a rider${search?.free ? ` · ${search.free} free nearby` : ''}…`,
+    }[search?.state] || (delivery.status === 'REQUESTED' ? 'Offering to the nearest rider…' : 'Finding a rider…')
+    return { tone: search?.state === 'NO_RIDERS_ONLINE' ? 'alert' : 'wait', text }
+  }
   const name = delivery.rider?.user?.firstName || 'Your rider'
   const text = { ACCEPTED: `${name} accepted and is getting ready`, GOING_TO_RESTAURANT: `${name} is on the way to you`, ARRIVED_AT_RESTAURANT: `${name} is at your counter`, PICKED_UP: `${name} has the order`, GOING_TO_CUSTOMER: `${name} is delivering it` }[delivery.status] || `${name} assigned`
   return { tone: delivery.status === 'ARRIVED_AT_RESTAURANT' ? 'here' : 'ok', text, phone: delivery.rider?.user?.phone }
@@ -79,7 +90,7 @@ export function RestaurantOrderBoard() {
       if (!response.ok) throw new Error(body.message || 'Could not load your orders.')
       const list = (body.orders || []).filter((order) => order.status !== 'PENDING_PAYMENT')
       const newest = list.filter((order) => order.status === 'PAID').map((order) => order.id).join(',')
-      if (lastNew.current !== null && newest && newest !== lastNew.current) { try { navigator.vibrate?.([300, 150, 300]) } catch { /* not supported */ } }
+      if (lastNew.current !== null && newest && newest !== lastNew.current) playAlert('order')
       lastNew.current = newest
       setOrders(list); setError('')
     } catch (loadError) { setError(loadError instanceof TypeError ? 'No connection. Retrying…' : loadError.message) }
@@ -90,6 +101,13 @@ export function RestaurantOrderBoard() {
     document.addEventListener('visibilitychange', load)
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', load) }
   }, [load])
+  // Like a delivery tablet: keep ringing every 30 s while a paid order is waiting to be accepted.
+  const waitingCount = (orders || []).filter((order) => order.status === 'PAID').length
+  useEffect(() => {
+    if (!waitingCount) return undefined
+    const timer = window.setInterval(() => playAlert('order'), 30_000)
+    return () => window.clearInterval(timer)
+  }, [waitingCount])
   const counts = Object.fromEntries(TABS.map(([key, , match]) => [key, (orders || []).filter(match).length]))
   const shown = (orders || []).filter(TABS.find(([key]) => key === tab)[2])
   return <section className="rb">

@@ -81,7 +81,7 @@ function fakeDb({ riders, order }) {
       create: async ({ data }) => { offers.push({ ...data }); return data },
       updateMany: async ({ where, data }) => { const rows = offers.filter((row) => matches(row, where)); rows.forEach((row) => Object.assign(row, data)); return { count: rows.length } },
     },
-    rider: { findMany: async ({ where }) => riders.filter((rider) => !where.id.notIn.includes(rider.id) && rider.network === where.network && (!where.restaurantId || rider.restaurantId === where.restaurantId)) },
+    rider: { findMany: async ({ where }) => riders.filter((rider) => !where.id.notIn.includes(rider.id) && rider.network === where.network && (!where.restaurantId || rider.restaurantId === where.restaurantId)), count: async ({ where }) => riders.filter((rider) => rider.network === where.network).length },
     riderLocation: { findFirst: async () => null },
   }
 }
@@ -126,4 +126,47 @@ test('with nobody free the order stays in the open pool and admins are alerted o
   assert.deepEqual(alerts, ['Order waiting for a rider'])
   await sweepDispatch(db, { now: new Date(now.getTime() + 60_000), notifyAdmins })
   assert.equal(alerts.length, 1, 'alerted only once')
+})
+
+test('with no riders online at all, admins are alerted after 2 minutes, not 10', async () => {
+  const early = fakeDb({ riders: [], order: { ...ORDER, acceptedAt: located(1) } })
+  const alerts = []
+  const notifyAdmins = async (_db, payload) => { alerts.push(payload.body) }
+  await sweepDispatch(early, { now, notifyAdmins })
+  assert.equal(alerts.length, 0, 'not yet after 1 minute')
+  const later = fakeDb({ riders: [], order: { ...ORDER, acceptedAt: located(3) } })
+  await sweepDispatch(later, { now, notifyAdmins })
+  assert.equal(alerts.length, 1)
+  assert.match(alerts[0], /No riders are online/)
+})
+
+test('rider search state explains why an order has no rider yet', async () => {
+  const { riderSearchState } = await import('../server/dispatch.js')
+  const now = new Date('2026-10-22T13:00:00Z')
+  assert.equal(riderSearchState({ riderId: 'r1' }, { online: 2, free: 1 }, now), null)
+  assert.equal(riderSearchState({ status: 'REQUESTED', requestExpiresAt: new Date(now.getTime() + 30_000) }, { online: 1, free: 0 }, now).state, 'OFFERED')
+  assert.equal(riderSearchState({ status: 'AVAILABLE' }, { online: 0, free: 0 }, now).state, 'NO_RIDERS_ONLINE')
+  assert.equal(riderSearchState({ status: 'AVAILABLE' }, { online: 3, free: 0 }, now).state, 'ALL_RIDERS_BUSY')
+  assert.equal(riderSearchState({ status: 'REQUESTED', requestExpiresAt: new Date(now.getTime() - 1000) }, { online: 2, free: 2 }, now).state, 'SEARCHING')
+})
+
+test('an admin can send a waiting job only to an approved, online, free rider', async () => {
+  const { offerToRider } = await import('../server/dispatch.js')
+  const now = new Date('2026-10-22T13:00:00Z')
+  const writes = []
+  const make = (rider) => ({
+    delivery: { findUnique: async () => ({ id: 'd1', riderId: null, order: { orderNumber: 'DSP-1', status: 'READY_FOR_PICKUP', plannedRiderPayMinor: 70_000, restaurant: { name: 'Green Grove' } } }), updateMany: async (query) => { writes.push(query); return { count: 1 } } },
+    rider: { findUnique: async () => rider },
+    dispatchOffer: { updateMany: async () => ({ count: 0 }), create: async (query) => { writes.push(query); return {} } },
+  })
+  assert.equal((await offerToRider(make({ id: 'r1', userId: 'u1', status: 'APPROVED', availability: 'OFFLINE', deliveries: [] }), 'd1', 'r1', { now })).reason, 'RIDER_OFFLINE')
+  assert.equal((await offerToRider(make({ id: 'r1', userId: 'u1', status: 'PENDING_APPROVAL', availability: 'ONLINE', deliveries: [] }), 'd1', 'r1', { now })).reason, 'RIDER_NOT_APPROVED')
+  assert.equal((await offerToRider(make({ id: 'r1', userId: 'u1', status: 'APPROVED', availability: 'ONLINE', deliveries: [{ id: 'x' }] }), 'd1', 'r1', { now })).reason, 'RIDER_BUSY')
+  const told = []
+  const ok = await offerToRider(make({ id: 'r1', userId: 'u1', status: 'APPROVED', availability: 'ONLINE', deliveries: [] }), 'd1', 'r1', { now, seconds: 120, notifyUsers: async (_db, ids, message) => told.push([ids, message]) })
+  assert.equal(ok.offered, true)
+  assert.equal(ok.expiresAt.getTime(), now.getTime() + 120_000)
+  assert.equal(writes[0].data.requestedRiderId, 'r1')
+  assert.deepEqual(told[0][0], ['u1'])
+  assert.equal(told[0][1].link, '/rider/dashboard')
 })

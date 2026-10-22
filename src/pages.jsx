@@ -23,6 +23,7 @@ import { signOut as endSession } from './services/authService'
 import { loadCart } from './services/orderService'
 import { SignInLinks, SignOutNotice } from './authControls'
 import { NotificationsScreen, useNotifications } from './notifications/NotificationCenter'
+import { BankTransferPanel } from './payments/BankTransferPage'
 import { AlternativeSignIn, PHONE_HANDOFF_KEY, SignInMethodsPage, useAuthProviders } from './auth/AltSignIn'
 import { ORDER_STATUS_LABELS, OrderActionButtons, orderStatusTone } from './orders/OrderActions'
 import { checkoutTotals, useDeliveryQuote } from './orders/useDeliveryQuote'
@@ -920,24 +921,7 @@ function CheckoutPage({ cart, onComplete, error }) {
 }
 
 function BankTransferPaymentPage({ orderId }) {
-  const [payment, setPayment] = useState(null)
-  const [error, setError] = useState('')
-  const [copied, setCopied] = useState('')
-  const load = async () => {
-    const token = localStorage.getItem('doorstep-token')
-    if (!token) return setError('Sign in to view this payment.')
-    try {
-      const response = await fetch(`${apiBase}/api/payments/orders/${orderId}/bank-transfer`, { headers: { Authorization: `Bearer ${token}` } })
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.error || 'Could not load transfer instructions.')
-      setPayment(body)
-      setError('')
-    } catch (loadError) { setError(loadError.message) }
-  }
-  useEffect(() => { load() }, [orderId])
-  const copy = async (label, value) => { await navigator.clipboard.writeText(value); setCopied(label) }
-  if (!payment) return <PageFrame eyebrow="BANK TRANSFER" title="Loading payment instructions." intro={error || 'Getting your payment details.'}><section className="submitted-card">{error && <><p role="alert">{error}</p><button className="primary-button" onClick={load}>Try again</button></>}</section></PageFrame>
-  return <PageFrame eyebrow="BANK TRANSFER" title="Complete your transfer." intro="Send the exact amount and include the reference below. We will confirm your order once we have checked the payment."><section className="submitted-card"><span className="section-kicker">{payment.orderNumber}</span><h2>{payment.status.replaceAll('_', ' ')}</h2>{payment.instructions ? <div className="bank-transfer-details"><p><strong>Bank</strong>{payment.instructions.bankName}</p><p><strong>Account name</strong>{payment.instructions.accountName}</p><p><strong>Account number</strong>{payment.instructions.accountNumber} <button type="button" className="quiet-button" onClick={() => copy('account', payment.instructions.accountNumber)}>{copied === 'account' ? 'Copied' : 'Copy'}</button></p><p><strong>Amount</strong>{formatNaira(Math.round(payment.amountMinor / 100))}</p><p><strong>Reference</strong>{payment.reference} <button type="button" className="quiet-button" onClick={() => copy('reference', payment.reference)}>{copied === 'reference' ? 'Copied' : 'Copy'}</button></p><p>{payment.instructions.message}</p>{payment.expiresAt && <p>Complete before: {new Date(payment.expiresAt).toLocaleString('en-NG')}</p>}</div> : <p>These transfer instructions are no longer available. Contact support with your order number.</p>}<div className="profile-form-actions"><button className="primary-button" onClick={load}>Check payment status</button><button className="quiet-button" onClick={() => navigate(`/account/orders/${orderId}`)}>Return to order</button></div></section></PageFrame>
+  return <PageFrame eyebrow="BANK TRANSFER" title="Pay by bank transfer." intro="Send the exact amount to DOORSTEP, upload your receipt, and we’ll confirm your order."><BankTransferPanel orderId={orderId} /></PageFrame>
 }
 
 function PaymentCallbackPage() {

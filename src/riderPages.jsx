@@ -13,6 +13,8 @@ import { AvailabilityLocationToggle, RiderParcelJobs } from './rider/RiderParcel
 import { LocationReviews } from './rider/LocationReviews'
 import { apiBase } from './config/apiBase'
 import { DeliveryCodeSheet, RiderOfferCard } from './live/RiderOffer'
+import { OpenJobs } from './live/OpenJobs'
+import { AlertSoundControl } from './live/AlertSoundControl'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 
@@ -204,9 +206,11 @@ function RiderDashboard() {
       <div><span>Your rating</span><strong>{summary?.rating ? <>{summary.rating.average.toFixed(1)} <em>★</em></> : summary ? 'New' : '…'}</strong><small>{summary?.rating ? `From ${summary.rating.count} rating${summary.rating.count === 1 ? '' : 's'}` : 'No ratings yet'}</small></div>
     </section>
     <AvailabilityLocationToggle online={online} />
+    <AlertSoundControl />
     <section className="rider-layout">
       <div className="rider-work-column">
         {!delivery && approved && <RiderOfferCard online={online} busy={Boolean(delivery || activeParcel)} onAccepted={() => { loadActive(); loadSummary() }} />}
+        {!delivery && <OpenJobs online={online} approved={approved} busy={Boolean(activeParcel)} onAccepted={() => { loadActive(); loadSummary() }} />}
         {delivery && <CurrentDelivery delivery={delivery} setDelivery={(next) => { setDelivery(next); if (next.status === 'DELIVERED') window.setTimeout(() => { loadActive(); loadSummary() }, 1500) }} />}
         {activeParcel && <RiderLocationSharing deliveryId={activeParcel.deliveryId} active />}
         {!delivery && <RiderParcelJobs online={online} approved={approved} onActiveChange={setActiveParcel} />}
@@ -215,7 +219,17 @@ function RiderDashboard() {
     </section></>
 }
 
-function Available() { const [deliveries, setDeliveries] = useState([]); const token = localStorage.getItem('doorstep-token'); useEffect(() => { fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => setDeliveries(body.deliveries || [])).catch(() => undefined) }, []); const claim = async (id) => { const response = await fetch(`${apiBase}/api/deliveries/${id}/claim`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }); if (response.ok) navigate('/rider/dashboard') }; return <><RiderIntro eyebrow="AVAILABLE DELIVERIES" title="Choose your next route." /><section className="orders-panel">{deliveries.filter((delivery) => delivery.status === 'AVAILABLE').map((delivery) => <div className="portal-order-row" key={delivery.id}><div className="order-id"><strong>{delivery.order.orderNumber}</strong><small>{delivery.order.restaurant.name}</small></div><div className="order-items">{delivery.order.restaurant.address} → {delivery.order.addressSnapshot}</div><strong className="rider-earning">{delivery.earning?.amountMinor != null ? <>You earn {formatNaira(delivery.earning.amountMinor / 100)}</> : delivery.earning?.paidByBusiness ? 'Paid by your business' : 'Pay confirmed after delivery'}{delivery.earning?.km != null && <small> · {delivery.earning.km} km</small>}</strong><button className="small-action" onClick={() => claim(delivery.id)}>Accept</button></div>)}{deliveries.length === 0 && <div className="empty-state">No delivery requests are available right now.</div>}</section></> }
+function Available() {
+  const [status, setStatus] = useState(null)
+  const token = localStorage.getItem('doorstep-token')
+  useEffect(() => { fetch(`${apiBase}/api/rider/summary`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then(setStatus).catch(() => undefined) }, [])
+  const online = status?.availability === 'ONLINE'
+  const approved = status?.approval === 'APPROVED'
+  return <><RiderIntro eyebrow="AVAILABLE DELIVERIES" title="Choose your next route." />
+    {status && !online && approved && <div className="rider-status-alert" role="status">You’re offline. <button type="button" className="text-link" onClick={() => navigate('/rider/dashboard')}>Go online on your dashboard</button> to accept jobs.</div>}
+    <OpenJobs online={online} approved={approved} busy={Boolean(status?.activeDeliveries)} title="Open jobs" onAccepted={() => navigate('/rider/dashboard')} />
+  </>
+}
 
 function History() { const [orders, setOrders] = useState([]); const token = localStorage.getItem('doorstep-token'); useEffect(() => { fetch(`${apiBase}/api/rider/history`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => setOrders(body.orders || [])).catch(() => undefined) }, []); return <><RiderIntro eyebrow="DELIVERY HISTORY" title="Every trip, accounted for." /><section className="orders-panel">{orders.map((order) => <div className="portal-order-row" key={order.id}><div className="order-id"><strong>{order.orderNumber}</strong><small>{new Date(order.createdAt).toLocaleDateString('en-NG')} · {order.restaurant?.name}</small></div><div className="order-items">Completed delivery</div><strong>{formatNaira(Math.round((order.riderPayout?.amountMinor || 0) / 100))}</strong><span className="portal-status delivered">{order.status}</span></div>)}{orders.length === 0 && <div className="empty-state">No rider history is available yet.</div>}</section></> }
 

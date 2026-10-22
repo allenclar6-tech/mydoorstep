@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import { createPortal } from 'react-dom'
 import { Bell, BellRing, Bike, Check, CheckCheck, ChevronRight, CreditCard, MessageCircle, ShieldCheck, ShoppingBag, Tag, UserCheck, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
+import { alertKindFor, playAlert } from './sound'
 
 const POLL_MS = 20_000
 const PAGE_SIZE = 20
@@ -62,9 +63,11 @@ function createStore(tokenKey) {
     if (announcedIds.has(notification.id)) return
     announcedIds.add(notification.id)
     set({ toast: notification })
+    // Every side hears new notifications: a chime for customers/admins, a bell for businesses, an alarm for riders.
+    playAlert(alertKindFor(notification))
     if (document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try {
-        const alert = new Notification(notification.title, { body: notification.body, tag: notification.id, icon: '/doorstep-icon.svg' })
+        const alert = new Notification(notification.title, { body: notification.body, tag: notification.id, icon: '/doorstep-icon.svg', silent: false, renotify: true, requireInteraction: alertKindFor(notification) === 'job', vibrate: alertKindFor(notification) === 'job' ? [700, 150, 700, 150, 1000] : [200] })
         alert.onclick = () => { window.focus(); if (notification.link) navigate(notification.link); alert.close() }
       } catch { /* some mobile browsers only allow notifications from a service worker */ }
     }

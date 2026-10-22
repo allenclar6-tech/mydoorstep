@@ -99,3 +99,10 @@ html body .ps-hero h1 { color: #fff; }
   .ps { padding-bottom: 180px; }
   .ps-savebar { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
+
+/* Customer transfer receipts */
+.ps-receipts { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.ps-receipt { align-items: center; background: var(--t-mint-100, #e6f2eb); border: 0; border-radius: 12px; color: var(--t-forest-800, #123d2d); cursor: pointer; display: flex; font: inherit; gap: 10px; min-height: 48px; padding: 8px 12px; text-align: left; width: 100%; }
+.ps-receipt span { display: flex; flex-direction: column; min-width: 0; }
+.ps-receipt b { font-size: .86rem; }
+.ps-receipt small { color: var(--t-muted, #5b6b63); font-size: .76rem; }

@@ -6,6 +6,12 @@ const STAGE_TEXT = {
   RIDER_TO_STORE: 'Your rider is heading to the store',
   ON_THE_WAY: 'Your order is on its way',
 }
+const SEARCH_TEXT = {
+  OFFERED: 'A rider near the store has your order — waiting for them to accept…',
+  SEARCHING: 'Finding the nearest rider for you…',
+  ALL_RIDERS_BUSY: 'All riders are on deliveries right now. You’re next in line for the first free rider.',
+  NO_RIDERS_ONLINE: 'No riders are free right now. DOORSTEP has been alerted and is arranging one for your order.',
+}
 const time = (iso) => new Date(iso).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })
 
 /** Customer's live order view: arrival estimate, rider search state, rider contact and the delivery code. */
@@ -25,7 +31,7 @@ export function LiveOrderCard({ order }) {
         {eta?.minutes && <p>{STAGE_TEXT[eta.stage]}</p>}
       </div>
     </div>
-    {live.findingRider && <p className="lo-search"><Search size={15} aria-hidden="true" />Finding the nearest rider for you…</p>}
+    {live.findingRider && <p className="lo-search"><Search size={15} aria-hidden="true" />{SEARCH_TEXT[live.riderSearch?.state] || SEARCH_TEXT.SEARCHING}</p>}
     {rider && <div className="lo-rider"><Bike size={17} aria-hidden="true" /><span><b>{rider.name}</b><small>{deliveryStatus === 'ARRIVED_AT_RESTAURANT' ? 'is collecting your order' : deliveryStatus === 'GOING_TO_CUSTOMER' || deliveryStatus === 'PICKED_UP' ? 'is bringing your order' : 'is your rider'}</small></span>{rider.callAllowed && rider.phone && <a className="lo-call" href={`tel:${rider.phone}`}><Phone size={15} aria-hidden="true" />Call</a>}</div>}
     {live.deliveryCode && <div className="lo-code">
       <KeyRound size={18} aria-hidden="true" />

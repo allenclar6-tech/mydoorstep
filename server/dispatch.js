@@ -9,6 +9,7 @@ export const MAX_DISPATCH_KM = 10
 export const RIDER_LOCATION_FRESH_MS = 30 * 60_000
 export const SKIP_AFTER_PASS_MS = 3 * 60_000
 export const STUCK_AFTER_MS = 10 * 60_000
+export const NO_RIDERS_ALERT_MS = 2 * 60_000
 export const DISPATCHABLE_ORDER_STATUSES = ['RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP']
 const ACTIVE_DELIVERY_STATUSES = ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER']
 
@@ -123,6 +124,50 @@ async function freeOnlineRiders(db, { restaurantId, businessOnly, excludeIds, no
   return free.map((rider, index) => ({ riderId: rider.id, userId: rider.userId, position: riderPosition(rider, pings[index], now.getTime()), onlineSince: rider.availabilityChangedAt }))
 }
 
+/** How many DOORSTEP riders are online and free right now — used to explain "Finding a rider…". */
+export async function riderPoolStatus(db) {
+  const base = { status: 'APPROVED', availability: 'ONLINE', network: 'DOORSTEP_POOL' }
+  const [online, free] = await Promise.all([
+    db.rider.count({ where: base }),
+    db.rider.count({ where: { ...base, deliveries: { none: { status: { in: ACTIVE_DELIVERY_STATUSES } } } } }),
+  ])
+  return { online, free }
+}
+
+/** Plain-language search state for a delivery that has no rider yet (business and customer screens). */
+export function riderSearchState(delivery, pool, now = new Date()) {
+  if (!delivery || delivery.riderId) return null
+  if (delivery.status === 'REQUESTED' && delivery.requestExpiresAt && new Date(delivery.requestExpiresAt) > now) return { state: 'OFFERED', offerEndsAt: delivery.requestExpiresAt, online: pool?.online ?? null, free: pool?.free ?? null }
+  if (pool && pool.online === 0) return { state: 'NO_RIDERS_ONLINE', online: 0, free: 0 }
+  if (pool && pool.free === 0) return { state: 'ALL_RIDERS_BUSY', online: pool.online, free: 0 }
+  return { state: 'SEARCHING', online: pool?.online ?? null, free: pool?.free ?? null }
+}
+
+/**
+ * Admin sends a job straight to one rider (e.g. someone they phoned). The rider still has to accept it in the app;
+ * the offer stays open longer than an automatic one. Only an online, approved, free rider can receive it.
+ */
+export async function offerToRider(db, deliveryId, riderId, { now = new Date(), seconds = 120, notifyUsers } = {}) {
+  const [delivery, rider] = await Promise.all([
+    db.delivery.findUnique({ where: { id: deliveryId }, include: { order: { select: { orderNumber: true, status: true, plannedRiderPayMinor: true, restaurant: { select: { name: true } } } } } }),
+    db.rider.findUnique({ where: { id: riderId }, select: { id: true, userId: true, status: true, availability: true, deliveries: { where: { status: { in: ACTIVE_DELIVERY_STATUSES } }, select: { id: true } } } }),
+  ])
+  if (!delivery?.order || delivery.riderId) return { offered: false, reason: 'NOT_DISPATCHABLE', message: 'This order already has a rider or is not a food delivery.' }
+  if (!DISPATCHABLE_ORDER_STATUSES.includes(delivery.order.status)) return { offered: false, reason: 'ORDER_NOT_READY_FOR_DISPATCH', message: 'The business has not accepted this order yet.' }
+  if (!rider) return { offered: false, reason: 'RIDER_NOT_FOUND', message: 'That rider was not found.' }
+  if (rider.status !== 'APPROVED') return { offered: false, reason: 'RIDER_NOT_APPROVED', message: 'That rider is not approved yet.' }
+  if (rider.availability !== 'ONLINE') return { offered: false, reason: 'RIDER_OFFLINE', message: 'That rider is offline. Ask them to open the rider app and go online.' }
+  if (rider.deliveries.length) return { offered: false, reason: 'RIDER_BUSY', message: 'That rider is on another delivery.' }
+  const expiresAt = new Date(now.getTime() + seconds * 1000)
+  const claimed = await db.delivery.updateMany({ where: { id: deliveryId, riderId: null, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'REQUESTED', requestedRiderId: riderId, requestExpiresAt: expiresAt, requestedAt: now } })
+  if (claimed.count !== 1) return { offered: false, reason: 'STATE_CHANGED', message: 'This order just changed. Refresh.' }
+  await db.dispatchOffer.updateMany({ where: { deliveryId, status: 'OFFERED' }, data: { status: 'EXPIRED', respondedAt: now } })
+  await db.dispatchOffer.create({ data: { deliveryId, riderId, status: 'OFFERED', distanceMeters: null, offeredAt: now, expiresAt } })
+  const pay = delivery.order.plannedRiderPayMinor
+  if (notifyUsers) await notifyUsers(db, [rider.userId], { type: 'DELIVERY', title: pay ? `DOORSTEP sent you a job · you earn ${naira(pay)}` : 'DOORSTEP sent you a job', body: `${delivery.order.restaurant.name} · ${delivery.order.orderNumber}. Open your rider dashboard and accept within ${Math.round(seconds / 60)} minutes.`, link: '/rider/dashboard' })
+  return { offered: true, riderId, expiresAt }
+}
+
 /**
  * Offers one food delivery to the best free rider. Safe to call repeatedly and from several places: every
  * write is conditional, so a delivery is never offered to two riders at once.
@@ -177,13 +222,17 @@ export async function sweepDispatch(db, { now = new Date(), notifyUsers, notifyA
     take: 50,
   })
   let offered = 0
+  // With no riders online at all, admins are told after 2 minutes instead of 10 so someone can call a rider.
+  const pool = waiting.length ? await riderPoolStatus(db) : null
+  const alertAfter = pool && pool.online === 0 ? NO_RIDERS_ALERT_MS : STUCK_AFTER_MS
   for (const delivery of waiting) {
     const result = await dispatchDelivery(db, delivery.id, { now, notifyUsers })
     if (result.offered) offered += 1
     const since = delivery.order.acceptedAt || delivery.order.paidAt
-    if (!result.offered && !delivery.stuckAlertedAt && since && now - new Date(since) > STUCK_AFTER_MS) {
+    if (!result.offered && !delivery.stuckAlertedAt && since && now - new Date(since) > alertAfter) {
       const marked = await db.delivery.updateMany({ where: { id: delivery.id, stuckAlertedAt: null }, data: { stuckAlertedAt: now } })
-      if (marked.count === 1 && notifyAdmins) await notifyAdmins(db, { type: 'DELIVERY', title: 'Order waiting for a rider', body: `${delivery.order.orderNumber} from ${delivery.order.restaurant.name} has had no rider for over ${Math.round(STUCK_AFTER_MS / 60_000)} minutes. Open Live deliveries to assign one.`, link: '/admin/deliveries' })
+      const why = pool && pool.online === 0 ? 'No riders are online right now.' : `It has had no rider for over ${Math.round(alertAfter / 60_000)} minutes.`
+      if (marked.count === 1 && notifyAdmins) await notifyAdmins(db, { type: 'DELIVERY', title: 'Order waiting for a rider', body: `${delivery.order.orderNumber} from ${delivery.order.restaurant.name}: ${why} Open Live deliveries to send it to a rider.`, link: '/admin/deliveries' })
     }
   }
   return { expired: expired.length, waiting: waiting.length, offered }

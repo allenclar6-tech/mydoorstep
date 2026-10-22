@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, BadgeCheck, Banknote, Check, Clock3, Copy, CreditCard, Inbox, Landmark, RefreshCw, Save, ShieldCheck, X } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, Banknote, Check, Clock3, Copy, CreditCard, FileText, Inbox, Landmark, RefreshCw, Save, ShieldCheck, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 
 // Admin › Payment methods: Paystack status, the DOORSTEP bank account customers transfer to (checked against the
@@ -33,6 +33,32 @@ function Toggle({ checked, onChange, label }) {
   return <label className="ps-toggle"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span aria-hidden="true" /><b>{label}</b></label>
 }
 
+/** The customer's uploaded transfer receipt, opened with the admin session (the file is private). */
+function ReceiptLinks({ payment }) {
+  const receipts = (payment.transactions || []).filter((row) => row.type === 'TRANSFER_RECEIPT_UPLOADED')
+  const [error, setError] = useState('')
+  if (!receipts.length) return null
+  const open = async (row) => {
+    setError('')
+    const tab = window.open('', '_blank')
+    try {
+      const response = await fetch(`${apiBase}/api/admin/bank-transfers/${payment.id}/receipt?id=${encodeURIComponent(row.id)}`, { headers: { Authorization: `Bearer ${token()}` } })
+      if (!response.ok) throw new Error('Could not open the receipt.')
+      const url = URL.createObjectURL(await response.blob())
+      if (tab) tab.location.href = url; else window.location.assign(url)
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (openError) { tab?.close(); setError(openError.message) }
+  }
+  return <div className="ps-receipts">
+    {receipts.map((row, index) => <button type="button" key={row.id} className="ps-receipt" onClick={() => open(row)}>
+      <FileText size={15} aria-hidden="true" />
+      <span><b>{index === 0 ? 'Customer receipt' : `Earlier receipt ${receipts.length - index}`}</b><small>{ago(row.createdAt)}{row.metadata?.senderName ? ` · from ${row.metadata.senderName}` : ''}{row.metadata?.senderBank ? ` (${row.metadata.senderBank})` : ''}</small></span>
+    </button>)}
+    {error && <p className="ps-error" role="alert">{error}</p>}
+    <p className="ps-hint">A receipt can be faked — confirm only when the money shows in the DOORSTEP bank account.</p>
+  </div>
+}
+
 function TransferRow({ payment, onDone }) {
   const [mode, setMode] = useState(null)
   const [form, setForm] = useState({ bankTransactionId: '', note: '', reason: 'NOT_RECEIVED' })
@@ -60,6 +86,7 @@ function TransferRow({ payment, onDone }) {
       {owner && <div><dt>Customer</dt><dd>{`${owner.firstName || ''} ${owner.lastName || ''}`.trim() || owner.email}{owner.phone ? <> · <a href={`tel:${owner.phone}`}>{owner.phone}</a></> : null}</dd></div>}
       <div><dt>Started</dt><dd>{ago(payment.createdAt)}{payment.expiresAt && pending ? ` · ${expired ? 'expired' : 'expires'} ${new Date(payment.expiresAt).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}` : ''}</dd></div>
     </dl>
+    <ReceiptLinks payment={payment} />
     {pending && !mode && <div className="ps-actions"><button type="button" className="ps-primary" onClick={() => setMode('confirm')}><Check size={16} />Money received</button><button type="button" className="ps-ghost" onClick={() => setMode('reject')}><X size={16} />Not received</button></div>}
     {mode && <form className="ps-form" onSubmit={submit}>
       {mode === 'confirm' ? <>

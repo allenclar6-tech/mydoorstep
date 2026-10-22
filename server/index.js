@@ -32,7 +32,7 @@ import { createVerificationRouter } from './verificationRoutes.js'
 import { createDeliveryPricingRouter } from './deliveryPricingRoutes.js'
 import { createLocationRouter } from './locationRoutes.js'
 import { resolveAccount } from './paystackPayouts.js'
-import { deliveryCodeFor, deliveryCodeSecret, DISPATCHABLE_ORDER_STATUSES, dispatchDelivery, estimateArrival, OFFER_SECONDS, point, riderPosition, sweepDispatch } from './dispatch.js'
+import { deliveryCodeFor, deliveryCodeSecret, DISPATCHABLE_ORDER_STATUSES, dispatchDelivery, estimateArrival, OFFER_SECONDS, offerToRider, point, riderPoolStatus, riderPosition, riderSearchState, sweepDispatch } from './dispatch.js'
 import { orderPricingSnapshot, quoteOrderDelivery } from './deliveryQuote.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -1266,10 +1266,72 @@ app.get('/api/payments/orders/:orderId/bank-transfer', requireUser, async (reque
     if (!order?.payment || order.payment.method !== 'BANK_TRANSFER') return response.status(404).json({ error: 'BANK_TRANSFER_NOT_FOUND' })
     if (order.payment.status === 'PENDING_VERIFICATION' && order.payment.expiresAt && order.payment.expiresAt <= new Date()) await prisma.payment.update({ where: { id: order.payment.id }, data: { status: 'EXPIRED' } })
     const payment = await prisma.payment.findUnique({ where: { id: order.payment.id } })
-    return response.json({ orderNumber: order.orderNumber, amountMinor: order.totalMinor, currency: 'NGN', reference: payment.reference, status: payment.status, expiresAt: payment.expiresAt, instructions: payment.instructionsSnapshot })
+    const receipt = await latestTransferReceipt(prisma, payment.id)
+    return response.json({ orderId: order.id, orderNumber: order.orderNumber, orderStatus: order.status, amountMinor: order.totalMinor, currency: 'NGN', reference: payment.reference, status: payment.status, expiresAt: payment.expiresAt, instructions: payment.instructionsSnapshot, receipt: receipt ? publicReceipt(receipt) : null })
   } catch {
     return response.status(503).json({ error: 'BANK_TRANSFER_SERVICE_UNAVAILABLE' })
   }
+})
+
+/* ---------------------------- bank transfer receipts ---------------------------- */
+// The customer can attach a screenshot or PDF of their transfer so DOORSTEP can match it faster. A receipt is only
+// supporting evidence: the order is still confirmed by an admin who sees the money in the DOORSTEP account.
+const RECEIPT_TYPE = 'TRANSFER_RECEIPT_UPLOADED'
+async function latestTransferReceipt(db, paymentId) {
+  return db.transaction.findFirst({ where: { paymentId, type: RECEIPT_TYPE }, orderBy: { createdAt: 'desc' } })
+}
+function publicReceipt(row) {
+  const meta = row.metadata || {}
+  return { uploadedAt: row.createdAt, senderName: meta.senderName || null, senderBank: meta.senderBank || null, sentAt: meta.sentAt || null, fileType: meta.mimeType === 'application/pdf' ? 'pdf' : 'image', fileName: meta.originalName || null }
+}
+const receiptUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } }).single('receipt')
+
+app.post('/api/payments/orders/:orderId/bank-transfer/receipt', requireUser, rateLimit({ windowMs: 10 * 60_000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false }), (request, response, next) => receiptUpload(request, response, (error) => {
+  if (error) return response.status(400).json({ error: 'RECEIPT_UPLOAD_FAILED', message: error.code === 'LIMIT_FILE_SIZE' ? 'The receipt must be 5 MB or smaller.' : 'Could not read that file. Try a screenshot (JPG or PNG) or a PDF.' })
+  return next()
+}), async (request, response) => {
+  const fields = z.object({ senderName: z.string().trim().max(120).optional().default(''), senderBank: z.string().trim().max(80).optional().default(''), sentAt: z.string().trim().max(40).optional().default('') }).safeParse(request.body || {})
+  if (!fields.success) return response.status(400).json({ error: 'INVALID_RECEIPT_DETAILS', message: 'Check the sender details and try again.' })
+  if (!request.file) return response.status(400).json({ error: 'RECEIPT_REQUIRED', message: 'Choose a screenshot or PDF of your transfer receipt.' })
+  try {
+    const order = await prisma.order.findFirst({ where: { id: request.params.orderId, customerId: request.user.id }, include: { payment: true } })
+    if (!order?.payment || order.payment.method !== 'BANK_TRANSFER') return response.status(404).json({ error: 'BANK_TRANSFER_NOT_FOUND', message: 'This order isn’t paid by bank transfer.' })
+    if (order.payment.status !== 'PENDING_VERIFICATION') return response.status(409).json({ error: 'TRANSFER_NOT_WAITING', message: order.payment.status === 'SUCCESSFUL' ? 'This payment is already confirmed — no receipt needed.' : 'This transfer is closed, so a receipt can’t be added. Contact DOORSTEP Help.' })
+    const count = await prisma.transaction.count({ where: { paymentId: order.payment.id, type: RECEIPT_TYPE } })
+    if (count >= 5) return response.status(409).json({ error: 'TOO_MANY_RECEIPTS', message: 'You’ve already sent 5 receipts for this order. DOORSTEP will check them shortly.' })
+    const stored = await storePrivateDocument({ buffer: request.file.buffer, mimeType: request.file.mimetype, originalName: request.file.originalname, keyPrefix: `private/receipts/${order.payment.id}/` })
+    const sentAt = fields.data.sentAt && !Number.isNaN(Date.parse(fields.data.sentAt)) ? new Date(fields.data.sentAt).toISOString() : null
+    const row = await prisma.transaction.create({ data: { paymentId: order.payment.id, type: RECEIPT_TYPE, amountMinor: order.payment.amountMinor, providerReference: order.payment.reference, metadata: { storageKey: stored.storageKey, mimeType: stored.mimeType, size: stored.size, checksum: stored.checksum, originalName: stored.originalName, senderName: fields.data.senderName || null, senderBank: fields.data.senderBank || null, sentAt, uploadedBy: request.user.id } } })
+    await notifyAdmins(prisma, { type: 'PAYMENT', title: 'Transfer receipt to check', body: `${order.orderNumber}: the customer uploaded a receipt for ₦${(order.payment.amountMinor / 100).toLocaleString('en-NG')}${fields.data.senderName ? ` from ${fields.data.senderName}` : ''}. Check the bank account and confirm.`, link: '/admin/payments' })
+    return response.status(201).json({ receipt: publicReceipt(row) })
+  } catch (error) {
+    if (error?.status && error?.code) return response.status(error.status).json({ error: error.code, message: error.code === 'UNSUPPORTED_DOCUMENT_TYPE' ? 'Upload a JPG or PNG screenshot, or a PDF.' : error.message })
+    return response.status(503).json({ error: 'RECEIPT_SERVICE_UNAVAILABLE', message: 'Could not save the receipt. Try again.' })
+  }
+})
+
+async function sendReceipt(response, row) {
+  if (!row?.metadata?.storageKey) return response.status(404).json({ error: 'RECEIPT_NOT_FOUND' })
+  const file = await readPrivateDocument(row.metadata.storageKey)
+  response.set('Content-Type', file.mimeType)
+  response.set('Cache-Control', 'private, no-store')
+  response.set('Content-Disposition', `inline; filename="receipt${file.mimeType === 'application/pdf' ? '.pdf' : file.mimeType === 'image/png' ? '.png' : '.jpg'}"`)
+  return response.send(file.buffer)
+}
+app.get('/api/payments/orders/:orderId/bank-transfer/receipt', requireUser, async (request, response) => {
+  try {
+    const order = await prisma.order.findFirst({ where: { id: request.params.orderId, customerId: request.user.id }, select: { payment: { select: { id: true } } } })
+    if (!order?.payment) return response.status(404).json({ error: 'RECEIPT_NOT_FOUND' })
+    return await sendReceipt(response, await latestTransferReceipt(prisma, order.payment.id))
+  } catch (error) { return response.status(error?.status || 503).json({ error: error?.code || 'RECEIPT_SERVICE_UNAVAILABLE' }) }
+})
+app.get('/api/admin/bank-transfers/:paymentId/receipt', requireUser, requireAdmin, async (request, response) => {
+  try {
+    const row = request.query.id
+      ? await prisma.transaction.findFirst({ where: { id: String(request.query.id), paymentId: request.params.paymentId, type: RECEIPT_TYPE } })
+      : await latestTransferReceipt(prisma, request.params.paymentId)
+    return await sendReceipt(response, row)
+  } catch (error) { return response.status(error?.status || 503).json({ error: error?.code || 'RECEIPT_SERVICE_UNAVAILABLE' }) }
 })
 
 app.get('/api/admin/bank-transfers', requireUser, requireAdmin, async (request, response) => {
@@ -1565,7 +1627,11 @@ app.get('/api/restaurant/orders', requireUser, async (request, response) => {
     const orders = await prisma.order.findMany({ where: { restaurantId: membership.restaurantId }, include: { items: true, customer: { select: { firstName: true, lastName: true, phone: true } }, delivery: { select: { id: true, status: true, riderId: true, requestExpiresAt: true, rider: { select: { vehicleType: true, user: { select: { firstName: true, phone: true } } } } } }, payment: { select: { status: true } } }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
     const hasNextPage = orders.length > result.data.limit
     if (hasNextPage) orders.pop()
-    return response.json({ orders, nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
+    // Orders still waiting for a rider say why: offered to someone, nobody online, or everyone busy.
+    const searching = orders.filter((order) => order.delivery && !order.delivery.riderId && DISPATCHABLE_ORDER_STATUSES.includes(order.status))
+    const pool = searching.length ? await riderPoolStatus(prisma) : null
+    const withSearch = orders.map((order) => searching.includes(order) ? { ...order, riderSearch: riderSearchState(order.delivery, pool) } : order)
+    return response.json({ orders: withSearch, nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
   } catch { return response.status(503).json({ error: 'RESTAURANT_ORDER_SERVICE_UNAVAILABLE' }) }
 })
 
@@ -1726,7 +1792,10 @@ app.get('/api/admin/dispatch', requireUser, requireAdmin, async (_request, respo
       prisma.rider.count({ where: { status: 'APPROVED', availability: 'ONLINE' } }),
       prisma.rider.count({ where: { status: 'APPROVED', availability: 'ONLINE', deliveries: { none: { status: { in: ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } } } } }),
     ])
-    return response.json({ onlineRiders, freeRiders, waiting: waiting.map((delivery) => ({
+    // Riders an admin can send a job to, plus approved riders who are offline (to call them).
+    const riderRows = await prisma.rider.findMany({ where: { status: 'APPROVED' }, select: { id: true, availability: true, network: true, restaurantId: true, availabilityChangedAt: true, user: { select: { firstName: true, lastName: true, phone: true } }, deliveries: { where: { status: { in: ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } }, select: { id: true } } }, orderBy: [{ availability: 'asc' }, { availabilityChangedAt: 'desc' }], take: 100 })
+    const riders = riderRows.map((rider) => ({ id: rider.id, name: `${rider.user.firstName || ''} ${rider.user.lastName || ''}`.trim() || 'Rider', phone: rider.user.phone || null, online: rider.availability === 'ONLINE', busy: rider.deliveries.length > 0, network: rider.network, since: rider.availabilityChangedAt }))
+    return response.json({ onlineRiders, freeRiders, riders, waiting: waiting.map((delivery) => ({
       deliveryId: delivery.id,
       orderId: delivery.order.id,
       orderNumber: delivery.order.orderNumber,
@@ -1740,6 +1809,18 @@ app.get('/api/admin/dispatch', requireUser, requireAdmin, async (_request, respo
       expired: delivery.offers.filter((offer) => offer.status === 'EXPIRED').length,
     })) })
   } catch { return response.status(503).json({ error: 'DISPATCH_UNAVAILABLE' }) }
+})
+
+// Admin sends a waiting job to one specific online rider; the rider accepts it from their dashboard.
+app.post('/api/admin/deliveries/:deliveryId/offer', requireUser, requireAdmin, async (request, response) => {
+  const body = z.object({ riderId: z.string().min(1).max(60) }).safeParse(request.body || {})
+  if (!body.success) return response.status(400).json({ error: 'RIDER_REQUIRED', message: 'Choose a rider.' })
+  try {
+    const result = await offerToRider(prisma, request.params.deliveryId, body.data.riderId, { notifyUsers })
+    if (!result.offered) return response.status(409).json({ error: result.reason, message: result.message })
+    await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'DELIVERY_OFFERED_BY_ADMIN', entityType: 'Delivery', entityId: request.params.deliveryId, metadata: { riderId: body.data.riderId } } })
+    return response.json(result)
+  } catch { return response.status(503).json({ error: 'DISPATCH_UNAVAILABLE', message: 'Could not send the job. Try again.' }) }
 })
 
 app.post('/api/admin/deliveries/:deliveryId/dispatch', requireUser, requireAdmin, async (request, response) => {
@@ -1833,6 +1914,7 @@ app.get('/api/orders/:orderId/tracking', requireUser, async (request, response) 
       orderDetails.live = {
         eta: estimateArrival({ orderStatus: order.status, deliveryStatus, acceptedAt: order.acceptedAt, prepMinutes: order.restaurant.prepTimeMinutes, riderPoint, storePoint: point(order.restaurant), customerPoint: point(order) }),
         findingRider: Boolean(order.delivery && !order.delivery.riderId && DISPATCHABLE_ORDER_STATUSES.includes(order.status)),
+        riderSearch: order.delivery && !order.delivery.riderId && DISPATCHABLE_ORDER_STATUSES.includes(order.status) ? (({ state }) => ({ state }))(riderSearchState(order.delivery, await riderPoolStatus(prisma))) : null,
         deliveryCode: activeDelivery ? deliveryCodeFor(order.delivery.id, await deliveryCodeSecret(prisma)) : null,
         acceptedAt: order.acceptedAt,
         readyAt: order.preparedAt,

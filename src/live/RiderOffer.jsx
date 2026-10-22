@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bike, Clock3, MapPin, Package, Store, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { formatNaira } from '../data'
+import { repeatAlert } from '../notifications/sound'
 
 const authHeaders = () => { let token = null; try { token = localStorage.getItem('doorstep-token') } catch { token = null } return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
 
@@ -23,10 +24,7 @@ export function RiderOfferCard({ online, busy, onAccepted }) {
       const body = await response.json().catch(() => ({}))
       if (!response.ok) return
       setOffer(body.offer || null)
-      if (body.offer && !seen.current.has(body.offer.deliveryId)) {
-        seen.current.add(body.offer.deliveryId)
-        try { navigator.vibrate?.([250, 120, 250]) } catch { /* not supported */ }
-      }
+      if (body.offer && !seen.current.has(body.offer.deliveryId)) seen.current.add(body.offer.deliveryId)
     } catch { /* offline: try again on the next tick */ }
   }, [online, busy])
 
@@ -37,6 +35,14 @@ export function RiderOfferCard({ online, busy, onAccepted }) {
     document.addEventListener('visibilitychange', load)
     return () => { window.clearInterval(poll); document.removeEventListener('visibilitychange', load) }
   }, [online, busy, load])
+
+  // A new job rings loudly and vibrates hard every few seconds until the rider accepts, passes, or it expires.
+  const ringingFor = offer?.deliveryId
+  useEffect(() => {
+    if (!ringingFor) return undefined
+    const stop = repeatAlert('job', 3500, 13)
+    return stop
+  }, [ringingFor])
 
   useEffect(() => {
     if (!offer) return undefined
