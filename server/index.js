@@ -1625,7 +1625,7 @@ app.get('/api/restaurant/orders', requireUser, async (request, response) => {
   try {
     const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
     if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
-    const orders = await prisma.order.findMany({ where: { restaurantId: membership.restaurantId }, include: { items: true, customer: { select: { firstName: true, lastName: true, phone: true } }, delivery: { select: { id: true, status: true, riderId: true, requestExpiresAt: true, rider: { select: { vehicleType: true, user: { select: { firstName: true, phone: true } } } } } }, payment: { select: { status: true } } }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
+    const orders = await prisma.order.findMany({ where: { restaurantId: membership.restaurantId, restaurantHiddenAt: null }, include: { items: true, customer: { select: { firstName: true, lastName: true, phone: true } }, delivery: { select: { id: true, status: true, riderId: true, requestExpiresAt: true, rider: { select: { vehicleType: true, user: { select: { firstName: true, phone: true } } } } } }, payment: { select: { status: true } } }, orderBy: { createdAt: 'desc' }, take: result.data.limit + 1, ...(result.data.cursor ? { cursor: { id: result.data.cursor }, skip: 1 } : {}) })
     const hasNextPage = orders.length > result.data.limit
     if (hasNextPage) orders.pop()
     // Orders still waiting for a rider say why: offered to someone, nobody online, or everyone busy.
@@ -1634,6 +1634,29 @@ app.get('/api/restaurant/orders', requireUser, async (request, response) => {
     const withSearch = orders.map((order) => searching.includes(order) ? { ...order, riderSearch: riderSearchState(order.delivery, pool) } : order)
     return response.json({ orders: withSearch, nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
   } catch { return response.status(503).json({ error: 'RESTAURANT_ORDER_SERVICE_UNAVAILABLE' }) }
+})
+
+// "Clear" finished orders from the business's live board. They are only hidden here — the order, payment and
+// payout records stay, and Money/reports still count them.
+const FINISHED_ORDER_STATUSES = ['DELIVERED', 'CANCELLED', 'REJECTED', 'REFUNDED']
+app.post('/api/restaurant/orders/:orderId/hide', requireUser, async (request, response) => {
+  if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
+  try {
+    const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
+    if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
+    const { count } = await prisma.order.updateMany({ where: { id: request.params.orderId, restaurantId: membership.restaurantId, status: { in: FINISHED_ORDER_STATUSES }, restaurantHiddenAt: null }, data: { restaurantHiddenAt: new Date() } })
+    if (!count) return response.status(409).json({ error: 'ORDER_NOT_FINISHED', message: 'Only delivered, cancelled or declined orders can be cleared.' })
+    return response.json({ hidden: count })
+  } catch { return response.status(503).json({ error: 'RESTAURANT_ORDER_SERVICE_UNAVAILABLE', message: 'Could not clear it. Try again.' }) }
+})
+app.post('/api/restaurant/orders/clear-done', requireUser, async (request, response) => {
+  if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
+  try {
+    const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
+    if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
+    const { count } = await prisma.order.updateMany({ where: { restaurantId: membership.restaurantId, status: { in: FINISHED_ORDER_STATUSES }, restaurantHiddenAt: null }, data: { restaurantHiddenAt: new Date() } })
+    return response.json({ hidden: count })
+  } catch { return response.status(503).json({ error: 'RESTAURANT_ORDER_SERVICE_UNAVAILABLE', message: 'Could not clear the list. Try again.' }) }
 })
 
 app.get('/api/restaurant/profile', requireUser, async (request, response) => {

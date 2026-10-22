@@ -13,7 +13,18 @@ const TABS = [
   ['done', 'Done', (order) => ['DELIVERED', 'CANCELLED', 'REJECTED', 'REFUNDED'].includes(order.status)],
 ]
 const DECLINE_REASONS = ['An item is sold out', 'We’re closing soon', 'Too busy right now', 'Can’t make this order']
-const minutesSince = (value) => value ? Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60_000)) : null
+const FINISHED = ['DELIVERED', 'CANCELLED', 'REJECTED', 'REFUNDED']
+const FINISHED_LABEL = { DELIVERED: 'Delivered', CANCELLED: 'Cancelled', REJECTED: 'Declined', REFUNDED: 'Refunded' }
+// "75 min ago", "3 h ago", "2 days ago", or the date for anything older than a week.
+const agoText = (value) => {
+  if (!value) return ''
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60_000))
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  if (minutes < 24 * 60) return `${Math.round(minutes / 60)} h ago`
+  if (minutes < 7 * 24 * 60) { const days = Math.round(minutes / 1440); return `${days} day${days === 1 ? '' : 's'} ago` }
+  return new Date(value).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+}
 
 function riderLine(order) {
   const delivery = order.delivery
@@ -41,7 +52,8 @@ function OrderCard({ order, onChanged }) {
   const customer = `${order.customer?.firstName || 'Customer'} ${order.customer?.lastName || ''}`.trim()
   const items = order.items || []
   const rider = riderLine(order)
-  const age = minutesSince(order.paidAt || order.createdAt)
+  const finished = FINISHED.includes(order.status)
+  const when = agoText(finished ? (order.deliveredAt || order.cancelledAt || order.updatedAt || order.paidAt || order.createdAt) : (order.paidAt || order.createdAt))
   const act = async (label, path, body) => {
     setBusy(label); setError('')
     try {
@@ -54,11 +66,15 @@ function OrderCard({ order, onChanged }) {
   const status = (next) => act(next, `/api/orders/${order.id}/status`, { status: next })
   return <article className={`rb-card is-${order.status.toLowerCase()}`}>
     <header>
-      <div><b>{order.orderNumber}</b><small>{customer}{age != null ? ` · ${age} min ago` : ''}</small></div>
+      <div><b>{order.orderNumber}</b><small>{customer}{when ? ` · ${when}` : ''}</small></div>
       <strong>{formatNaira((order.subtotalMinor ?? order.totalMinor ?? 0) / 100)}</strong>
     </header>
     <ul className="rb-items">{items.map((item) => <li key={item.id}><b>{item.quantity}×</b> {item.nameSnapshot}{item.instructions && <em> — {item.instructions}</em>}</li>)}</ul>
     {order.landmarkSnapshot && <p className="rb-note">Landmark: {order.landmarkSnapshot}</p>}
+    {finished && <div className="rb-done-row">
+      <span className={`rb-done-status is-${order.status.toLowerCase()}`}>{FINISHED_LABEL[order.status]}</span>
+      <button type="button" className="rb-clear" disabled={Boolean(busy)} onClick={() => act('hide', `/api/restaurant/orders/${order.id}/hide`, {})}><X size={14} aria-hidden="true" />{busy === 'hide' ? 'Clearing…' : 'Clear'}</button>
+    </div>}
     {rider && <p className={`rb-rider is-${rider.tone}`}><Bike size={15} aria-hidden="true" />{rider.text}{rider.phone && <a href={`tel:${rider.phone}`} aria-label="Call rider"><Phone size={14} /></a>}</p>}
     {error && <p className="rb-error" role="alert">{error}</p>}
     {order.status === 'PAID' && !declining && <div className="rb-actions">
@@ -108,6 +124,17 @@ export function RestaurantOrderBoard() {
     const timer = window.setInterval(() => playAlert('order'), 30_000)
     return () => window.clearInterval(timer)
   }, [waitingCount])
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const clearDone = async () => {
+    setClearing(true)
+    try {
+      const response = await fetch(`${apiBase}/api/restaurant/orders/clear-done`, { method: 'POST', headers: authHeaders(), body: '{}' })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.message || 'Could not clear the list. Try again.')
+      setConfirmClear(false); load()
+    } catch (clearError) { setError(clearError instanceof TypeError ? 'No connection. Nothing was cleared.' : clearError.message) } finally { setClearing(false) }
+  }
   const counts = Object.fromEntries(TABS.map(([key, , match]) => [key, (orders || []).filter(match).length]))
   const shown = (orders || []).filter(TABS.find(([key]) => key === tab)[2])
   return <section className="rb">
@@ -115,6 +142,12 @@ export function RestaurantOrderBoard() {
     <nav className="rb-tabs" aria-label="Order stages">{TABS.map(([key, label]) => <button type="button" key={key} className={tab === key ? 'is-on' : ''} onClick={() => setTab(key)}>{label}{counts[key] > 0 && <b>{counts[key]}</b>}</button>)}</nav>
     {error && <p className="rb-error" role="alert">{error}</p>}
     {!orders && !error && <p className="rb-empty">Loading orders…</p>}
+    {tab === 'done' && counts.done > 0 && <div className="rb-clear-all">
+      <p>Clearing only tidies this board. The orders stay in your Money page and records.</p>
+      {confirmClear
+        ? <span><button type="button" className="rb-danger" disabled={clearing} onClick={clearDone}>{clearing ? 'Clearing…' : `Yes, clear ${counts.done}`}</button><button type="button" className="rb-link" onClick={() => setConfirmClear(false)}>Keep them</button></span>
+        : <button type="button" className="rb-ghost" onClick={() => setConfirmClear(true)}><X size={15} aria-hidden="true" />Clear all done</button>}
+    </div>}
     {orders && shown.length === 0 && <p className="rb-empty">{tab === 'new' ? 'No new orders right now. This page refreshes by itself.' : 'Nothing here.'}</p>}
     <div className="rb-list">{shown.map((order) => <OrderCard key={order.id} order={order} onChanged={load} />)}</div>
   </section>

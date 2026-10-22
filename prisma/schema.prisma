@@ -537,6 +537,7 @@ model Order {
   deliveryQuote      Json?
   splitSubaccountCode String?
   customerHiddenAt   DateTime?
+  restaurantHiddenAt DateTime?
   addressSnapshot    String
   landmarkSnapshot   String?
   latitude           Decimal?          @db.Decimal(10, 7)

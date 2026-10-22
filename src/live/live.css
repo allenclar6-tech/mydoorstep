@@ -159,3 +159,16 @@ html body .ro-card h2 { color: #fff; font-size: 1.35rem; letter-spacing: -.01em;
 .as-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .as-btn { align-items: center; background: #fff; border: 1.5px solid var(--t-line-strong, #cfd9d2); border-radius: 999px; color: var(--t-ink, #14231d); cursor: pointer; display: inline-flex; font: inherit; font-size: .8rem; font-weight: 800; gap: 5px; min-height: 38px; padding: 0 14px; }
 .as-btn.is-main { background: var(--t-forest-800, #123d2d); border-color: var(--t-forest-800, #123d2d); color: #fff; }
+
+/* Business board: clearing finished orders */
+.rb-done-row { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
+.rb-done-status { border-radius: 999px; font-size: .76rem; font-weight: 800; padding: 4px 10px; }
+.rb-done-status.is-delivered { background: #e7f5ef; color: #0b5a45; }
+.rb-done-status.is-cancelled, .rb-done-status.is-rejected, .rb-done-status.is-refunded { background: #f1f4f1; color: var(--t-ink-soft, #3d4f47); }
+.rb-clear { align-items: center; background: #fff; border: 1.5px solid var(--t-line-strong, #cfd9d2); border-radius: 999px; color: var(--t-ink, #14231d); cursor: pointer; display: inline-flex; font: inherit; font-size: .8rem; font-weight: 800; gap: 5px; min-height: 36px; padding: 0 14px; }
+.rb-clear:disabled { opacity: .55; }
+.rb-clear-all { align-items: center; background: #fff; border: 1px solid var(--t-line, #e3e8e2); border-radius: 16px; display: flex; flex-wrap: wrap; gap: 10px 14px; justify-content: space-between; margin-bottom: 12px; padding: 12px 14px; }
+.rb-clear-all p { color: var(--t-muted, #5b6b63); flex: 1 1 220px; font-size: .82rem; line-height: 1.45; margin: 0; }
+.rb-clear-all > span { align-items: center; display: flex; gap: 12px; }
+.rb-danger { background: #b3261e; border: 0; border-radius: 12px; color: #fff; cursor: pointer; font: inherit; font-size: .88rem; font-weight: 800; min-height: 44px; padding: 0 16px; }
+.rb-danger:disabled { opacity: .6; }
