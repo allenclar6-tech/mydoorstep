@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { naira } from './financeService.js'
 import { notifyAdmins, notifyUsers, restaurantTeamIds } from './notify.js'
 import { sendTransfer, transferCertainlyNotSent } from './paystackPayouts.js'
-import { applyTransferResult, availableBalance, transfersEnabled } from './payoutEngine.js'
+import { applyTransferResult, availableBalance, entryAvailable, ownerOf, transfersEnabled } from './payoutEngine.js'
 import { getPayoutSettings, ruleFor, startOfLagosDay, withdrawalFee } from './payoutSettings.js'
 
 // Withdrawals that always work. A business or rider taps "Withdraw" on Earnings:
@@ -28,6 +28,27 @@ export async function payeeUserIds(db, payout) {
   return restaurantTeamIds(db, payout.restaurantId)
 }
 
+/**
+ * When money that is still on hold becomes withdrawable: order money needs the order delivered, then the safety
+ * window (hours after it was earned). Returns the soonest release and how much is waiting for delivery.
+ */
+export async function holdSchedule(db, { party, restaurantId, riderId }, holdHours, now = new Date()) {
+  const due = await db.ledgerEntry.findMany({ where: { party, ...ownerOf({ restaurantId, riderId }), status: 'DUE' }, select: { id: true, type: true, amountMinor: true, orderId: true, parcelBookingId: true, createdAt: true } })
+  const orderIds = [...new Set(due.map((entry) => entry.orderId).filter(Boolean))]
+  const orders = orderIds.length ? await db.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, status: true } }) : []
+  const statusOf = new Map(orders.map((order) => [order.id, order.status]))
+  const releases = new Map()
+  let awaitingDeliveryMinor = 0
+  for (const entry of due) {
+    if (entryAvailable(entry, statusOf.get(entry.orderId), holdHours, now) || entry.amountMinor <= 0) continue
+    if (entry.orderId && statusOf.get(entry.orderId) !== 'DELIVERED') { awaitingDeliveryMinor += entry.amountMinor; continue }
+    const at = new Date(new Date(entry.createdAt).getTime() + holdHours * 3_600_000).toISOString()
+    releases.set(at, (releases.get(at) || 0) + entry.amountMinor)
+  }
+  const upcoming = [...releases.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([at, amountMinor]) => ({ at, amountMinor }))
+  return { upcoming: upcoming.slice(0, 5), awaitingDeliveryMinor }
+}
+
 /** What the partner can do right now: instant cash-out, a request, or nothing — and why. */
 export async function withdrawalOptions(prisma, { kind, owner }, now = new Date()) {
   const [settings, account, open, today] = await Promise.all([
@@ -37,7 +58,8 @@ export async function withdrawalOptions(prisma, { kind, owner }, now = new Date(
     prisma.payout.count({ where: { ...owner, source: 'WITHDRAWAL', status: { not: 'FAILED' }, createdAt: { gte: startOfLagosDay(now) } } }),
   ])
   const w = settings.withdrawals
-  const balance = await availableBalance(prisma, { party: kind, ...owner }, ruleFor(settings, kind).holdHours, now)
+  const holdHours = ruleFor(settings, kind).holdHours
+  const [balance, schedule] = await Promise.all([availableBalance(prisma, { party: kind, ...owner }, holdHours, now), holdSchedule(prisma, { party: kind, ...owner }, holdHours, now)])
   const available = Math.max(0, balance.availableMinor)
   const feeMinor = available > 0 ? withdrawalFee(available, w) : 0
   const accountReady = Boolean(account && account.status === 'ACTIVE' && account.paystackRecipientCode)
@@ -55,6 +77,10 @@ export async function withdrawalOptions(prisma, { kind, owner }, now = new Date(
     blocked,
     availableMinor: available,
     heldMinor: Math.max(0, balance.heldMinor),
+    holdHours,
+    releases: schedule.upcoming,
+    awaitingDeliveryMinor: schedule.awaitingDeliveryMinor,
+    maxMinor: available,
     feeMinor,
     netMinor: Math.max(0, available - feeMinor),
     minimumMinor: w.minimumMinor,
@@ -66,9 +92,20 @@ export async function withdrawalOptions(prisma, { kind, owner }, now = new Date(
   }
 }
 
-/** Reserves every cleared line for this partner and records the request. Throws a coded error when not allowed. */
-export async function createWithdrawalRequest(prisma, who, { actorId, now = new Date() } = {}) {
+/**
+ * Withdraws `amountMinor` (default: everything ready) from the partner's cleared balance. All cleared lines are
+ * reserved for the payout; when only part is withdrawn, the rest is carried forward as a new cleared line, so the
+ * balance always adds up and the same naira can never be withdrawn twice. The fee comes out of the amount.
+ */
+export async function createWithdrawalRequest(prisma, who, { actorId, amountMinor: requested = null, now = new Date() } = {}) {
   const options = await withdrawalOptions(prisma, who, now)
+  const settingsNow = await getPayoutSettings(prisma)
+  if (requested != null) {
+    if (!Number.isSafeInteger(requested) || requested <= 0) throw Object.assign(new Error('Enter how much you want to withdraw.'), { code: 'AMOUNT_INVALID', status: 400 })
+    if (requested < options.minimumMinor && !options.blocked) throw Object.assign(new Error(`The minimum withdrawal is ${naira(options.minimumMinor)}.`), { code: 'BELOW_MINIMUM', status: 409 })
+    if (requested > options.availableMinor && !options.blocked) throw Object.assign(new Error(`You can withdraw up to ${naira(options.availableMinor)} right now.`), { code: 'ABOVE_AVAILABLE', status: 409 })
+    if (requested - withdrawalFee(requested, settingsNow.withdrawals) < 100 && !options.blocked) throw Object.assign(new Error('That amount is too small to cover the withdrawal fee.'), { code: 'FEE_TOO_HIGH', status: 409 })
+  }
   const messages = {
     NO_ACCOUNT: 'Add your bank account first (Earnings → Add bank account).',
     OPEN_REQUEST: 'You already have a withdrawal on its way. You can request another once it’s done.',
@@ -81,18 +118,25 @@ export async function createWithdrawalRequest(prisma, who, { actorId, now = new 
   const reference = `dsp_wd_${randomUUID().replaceAll('-', '').slice(0, 24)}`
   const payout = await prisma.$transaction(async (transaction) => {
     const due = await transaction.ledgerEntry.findMany({ where: { ...who.owner, party: who.kind, status: 'DUE', id: { in: options.entryIds } }, select: { id: true, amountMinor: true } })
-    const gross = due.reduce((sum, entry) => sum + entry.amountMinor, 0)
-    const feeMinor = withdrawalFee(gross, (await getPayoutSettings(transaction)).withdrawals)
+    const cleared = due.reduce((sum, entry) => sum + entry.amountMinor, 0)
+    const gross = requested == null ? cleared : Math.min(requested, cleared)
+    const carryMinor = cleared - gross
+    const feeMinor = withdrawalFee(gross, settingsNow.withdrawals)
     const amountMinor = gross - feeMinor
     if (amountMinor < 100) throw Object.assign(new Error('Nothing is ready to withdraw right now.'), { code: 'NOTHING_TO_WITHDRAW', status: 409 })
     const created = await transaction.payout.create({ data: { party: who.kind, ...who.owner, amountMinor, feeMinor, method: 'MANUAL', source: 'WITHDRAWAL', status: REQUESTED, reference, bankSnapshot: { bankName: account.bankName, accountName: account.accountName, last4: account.accountLast4 }, createdById: actorId } })
     const reserved = await transaction.ledgerEntry.updateMany({ where: { id: { in: due.map((entry) => entry.id) }, status: 'DUE' }, data: { status: 'PAYING', payoutId: created.id } })
     if (reserved.count !== due.length) throw Object.assign(new Error('Your balance just changed. Try again.'), { code: 'BALANCE_CHANGED', status: 409 })
+    // Part withdrawal: what isn't withdrawn stays in the balance as a cleared line of its own.
+    if (carryMinor > 0) await transaction.ledgerEntry.createMany({ data: [
+      { party: who.kind, ...who.owner, type: 'BALANCE_CARRIED', amountMinor: -carryMinor, status: 'PAYING', payoutId: created.id, description: `Kept in your balance (${naira(carryMinor)})`, dedupeKey: `CARRY_OUT:${created.id}` },
+      { party: who.kind, ...who.owner, type: 'BALANCE_CARRIED', amountMinor: carryMinor, status: 'DUE', description: `Balance kept after withdrawing ${naira(gross)}`, dedupeKey: `CARRY:${created.id}` },
+    ] })
     if (feeMinor > 0) await transaction.ledgerEntry.createMany({ data: [
       { party: who.kind, ...who.owner, type: 'WITHDRAWAL_FEE', amountMinor: -feeMinor, status: 'PAYING', payoutId: created.id, description: `Withdrawal fee (${naira(feeMinor)})`, dedupeKey: `WITHDRAWAL_FEE:${created.id}` },
       { party: 'PLATFORM', type: 'WITHDRAWAL_FEE', amountMinor: feeMinor, status: 'PAYING', payoutId: created.id, description: `Withdrawal fee on ${reference.slice(-8)}`, dedupeKey: `WITHDRAWAL_FEE_INCOME:${created.id}` },
     ] })
-    await transaction.auditLog.create({ data: { actorId, action: 'WITHDRAWAL_REQUESTED', entityType: 'Payout', entityId: created.id, metadata: { party: who.kind, ...who.owner, amountMinor, feeMinor, lines: due.length } } })
+    await transaction.auditLog.create({ data: { actorId, action: 'WITHDRAWAL_REQUESTED', entityType: 'Payout', entityId: created.id, metadata: { party: who.kind, ...who.owner, amountMinor, feeMinor, grossMinor: gross, keptMinor: carryMinor, lines: due.length } } })
     return created
   })
   await notifyAdmins(prisma, { type: 'PAYMENT', title: `Withdrawal request: ${naira(payout.amountMinor)}`, body: `${who.name} wants ${naira(payout.amountMinor)} sent to ${account.bankName} ••••${account.accountLast4}. Approve it in Admin → Money.`, link: '/admin/finance' })
@@ -105,6 +149,10 @@ export async function releaseRequest(prisma, payoutId, { reason, actorId, action
     const changed = await transaction.payout.updateMany({ where: { id: payoutId, status: REQUESTED }, data: { status: 'FAILED', completedAt: new Date(), failureReason: reason } })
     if (changed.count !== 1) return null
     await transaction.ledgerEntry.updateMany({ where: { payoutId, type: 'WITHDRAWAL_FEE', status: 'PAYING' }, data: { status: 'VOID' } })
+    // A part withdrawal left the rest as a carried line. If that line hasn't been withdrawn since, cancel the pair
+    // (the original lines come back instead); otherwise the negative half returns, so the total stays right.
+    const carried = await transaction.ledgerEntry.updateMany({ where: { dedupeKey: `CARRY:${payoutId}`, status: 'DUE' }, data: { status: 'VOID' } })
+    if (carried.count === 1) await transaction.ledgerEntry.updateMany({ where: { dedupeKey: `CARRY_OUT:${payoutId}` }, data: { status: 'VOID', payoutId: null } })
     await transaction.ledgerEntry.updateMany({ where: { payoutId, status: 'PAYING' }, data: { status: 'DUE', payoutId: null } })
     await transaction.auditLog.create({ data: { actorId, action, entityType: 'Payout', entityId: payoutId, metadata: { reason } } })
     return transaction.payout.findUnique({ where: { id: payoutId } })

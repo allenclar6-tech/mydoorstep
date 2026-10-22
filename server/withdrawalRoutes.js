@@ -42,10 +42,12 @@ export function createWithdrawalRouter({ prisma, requireUser, requireAdmin, fetc
   router.post('/finance/withdrawal-requests', requireUser, limiter, async (request, response) => {
     try {
       const who = await payeeOf(prisma, request.user)
+      const body = z.object({ amountMinor: z.number().int().positive().max(1_000_000_000).optional() }).parse(request.body || {})
       const options = await withdrawalOptions(prisma, who)
-      if (options.mode === 'INSTANT') return response.status(409).json({ error: 'USE_INSTANT_CASH_OUT', message: 'Instant cash-out is available — use “Withdraw now”.' })
-      const payout = await createWithdrawalRequest(prisma, who, { actorId: request.user.id })
-      return response.status(201).json({ request: { id: payout.id, amountMinor: payout.amountMinor, feeMinor: payout.feeMinor, status: payout.status } })
+      const created = await createWithdrawalRequest(prisma, who, { actorId: request.user.id, amountMinor: body.amountMinor ?? null })
+      // Instant mode (Paystack Transfers + "Cash out now" on): send it straight away instead of waiting for approval.
+      const payout = options.mode === 'INSTANT' ? await sendRequestByPaystack(prisma, created.id, { actorId: request.user.id, fetchImpl }).catch(async (error) => { console.error('[withdrawals] instant send failed', error?.code); return prisma.payout.findUnique({ where: { id: created.id } }) }) : created
+      return response.status(201).json({ request: { id: payout.id, amountMinor: payout.amountMinor, feeMinor: payout.feeMinor, status: payout.status, instant: options.mode === 'INSTANT' } })
     } catch (error) { return fail(response, error) }
   })
   router.post('/finance/withdrawal-requests/:payoutId/cancel', requireUser, async (request, response) => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createWithdrawalRequest, markRequestPaid, sendRequestByPaystack, withdrawalOptions } from '../server/withdrawalRequests.js'
+import { createWithdrawalRequest, holdSchedule, markRequestPaid, releaseRequest, sendRequestByPaystack, withdrawalOptions } from '../server/withdrawalRequests.js'
 import { confirmPayout } from '../server/payoutEngine.js'
 import { PAYOUT_SETTINGS_KEY, defaultPayoutSettings } from '../server/payoutSettings.js'
 
@@ -121,4 +121,36 @@ test('with Paystack Transfers and cash-out on, the partner withdraws instantly, 
   assert.equal(calls[0].body.amount, 290_000)
   assert.equal(calls[0].body.recipient, 'RCP_1')
   delete process.env.PAYSTACK_TRANSFERS_ENABLED
+})
+
+const due = (db) => db.entries.filter((entry) => entry.party === 'RESTAURANT' && entry.status === 'DUE').reduce((sum, entry) => sum + entry.amountMinor, 0)
+
+test('a partner can withdraw part of the balance; the rest stays withdrawable and nothing is double-counted', async () => {
+  const db = fakeDb({ entries: [credit(300_000), credit(142_000)], accounts: [account] })
+  withdrawalsOn(db)
+  await assert.rejects(createWithdrawalRequest(db, who, { actorId: 'owner1', amountMinor: 50_000 }), (error) => error.code === 'BELOW_MINIMUM')
+  await assert.rejects(createWithdrawalRequest(db, who, { actorId: 'owner1', amountMinor: 500_000 }), (error) => error.code === 'ABOVE_AVAILABLE')
+  const payout = await createWithdrawalRequest(db, who, { actorId: 'owner1', amountMinor: 200_000 })
+  assert.equal(payout.amountMinor, 190_000, '₦2,000 minus the ₦100 fee')
+  assert.equal(due(db), 242_000, '₦2,420 stays in the balance')
+  const reserved = db.entries.filter((entry) => entry.payoutId === payout.id && entry.party === 'RESTAURANT').reduce((sum, entry) => sum + entry.amountMinor, 0)
+  assert.equal(reserved, 190_000, 'what is reserved equals what is paid')
+  // Cancelling brings back exactly the original balance.
+  await releaseRequest(db, payout.id, { reason: 'test', actorId: 'owner1', action: 'X' })
+  assert.equal(due(db), 442_000)
+  assert.equal(db.entries.filter((entry) => entry.type === 'BALANCE_CARRIED' && entry.status !== 'VOID').length, 0, 'the carried pair is cancelled')
+})
+
+test('money on hold says when it becomes withdrawable', async () => {
+  const now = new Date('2026-10-22T16:00:00Z')
+  const db = fakeDb({
+    entries: [
+      { party: 'RESTAURANT', restaurantId: 'r1', type: 'PARTNER_SHARE', amountMinor: 442_000, status: 'DUE', orderId: 'o1', createdAt: new Date('2026-10-22T14:00:00Z'), description: 'Order', dedupeKey: 'a' },
+      { party: 'RESTAURANT', restaurantId: 'r1', type: 'PARTNER_SHARE', amountMinor: 100_000, status: 'DUE', orderId: 'o2', createdAt: new Date('2026-10-22T15:00:00Z'), description: 'Order', dedupeKey: 'b' },
+    ],
+    orders: [{ id: 'o1', status: 'DELIVERED' }, { id: 'o2', status: 'PREPARING' }],
+  })
+  const schedule = await holdSchedule(db, { party: 'RESTAURANT', restaurantId: 'r1' }, 24, now)
+  assert.deepEqual(schedule.upcoming, [{ at: '2026-10-23T14:00:00.000Z', amountMinor: 442_000 }])
+  assert.equal(schedule.awaitingDeliveryMinor, 100_000)
 })

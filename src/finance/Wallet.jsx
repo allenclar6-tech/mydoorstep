@@ -19,7 +19,7 @@ const ENTRY_STATUS = {
   NEEDS_REVIEW: ['Being priced', 'neutral'],
   VOID: ['Cancelled', 'neutral'],
 }
-const ENTRY_LABEL = { PARTNER_SHARE: 'Order earnings', ADJUSTMENT: 'Adjustment', RIDER_EARNING: 'Delivery earning', WITHDRAWAL_FEE: 'Cash-out fee', RIDER_SERVICE_FEE: 'DOORSTEP fee' }
+const ENTRY_LABEL = { PARTNER_SHARE: 'Order earnings', ADJUSTMENT: 'Adjustment', RIDER_EARNING: 'Delivery earning', WITHDRAWAL_FEE: 'Withdrawal fee', RIDER_SERVICE_FEE: 'DOORSTEP fee', BALANCE_CARRIED: 'Balance kept' }
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 async function openReceipt(payoutId) {
   const response = await fetch(`${apiBase}/api/finance/payouts/${payoutId}/receipt`, { headers: { Authorization: `Bearer ${readToken()}` } })
