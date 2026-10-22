@@ -59,6 +59,13 @@ Set separately for businesses and for riders:
   - The fee is a flat amount plus an optional percentage, and is DOORSTEP income.
   - A minimum amount and a daily limit apply.
   - If the transfer fails, the fee is not charged and the money returns to the balance.
+- **Withdrawals without Paystack Transfers:** when "Cash out now" is on but Transfers aren't set up yet, partners still get a **Withdraw** button. It creates a **withdrawal request**:
+  - The exact cleared ledger lines are set aside at once (status `REQUESTED`), so the same money can't be withdrawn twice. The partner can cancel until it's sent.
+  - Admins are notified and see it under **Admin → Money → Withdrawal requests**, with the full account number from Paystack, copy buttons and the exact amount.
+  - The admin either taps **Send by Paystack** (once Transfers are on), taps **I paid it from my bank** (then enters the bank reference and an optional receipt), or taps **Decline** with a reason (the money returns to the balance, with no fee).
+  - A bank payment then waits for the partner's "I received it", like any manual payout.
+- **Fund a partner** (Admin → Money): add or deduct money on a business's or rider's balance. The admin sees the balance before and after, confirms once, and can undo straight away (undo posts a reversal). The partner is notified with the reason and can withdraw it.
+- **Payout readiness** (top of Admin → Money): a checklist with the live Paystack balance. It shows whether partners can be paid straight to their bank and what's missing (Transfers flag, low balance, partners without bank accounts, payout mode).
 - **Pay everyone now** sends every cleared balance in one go.
 - **Credit or debit a balance:** for refunds a business covered, bonuses or penalties. The payee sees the reason.
 - **Commission per business:** negotiated rates for one business, used for new orders only. Empty fields use the standard rates.

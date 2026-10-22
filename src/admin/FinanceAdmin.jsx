@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Bike, Building2, Coins, Package, Plus, RefreshCw, Save, Trash2, Truck } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
-import { AdjustmentCard, CommissionCard, PayoutSettingsCard } from './PayoutControls'
+import { CommissionCard, PayoutSettingsCard } from './PayoutControls'
+import { FundPartnerCard } from './FundPartner'
+import { PayoutReadiness, WithdrawalQueue } from './WithdrawalQueue'
 import { openAdminReceipt, PartnerPayPanel } from './PartnerPayPanel'
 
 const token = () => { try { return localStorage.getItem('doorstep-admin-token') } catch { return null } }
@@ -13,7 +15,7 @@ async function call(path, { method = 'GET', body } = {}) {
 }
 const money = (minor) => `₦${((minor || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`
 const toMinor = (naira) => Math.round(Number(naira || 0) * 100)
-const PAYOUT_STATUS = { PAID: ['paid', 'live'], FAILED: ['failed', 'warn'], AWAITING_CONFIRMATION: ['waiting for partner', 'neutral'], DISPUTED: ['not received', 'warn'], PROCESSING: ['processing', 'neutral'], PENDING: ['sending', 'neutral'] }
+const PAYOUT_STATUS = { PAID: ['paid', 'live'], FAILED: ['failed', 'warn'], AWAITING_CONFIRMATION: ['waiting for partner', 'neutral'], DISPUTED: ['not received', 'warn'], PROCESSING: ['processing', 'neutral'], PENDING: ['sending', 'neutral'], REQUESTED: ['withdrawal requested', 'neutral'] }
 
 function ResolvePayout({ payout, onDone }) {
   const [note, setNote] = useState('')
@@ -162,6 +164,9 @@ export function FinanceAdmin() {
     </section>
     <p className="fa-muted fa-pad">Rider pay and anything not settled automatically is paid from your DOORSTEP Paystack balance. Rider pay is not deducted from these income totals.</p>
 
+    <PayoutReadiness />
+    <WithdrawalQueue onChanged={load} />
+
     {review.length > 0 && <section className="fa-card"><h3>Needs a price ({review.length})</h3><ul className="fa-list">{review.map((entry) => <PriceRow key={entry.id} entry={entry} onDone={load} />)}</ul></section>}
 
     <section className="fa-card"><h3>To pay out</h3>
@@ -176,7 +181,7 @@ export function FinanceAdmin() {
     </li>)}</ul></section>}
 
     <PayoutSettingsCard onChanged={load} />
-    <AdjustmentCard payees={payees} onDone={load} />
+    <FundPartnerCard payees={payees} onDone={load} />
     <CommissionCard payees={payees} platform={platform} onSaved={load} />
     <SettingsForm onSaved={load} />
   </div>

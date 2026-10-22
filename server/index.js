@@ -32,6 +32,7 @@ import { runPayoutSweep } from './payoutEngine.js'
 import { createVerificationRouter } from './verificationRoutes.js'
 import { createDeliveryPricingRouter } from './deliveryPricingRoutes.js'
 import { createLocationRouter } from './locationRoutes.js'
+import { createWithdrawalRouter } from './withdrawalRoutes.js'
 import { resolveAccount } from './paystackPayouts.js'
 import { deliveryCodeFor, deliveryCodeSecret, DISPATCHABLE_ORDER_STATUSES, dispatchDelivery, estimateArrival, OFFER_SECONDS, offerToRider, point, riderPoolStatus, riderPosition, riderSearchState, sweepDispatch } from './dispatch.js'
 import { orderPricingSnapshot, quoteOrderDelivery } from './deliveryQuote.js'
@@ -89,6 +90,7 @@ app.use('/api/navigation', createNavigationRouter())
 app.use('/api', createAuthRouter({ prisma, requireUser, createSession, publicUser: (user) => publicUser(user), sendWelcome }))
 app.use('/api', createVerificationRouter({ prisma, requireUser, requireAdmin, upload, storeApplicationDocuments, verifyPassword }))
 app.use('/api', createFinanceRouter({ prisma, requireUser, requireAdmin, verifyPassword }))
+app.use('/api', createWithdrawalRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createDeliveryPricingRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createLocationRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))

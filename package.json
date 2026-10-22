@@ -18,7 +18,7 @@
     "db:seed": "node prisma/seed.js",
     "admin:create": "node server/createAdmin.js",
     "pretest": "prisma generate",
-    "test": "node --test tests/api.test.js tests/navigation.test.js tests/auth.test.js tests/partnerMedia.test.js tests/parcel.test.js tests/cards.test.js tests/notifications.test.js tests/authLinking.test.js tests/otp.test.js tests/verification.test.js tests/profileCompleteness.test.js tests/supportAssistant.test.js tests/finance.test.js tests/financeSettings.test.js tests/payouts.test.js tests/orderCancellation.test.js tests/deliveryPricing.test.js tests/deliveryQuote.test.js tests/sapeleDirectory.test.js tests/dispatch.test.js tests/locations.test.js tests/payoutModes.test.js",
+    "test": "node --test tests/api.test.js tests/navigation.test.js tests/auth.test.js tests/partnerMedia.test.js tests/parcel.test.js tests/cards.test.js tests/notifications.test.js tests/authLinking.test.js tests/otp.test.js tests/verification.test.js tests/profileCompleteness.test.js tests/supportAssistant.test.js tests/finance.test.js tests/financeSettings.test.js tests/payouts.test.js tests/orderCancellation.test.js tests/deliveryPricing.test.js tests/deliveryQuote.test.js tests/sapeleDirectory.test.js tests/dispatch.test.js tests/locations.test.js tests/payoutModes.test.js tests/withdrawalRequests.test.js",
     "test:integration": "node --test tests/parcel.integration.test.js"
   },
   "dependencies": {
