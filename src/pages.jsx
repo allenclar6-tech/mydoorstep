@@ -740,7 +740,7 @@ function LocationPage() {
     window.dispatchEvent(new Event('doorstep-location-change'))
     setLocation(value)
     setMessage(`Delivering to ${value}`)
-    if (coordinates && ['/', '/account/addresses', '/checkout'].includes(returnTo)) navigate(returnTo)
+    if (coordinates && returnTo && /^\/(?![/\\])/.test(returnTo)) navigate(returnTo)
   }
 
   return <PageFrame className="location-route-page" eyebrow="DELIVERY LOCATION" title="Where should we meet you?" intro="Set a precise delivery point so your order reaches the right entrance.">
@@ -1035,7 +1035,8 @@ function OrderPage({ orderId }) {
     }
   }
   return <PageFrame eyebrow="ORDER TRACKING" title={order.orderNumber} intro={`${order.restaurant || order.restaurantName} · ${order.address || 'Delivery address on file'}`}>
-    {order.live && <LiveOrderCard order={order} />}
+    {(order.orderType === 'PICKUP' || order.scheduledFor) && <div className="order-plan-note"><Clock3 size={17} aria-hidden="true" /><span>{order.orderType === 'PICKUP' ? <><b>Pickup order.</b> Collect it from {order.restaurant}{order.pickupAddress ? `, ${order.pickupAddress}` : ''}. We’ll notify you when it’s ready. </> : null}{order.scheduledFor ? <><b>Scheduled</b> for {new Date(order.scheduledFor).toLocaleString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.</> : null}</span></div>}
+    {order.live && order.orderType !== 'PICKUP' && <LiveOrderCard order={order} />}
     {order.actions && <OrderActionButtons order={{ ...order, restaurant: { name: order.restaurant } }} onChanged={(done) => done === 'remove' ? navigate('/account/orders') : setRefreshKey((key) => key + 1)} />}
     {error && <div className="profile-message">Status refresh failed: {error}. Showing the last server-confirmed status.</div>}
     {stages.length === 0 && <div className="submitted-card"><Clock3 size={24} /><h2>{currentStatus === 'PENDING_PAYMENT' ? 'Payment verification pending' : `Order status: ${currentStatus}`}</h2><p>{currentStatus === 'PENDING_PAYMENT' ? 'The restaurant will receive this order after the payment provider confirms your payment.' : 'Delivery tracking is not available for this order status.'}</p></div>}

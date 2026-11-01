@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bike, Check, ChefHat, Clock3, PackageCheck, Phone, X } from 'lucide-react'
+import { Bike, CalendarClock, Check, ChefHat, Clock3, HandHeart, PackageCheck, Phone, ShoppingBag, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { formatNaira } from '../data'
 import { playAlert } from '../notifications/sound'
@@ -14,6 +14,7 @@ const TABS = [
 ]
 const DECLINE_REASONS = ['An item is sold out', 'We’re closing soon', 'Too busy right now', 'Can’t make this order']
 const FINISHED = ['DELIVERED', 'CANCELLED', 'REJECTED', 'REFUNDED']
+const scheduledText = (value) => { const date = new Date(value); const today = new Date(); const day = date.toDateString() === today.toDateString() ? 'Today' : date.toDateString() === new Date(today.getTime() + 86_400_000).toDateString() ? 'Tomorrow' : date.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' }); return `${day}, ${date.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}` }
 const FINISHED_LABEL = { DELIVERED: 'Delivered', CANCELLED: 'Cancelled', REJECTED: 'Declined', REFUNDED: 'Refunded' }
 // "75 min ago", "3 h ago", "2 days ago", or the date for anything older than a week.
 const agoText = (value) => {
@@ -69,10 +70,15 @@ function OrderCard({ order, onChanged }) {
       <div><b>{order.orderNumber}</b><small>{customer}{when ? ` · ${when}` : ''}</small></div>
       <strong>{formatNaira((order.subtotalMinor ?? order.totalMinor ?? 0) / 100)}</strong>
     </header>
+    {(order.orderType === 'PICKUP' || order.scheduledFor || order.tipMinor > 0) && <div className="rb-tags">
+      {order.orderType === 'PICKUP' && <span className="rb-tag is-pickup"><ShoppingBag size={13} aria-hidden="true" />Pickup — customer collects</span>}
+      {order.scheduledFor && <span className="rb-tag is-scheduled"><CalendarClock size={13} aria-hidden="true" />{order.orderType === 'PICKUP' ? 'Collect' : 'Deliver'} {scheduledText(order.scheduledFor)}</span>}
+      {order.tipMinor > 0 && order.orderType !== 'PICKUP' && <span className="rb-tag is-tip"><HandHeart size={13} aria-hidden="true" />Rider tip {formatNaira(order.tipMinor / 100)}</span>}
+    </div>}
     <ul className="rb-items">{items.map((item) => <li key={item.id}><b>{item.quantity}×</b> {item.nameSnapshot}{item.instructions && <em> — {item.instructions}</em>}</li>)}</ul>
     {order.landmarkSnapshot && <p className="rb-note">Landmark: {order.landmarkSnapshot}</p>}
     {finished && <div className="rb-done-row">
-      <span className={`rb-done-status is-${order.status.toLowerCase()}`}>{FINISHED_LABEL[order.status]}</span>
+      <span className={`rb-done-status is-${order.status.toLowerCase()}`}>{order.status === 'DELIVERED' && order.orderType === 'PICKUP' ? 'Collected' : FINISHED_LABEL[order.status]}</span>
       <button type="button" className="rb-clear" disabled={Boolean(busy)} onClick={() => act('hide', `/api/restaurant/orders/${order.id}/hide`, {})}><X size={14} aria-hidden="true" />{busy === 'hide' ? 'Clearing…' : 'Clear'}</button>
     </div>}
     {rider && <p className={`rb-rider is-${rider.tone}`}><Bike size={15} aria-hidden="true" />{rider.text}{rider.phone && <a href={`tel:${rider.phone}`} aria-label="Call rider"><Phone size={14} /></a>}</p>}
@@ -88,7 +94,8 @@ function OrderCard({ order, onChanged }) {
     </div>}
     {order.status === 'RESTAURANT_ACCEPTED' && <div className="rb-actions"><button type="button" className="rb-primary" disabled={Boolean(busy)} onClick={() => status('PREPARING')}><ChefHat size={16} />Start preparing</button></div>}
     {order.status === 'PREPARING' && <div className="rb-actions"><button type="button" className="rb-primary" disabled={Boolean(busy)} onClick={() => status('READY_FOR_PICKUP')}><PackageCheck size={16} />Ready for pickup</button></div>}
-    {['READY_FOR_PICKUP', 'RIDER_ASSIGNED'].includes(order.status) && <p className="rb-hint"><Clock3 size={14} aria-hidden="true" />Packed and waiting. Hand it over when the rider arrives.</p>}
+    {order.status === 'READY_FOR_PICKUP' && order.orderType === 'PICKUP' && <div className="rb-actions"><button type="button" className="rb-primary" disabled={Boolean(busy)} onClick={() => status('DELIVERED')}><HandHeart size={16} />{busy ? 'Saving…' : 'Customer collected it'}</button></div>}
+    {['READY_FOR_PICKUP', 'RIDER_ASSIGNED'].includes(order.status) && order.orderType !== 'PICKUP' && <p className="rb-hint"><Clock3 size={14} aria-hidden="true" />Packed and waiting. Hand it over when the rider arrives.</p>}
     {order.status === 'REJECTED' && <p className="rb-hint">Declined{order.cancellationReason ? ` — ${order.cancellationReason.replace(/^Declined by [^:]+: /, '')}` : ''}</p>}
   </article>
 }

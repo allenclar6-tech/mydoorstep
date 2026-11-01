@@ -19,7 +19,11 @@ steps in order. **Stop at any red ✗ and send Claude the error text.** Don't pa
 - `20261020180000_location_directory`
 - any earlier migration still pending (Render's log lists them)
 
+- `20261101100000_customer_app` (1 Nov: pickup, scheduled orders, tips, promo codes, store sections)
+
 All of these add tables or columns. None deletes data.
+
+> **1 Nov update: new customer app.** See `docs/CUSTOMER_APP.md`. After deploying, also do step 20 below.
 
 ---
 
@@ -166,6 +170,13 @@ Check in Admin › Money that the payment and rider pay are recorded.
 refunded. Check that it shows in Paystack.
 
 **19. Rider › Local checks:** submit one check for a place you know. In Admin › Locations, accept it.
+
+**20. Customer app (1 Nov):**
+1. Open mydoorstep.com.co on a phone. You should see the new home with the five category tiles.
+2. In **Admin › Promo codes**, press **Set up first-order free delivery**, then **Create promo**. The home banner then says "Your first delivery is free" for customers with no earlier order.
+3. In **Admin › Promo codes › Store sections**, check each business is in the right section (Food, Groceries, Shops, Pharmacy & Beauty).
+4. Place a small **Pickup** order. The business board shows "Pickup — customer collects". Mark it ready, then **Customer collected it**.
+5. Place a small **scheduled** delivery for about an hour ahead with a ₦200 tip. Riders should only get the offer about 35 minutes before the time. After delivery, the rider's earnings show the ₦200 tip line.
 
 If anything fails, write down what you pressed and what you saw (a screenshot is best) and send it to Claude.
 

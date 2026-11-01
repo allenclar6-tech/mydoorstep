@@ -7,6 +7,7 @@ import { ForgotPasswordPage } from './accountPages'
 import { ProfileAvatar } from './ProfileAvatar'
 import { CookieConsent } from './CookieConsent'
 import { MobileHome } from './home/MobileHome'
+import { isShopPath, ShopApp } from './shop/ShopApp'
 import { NotificationBell } from './notifications/NotificationCenter'
 import { HelpChat as ChatWidget } from './support/HelpChat'
 import { readConfirmedLocation } from './location'
@@ -375,6 +376,9 @@ function App() {
   if (path.startsWith('/admin/')) return <Suspense fallback={workspaceFallback}><AdminPortal path={path} /></Suspense>
   if (path.startsWith('/account') && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/login" /></div>
   if (path === '/partner/account' || path === '/partner/profile' || path === '/partner/settings') return <PortalAccessGate role="RESTAURANT"><Suspense fallback={workspaceFallback}><RestaurantPortal path="/restaurant/profile" /></Suspense></PortalAccessGate>
+
+  // The customer app (home, sections, Discover, stores, checkout, profile) has its own screens and navigation.
+  if (isShopPath(path)) return <><ShopApp /><CookieConsent /></>
 
   const shouldShowHeaderLocation = !isSignedIn && path === '/' && hasScrolled
   const headerClass = `${hasScrolled || path !== '/' ? 'topbar is-scrolled' : 'topbar'}${isSignedIn ? '' : ' signed-out'}${shouldShowHeaderLocation ? ' has-location-selector' : ''}`

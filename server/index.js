@@ -36,6 +36,10 @@ import { createWithdrawalRouter } from './withdrawalRoutes.js'
 import { resolveAccount } from './paystackPayouts.js'
 import { deliveryCodeFor, deliveryCodeSecret, DISPATCHABLE_ORDER_STATUSES, dispatchDelivery, estimateArrival, OFFER_SECONDS, offerToRider, point, riderPoolStatus, riderPosition, riderSearchState, sweepDispatch } from './dispatch.js'
 import { orderPricingSnapshot, quoteOrderDelivery } from './deliveryQuote.js'
+import { getDeliveryPricing } from './deliveryPricingSettings.js'
+import { serviceFeeFor } from './deliveryPricing.js'
+import { checkSchedule, choosePromotion, cleanTip, platformRoom, SCHEDULE_DISPATCH_LEAD_MS, verticalOf } from './promotions.js'
+import { createCustomerAppRouter } from './customerAppRoutes.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
 
@@ -93,6 +97,7 @@ app.use('/api', createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
 app.use('/api', createWithdrawalRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createDeliveryPricingRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createLocationRouter({ prisma, requireUser, requireAdmin }))
+app.use('/api', createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant: (restaurant) => publicRestaurant(restaurant) }))
 app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))
 app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
 
@@ -214,12 +219,17 @@ function publicRestaurant(restaurant) {
     cuisine: restaurant.cuisineCategory,
     image: publicRestaurantImage(restaurant),
     type: restaurant.storeType,
+    vertical: verticalOf(restaurant),
+    pickupEnabled: restaurant.pickupEnabled !== false,
     address: restaurant.address,
+    latitude: restaurant.latitude == null ? null : Number(restaurant.latitude),
+    longitude: restaurant.longitude == null ? null : Number(restaurant.longitude),
     city: restaurant.city?.name || null,
     rating: Number(restaurant.ratingAverage),
     ratingCount: restaurant.ratingCount,
     openingTime: restaurant.openingTime,
     closingTime: restaurant.closingTime,
+    daysOpen: Array.isArray(restaurant.daysOpen) ? restaurant.daysOpen : null,
     prepTimeMinutes: restaurant.prepTimeMinutes,
     minimumOrderMinor: restaurant.minimumOrderMinor,
     temporarilyClosed: restaurant.temporarilyClosed,
@@ -425,7 +435,7 @@ const customerRegistrationSchema = credentialsSchema.extend({
   termsAccepted: z.literal(true),
   password: z.string().min(10).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/),
 })
-export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), paymentMethod: z.enum(['PAYSTACK', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']).default('PAYSTACK'), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional() }).superRefine((value, context) => {
+export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), paymentMethod: z.enum(['PAYSTACK', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']).default('PAYSTACK'), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), orderType: z.enum(['DELIVERY', 'PICKUP']).default('DELIVERY'), scheduledFor: z.string().max(40).optional().nullable(), tipMinor: z.number().int().min(0).max(500_000).optional(), promoCode: z.string().trim().max(40).optional().nullable() }).superRefine((value, context) => {
   if ((value.latitude == null) !== (value.longitude == null)) context.addIssue({ code: 'custom', path: [value.latitude == null ? 'latitude' : 'longitude'], message: 'Both destination coordinates are required.' })
 })
 export const addressSchema = z.object({ label: z.string().min(1).max(40), addressLine: z.string().min(5).max(240), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), cityId: z.string().min(1).optional() }).superRefine((value, context) => {
@@ -449,7 +459,7 @@ function logApplicationValidationFailure(applicationType, error) {
     formErrorCount: details.formErrors.length,
   }))
 }
-const groceryApplicationFieldsSchema = partnerApplicationFieldsSchema.extend({ groceryName: z.string().min(2).max(120), businessType: z.preprocess((value) => value === '' ? undefined : value, z.enum(['supermarket', 'mini_market', 'produce_market', 'pharmacy', 'specialty_store']).optional().transform((value) => value || null)), cuisineCategory: optionalText(100).optional(), prepTimeMinutes: optionalNumber({ min: 1, max: 240 }).optional(), minimumOrder: optionalNumber({ min: 0, max: 500000 }).optional() })
+const groceryApplicationFieldsSchema = partnerApplicationFieldsSchema.extend({ groceryName: z.string().min(2).max(120), businessType: z.preprocess((value) => value === '' ? undefined : value, z.enum(['supermarket', 'mini_market', 'produce_market', 'pharmacy', 'beauty', 'electronics', 'fashion', 'phones', 'general_shop', 'specialty_store']).optional().transform((value) => value || null)), cuisineCategory: optionalText(100).optional(), prepTimeMinutes: optionalNumber({ min: 1, max: 240 }).optional(), minimumOrder: optionalNumber({ min: 0, max: 500000 }).optional() })
 const partnerApplicationMultipartSchema = requireCompleteOpeningHours(partnerApplicationFieldsSchema.omit({ documents: true }))
 const groceryApplicationMultipartSchema = requireCompleteOpeningHours(groceryApplicationFieldsSchema.omit({ documents: true }))
 const partnerApplicationJsonSchema = requireCompleteOpeningHours(partnerApplicationFieldsSchema.extend({ documents: z.array(z.never()).max(0).default([]) }))
@@ -602,7 +612,7 @@ app.post('/api/grocery-applications/multipart', onboardingLimiter, applicationFi
     const slug = `${data.groceryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${randomUUID().slice(0, 6)}`
     const created = await prisma.$transaction(async (transaction) => {
       const user = await transaction.user.create({ data: { email: data.businessEmail, phone: data.businessPhone, passwordHash: await hashPassword(data.password), firstName: data.ownerName.split(' ')[0], lastName: data.ownerName.split(' ').slice(1).join(' ') || data.ownerName, emailVerifiedAt: new Date(), role: 'RESTAURANT' } })
-      const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${(data.businessType || 'grocery store').replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', openingTime: data.openingTime, closingTime: data.closingTime, daysOpen: data.openingDays, address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, businessCategory: data.businessType, registrationNumber: data.registrationNumber, ...registration, deliveryPreference: data.deliveryPreference, documents: { create: documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
+      const grocery = await transaction.restaurant.create({ data: { name: data.groceryName, slug, description: `${(data.businessType || 'grocery store').replaceAll('_', ' ')} on DOORSTEP`, storeType: 'GROCERY', vertical: ['pharmacy', 'beauty'].includes(data.businessType) ? 'PHARMACY_BEAUTY' : ['specialty_store', 'electronics', 'fashion', 'phones', 'general_shop'].includes(data.businessType) ? 'SHOPS' : 'GROCERIES', openingTime: data.openingTime, closingTime: data.closingTime, daysOpen: data.openingDays, address: data.address, email: data.businessEmail, phone: data.businessPhone, cityId: city.id, application: { create: { ownerName: data.ownerName, ownerPhone: data.businessPhone, ownerEmail: data.businessEmail, businessCategory: data.businessType, registrationNumber: data.registrationNumber, ...registration, deliveryPreference: data.deliveryPreference, documents: { create: documents.map((document) => ({ type: document.type, storageKey: document.storageKey })) } } } } })
       await transaction.restaurantUser.create({ data: { userId: user.id, restaurantId: grocery.id } })
       await sendWelcome(transaction, user, { businessName: grocery.name, storeType: 'GROCERY' })
       await notifyAdmins(transaction, { type: 'ACCOUNT', title: 'New grocery application', body: `${grocery.name} (${data.cityName}) applied to sell on DOORSTEP.`, link: '/admin/groceries' })
@@ -1024,7 +1034,7 @@ app.post('/api/orders/validate', requireUser, async (request, response) => {
   if (!result.success) return response.status(400).json({ error: 'INVALID_ORDER_REQUEST', details: result.error.flatten() })
   if (request.user.role !== 'CUSTOMER') return response.status(403).json({ error: 'CUSTOMER_ROLE_REQUIRED' })
   try {
-    const quote = await quoteOrder({ ...result.data, customerId: request.user.id })
+    const quote = await priceOrder({ ...result.data, customerId: request.user.id }, { strictPromo: false })
     return response.json(customerQuote(quote))
   } catch (error) {
     return response.status(error.status || 503).json({ error: error.code || 'ORDER_SERVICE_UNAVAILABLE', message: error.message })
@@ -1169,7 +1179,7 @@ app.post('/api/orders', requireUser, async (request, response) => {
       const existing = await prisma.order.findUnique({ where: { idempotencyKey }, include: { items: true, payment: true, restaurant: true } })
       if (existing) return existing.customerId === request.user.id ? response.status(200).json({ order: customerOrderView(existing), duplicate: true }) : response.status(409).json({ error: 'IDEMPOTENCY_KEY_CONFLICT' })
     }
-    const quote = await quoteOrder({ ...result.data, customerId: request.user.id })
+    const quote = await priceOrder({ ...result.data, customerId: request.user.id }, { strictPromo: true })
     const paymentSettings = await getPaymentSettings()
     if (result.data.paymentMethod === 'BANK_TRANSFER' && (!paymentSettings.bankTransfer.enabled || !hasValidBankTransferConfig(paymentSettings.bankTransfer))) return response.status(409).json({ error: 'BANK_TRANSFER_UNAVAILABLE' })
     if (result.data.paymentMethod === 'CASH_ON_DELIVERY') return response.status(409).json({ error: 'CASH_ON_DELIVERY_UNSUPPORTED' })
@@ -1177,10 +1187,11 @@ app.post('/api/orders', requireUser, async (request, response) => {
     const finance = await planOrderFinance(quote, { latitude: quote.address?.latitude ?? result.data.latitude, longitude: quote.address?.longitude ?? result.data.longitude })
     const order = await prisma.$transaction(async (transaction) => {
       const orderNumber = `DSP-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 6).toUpperCase()}`
-      const address = quote.address || await transaction.address.create({ data: { userId: request.user.id, cityId: quote.serviceAreaCityId, label: 'Checkout address', addressLine: result.data.addressLine, landmark: result.data.landmark, latitude: result.data.latitude, longitude: result.data.longitude } })
+      const pickup = quote.orderType === 'PICKUP'
+      const address = quote.address || (pickup ? { addressLine: `Pickup at ${quote.storeAddress}`, landmark: null, latitude: null, longitude: null } : null) || await transaction.address.create({ data: { userId: request.user.id, cityId: quote.serviceAreaCityId, label: 'Checkout address', addressLine: result.data.addressLine, landmark: result.data.landmark, latitude: result.data.latitude, longitude: result.data.longitude } })
       const transferExpiry = result.data.paymentMethod === 'BANK_TRANSFER' && paymentSettings.bankTransfer.expiryMinutes ? new Date(Date.now() + paymentSettings.bankTransfer.expiryMinutes * 60_000) : null
       const transferInstructions = result.data.paymentMethod === 'BANK_TRANSFER' ? { bankName: paymentSettings.bankTransfer.bankName, accountName: paymentSettings.bankTransfer.accountName, accountNumber: paymentSettings.bankTransfer.accountNumber, message: paymentSettings.bankTransfer.instructions } : null
-      const created = await transaction.order.create({ data: { ...finance, orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
+      const created = await transaction.order.create({ data: { ...finance, orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, tipMinor: quote.tipMinor, discountMinor: quote.discountMinor, promotionId: quote.promotion?.id || null, promoCode: quote.promotion?.code || null, orderType: quote.orderType, scheduledFor: quote.scheduledFor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
       if (created.payment.method === 'BANK_TRANSFER') await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Bank transfer to confirm', body: `Order ${created.orderNumber} (${'₦'}${(created.totalMinor / 100).toLocaleString('en-NG')}) will be paid by bank transfer, reference ${created.payment.reference}. Confirm it once the money arrives.`, link: '/admin/payments' })
       return created
     })
@@ -1369,10 +1380,10 @@ app.post('/api/admin/bank-transfers/:paymentId/confirm', requireUser, requireAdm
     await prisma.$transaction(async (transaction) => {
       const claimed = await transaction.payment.updateMany({ where: { id: payment.id, status: 'PENDING_VERIFICATION' }, data: { status: 'SUCCESSFUL', verifiedAt: new Date(), providerTransactionId: result.data.bankTransactionId } })
       if (claimed.count !== 1) throw Object.assign(new Error('Already handled'), { code: 'ALREADY_HANDLED' })
-      const current = await transaction.order.findUnique({ where: { id: payment.orderId }, select: { status: true } })
+      const current = await transaction.order.findUnique({ where: { id: payment.orderId }, select: { status: true, orderType: true } })
       if (!current || !isOrderPayable(current.status)) throw Object.assign(new Error('Order closed'), { code: 'ORDER_NOT_PAYABLE' })
       await transaction.order.update({ where: { id: payment.orderId }, data: { status: 'PAID', paidAt: new Date() } })
-      await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
+      if (current.orderType !== 'PICKUP') await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
       await transaction.transaction.create({ data: { paymentId: payment.id, type: 'BANK_TRANSFER_MANUALLY_CONFIRMED', amountMinor: payment.amountMinor, providerReference: result.data.bankTransactionId, metadata: { note: result.data.note, transferReference: payment.reference } } })
       await transaction.auditLog.create({ data: { actorId: request.user.id, action: 'CONFIRM_BANK_TRANSFER', entityType: 'Payment', entityId: payment.id, metadata: { bankTransactionId: result.data.bankTransactionId, orderId: payment.orderId } } })
       await recordOrderPaid(transaction, await transaction.order.findUnique({ where: { id: payment.orderId } }), { splitSettled: false })
@@ -1420,7 +1431,7 @@ async function confirmOrderPayment(transaction, payment, { providerReference, me
   const changed = await transaction.payment.updateMany({ where: { id: payment.id, status: { not: 'SUCCESSFUL' } }, data: { status: 'SUCCESSFUL', verifiedAt: new Date() } })
   if (changed.count !== 1) return { duplicate: true }
   const order = await transaction.order.update({ where: { id: payment.orderId }, data: { status: 'PAID', paidAt: new Date() }, include: { restaurant: { include: { users: true } } } })
-  await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
+  if (order.orderType !== 'PICKUP') await transaction.delivery.upsert({ where: { orderId: payment.orderId }, update: {}, create: { orderId: payment.orderId, status: 'AVAILABLE', requestedAt: new Date() } })
   // Commission, business share and DOORSTEP income for this order (15% / 10% rules live in financeService).
   await recordOrderPaid(transaction, order, { splitSettled: splitSettledTo(verified, order.splitSubaccountCode) })
   await transaction.notification.create({ data: { userId: order.customerId, type: 'PAYMENT', title: 'Payment confirmed', body: `Your payment for ${order.orderNumber} was confirmed. The restaurant will start on it shortly.`, link: `/account/orders/${order.id}` } })
@@ -1726,7 +1737,7 @@ app.get('/api/restaurant/summary', requireUser, async (request, response) => {
 app.get('/api/rider/deliveries', requireUser, async (request, response) => {
   if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDER_ROLE_REQUIRED' })
   try {
-    const deliveries = await prisma.delivery.findMany({ where: { orderId: { not: null }, OR: [{ status: 'AVAILABLE', order: { status: { in: DISPATCHABLE_ORDER_STATUSES } } }, { riderId: request.user.rider.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } }] }, include: { order: { include: { restaurant: { select: { name: true, address: true, phone: true } } } } }, orderBy: { requestedAt: 'asc' }, take: 50 })
+    const deliveries = await prisma.delivery.findMany({ where: { orderId: { not: null }, OR: [{ status: 'AVAILABLE', order: { status: { in: DISPATCHABLE_ORDER_STATUSES }, OR: [{ scheduledFor: null }, { scheduledFor: { lte: new Date(Date.now() + SCHEDULE_DISPATCH_LEAD_MS) } }] } }, { riderId: request.user.rider.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } }] }, include: { order: { include: { restaurant: { select: { name: true, address: true, phone: true } } } } }, orderBy: { requestedAt: 'asc' }, take: 50 })
     const finance = await getFinanceSettings(prisma)
     // Glovo-style: riders see what they will earn and how far it is before accepting, not the customer's fee.
     return response.json({ deliveries: deliveries.map((delivery) => {
@@ -1932,6 +1943,7 @@ app.get('/api/orders/:orderId/tracking', requireUser, async (request, response) 
     }
     if (request.user.role === 'CUSTOMER') {
       orderDetails.totalMinor = order.totalMinor
+      Object.assign(orderDetails, { orderType: order.orderType, scheduledFor: order.scheduledFor, tipMinor: order.tipMinor, discountMinor: order.discountMinor, promoCode: order.promoCode, pickupAddress: order.orderType === 'PICKUP' ? order.restaurant.address : null })
       orderDetails.payment = order.payment ? { status: order.payment.status } : null
       orderDetails.actions = orderActions(order)
       // Live view: arrival estimate, whether we're still finding a rider, and the delivery code to give the rider.
@@ -2005,7 +2017,9 @@ app.post('/api/orders/:orderId/status', requireUser, async (request, response) =
   try {
     const order = await prisma.order.findUnique({ where: { id: request.params.orderId }, include: { restaurant: { include: { users: true } }, delivery: true } })
     if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
-    const expected = transitions[request.user.role]?.[order.status]
+    // Pickup orders: the business hands the order over at the counter, so "ready" is followed by "collected".
+    const pickupHandover = order.orderType === 'PICKUP' && request.user.role === 'RESTAURANT' && order.status === 'READY_FOR_PICKUP'
+    const expected = pickupHandover ? 'DELIVERED' : transitions[request.user.role]?.[order.status]
     if (expected !== result.data.status) return response.status(409).json({ error: 'INVALID_STATUS_TRANSITION', expected: expected || null })
     const isRestaurantOwner = request.user.role === 'RESTAURANT' && order.restaurant.users.some((member) => member.userId === request.user.id)
     const isRider = request.user.role === 'RIDER' && order.riderId === request.user.rider?.id
@@ -2013,13 +2027,14 @@ app.post('/api/orders/:orderId/status', requireUser, async (request, response) =
     if (request.user.role === 'RIDER' && !isRider) return response.status(403).json({ error: 'ASSIGNED_RIDER_REQUIRED' })
     const changedAt = new Date()
     const updated = await prisma.$transaction(async (transaction) => {
-      const stamp = result.data.status === 'RESTAURANT_ACCEPTED' ? { acceptedAt: new Date() } : result.data.status === 'READY_FOR_PICKUP' ? { preparedAt: new Date() } : {}
+      const stamp = result.data.status === 'RESTAURANT_ACCEPTED' ? { acceptedAt: new Date() } : result.data.status === 'READY_FOR_PICKUP' ? { preparedAt: new Date() } : result.data.status === 'DELIVERED' && pickupHandover ? { deliveredAt: new Date() } : {}
       const changedCount = await transaction.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: result.data.status, ...stamp } })
       if (changedCount.count !== 1) throw Object.assign(new Error('Order state changed while this request was processing.'), { status: 409, code: 'ORDER_STATE_CHANGED' })
       const changed = await transaction.order.findUnique({ where: { id: order.id } })
       const labels = { RESTAURANT_ACCEPTED: 'Restaurant accepted your order', PREPARING: 'Your order is being prepared', READY_FOR_PICKUP: 'Your order is ready for pickup', RIDER_ASSIGNED: 'A rider has been assigned to your order', PICKED_UP: 'Your order has been picked up', OUT_FOR_DELIVERY: 'Your order is out for delivery', DELIVERED: 'Your order has arrived', CANCELLED: 'Your order was cancelled' }
       // Retire stale unread alerts about a cancelled order before the cancellation notices are written.
       if (result.data.status === 'CANCELLED') await retireOrderNotifications(transaction, order, changedAt)
+      if (order.orderType === 'PICKUP') Object.assign(labels, { READY_FOR_PICKUP: 'Your order is ready to collect', DELIVERED: 'Order collected — enjoy!' })
       await transaction.notification.create({ data: { userId: order.customerId, type: result.data.status === 'CANCELLED' ? 'ORDER' : 'DELIVERY', title: labels[result.data.status] || 'Order status updated', body: `Order ${order.orderNumber} is now ${result.data.status.replaceAll('_', ' ').toLowerCase()}.`, link: `/account/orders/${order.id}` } })
       if (result.data.status === 'READY_FOR_PICKUP' && order.riderId) {
         // The assigned rider is told the food is waiting at the counter.
@@ -2073,7 +2088,8 @@ function customerOrderView(order) {
 
 /** Checkout preview: totals plus the distance explanation the customer needs, nothing about DOORSTEP's margins. */
 function customerQuote(quote) {
-  const { delivery, ...rest } = quote
+  const { delivery, storeAddress, ...rest } = quote
+  if (quote.orderType === 'PICKUP') return { ...rest, pickupAddress: storeAddress, delivery: { pricing: 'PICKUP' } }
   if (!delivery) return { ...rest, delivery: { pricing: 'FLAT' } }
   const source = delivery.distance.source
   return {
@@ -2101,8 +2117,9 @@ async function planOrderFinance(quote, destination) {
     getFinanceSettings(prisma),
     prisma.restaurant.findUnique({ where: { id: quote.restaurantId }, select: { latitude: true, longitude: true, commissionDoorstepRiderPercent: true, commissionOwnRiderPercent: true, application: { select: { deliveryPreference: true } } } }),
   ])
-  const fulfilment = plannedFulfilment(restaurant?.application?.deliveryPreference)
+  const fulfilment = quote.orderType === 'PICKUP' ? 'PICKUP' : plannedFulfilment(restaurant?.application?.deliveryPreference)
   const shares = orderShares(quote, fulfilment, withBusinessCommission(settings, restaurant))
+  if (fulfilment === 'PICKUP') return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, deliveryDistanceMeters: null }
   // Published delivery pricing already measured the route and fixed the rider's pay for this order.
   if (quote.delivery) return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, ...orderPricingSnapshot(quote.delivery) }
   let deliveryDistanceMeters = null
@@ -2123,21 +2140,61 @@ async function quoteOrder(input) {
     prisma.serviceArea.findFirst({ where: { enabled: true }, orderBy: { createdAt: 'asc' } }),
   ])
   if (!restaurant || restaurant.status !== 'APPROVED') throw Object.assign(new Error('Restaurant is not available.'), { status: 409, code: 'RESTAURANT_UNAVAILABLE' })
-  if (!isRestaurantOpen(restaurant)) throw Object.assign(new Error('This restaurant is currently closed. Please try again during its opening hours.'), { status: 409, code: 'RESTAURANT_CLOSED' })
+  // A scheduled order needs the store to be open at the chosen time; an ASAP order needs it open now.
+  const requestedAt = checkSchedule(input.scheduledFor).at
+  if (!isRestaurantOpen(restaurant, requestedAt || new Date())) throw Object.assign(new Error(requestedAt ? 'The store is closed at the time you picked. Choose a time within its opening hours.' : 'This restaurant is currently closed. Please try again during its opening hours, or schedule your order.'), { status: 409, code: 'RESTAURANT_CLOSED' })
   if (!activeServiceArea || restaurant.cityId !== activeServiceArea.cityId) throw Object.assign(new Error('DOORSTEP is currently unavailable in this restaurant location.'), { status: 409, code: 'SERVICE_AREA_UNAVAILABLE' })
   if (address?.cityId && address.cityId !== activeServiceArea.cityId) throw Object.assign(new Error('This delivery address is outside the active DOORSTEP service area.'), { status: 409, code: 'ADDRESS_OUTSIDE_SERVICE_AREA' })
-  if (!address && !input.addressLine) throw Object.assign(new Error('Delivery address is required.'), { status: 400, code: 'ADDRESS_REQUIRED' })
+  const pickup = input.orderType === 'PICKUP'
+  if (pickup && restaurant.pickupEnabled === false) throw Object.assign(new Error('This store doesn’t offer pickup. Choose delivery instead.'), { status: 409, code: 'PICKUP_UNAVAILABLE' })
+  if (!pickup && !address && !input.addressLine) throw Object.assign(new Error('Delivery address is required.'), { status: 400, code: 'ADDRESS_REQUIRED' })
+  const schedule = checkSchedule(input.scheduledFor)
+  if (schedule.problem) throw Object.assign(new Error(schedule.problem), { status: 400, code: 'INVALID_SCHEDULE' })
   if (menuItems.length !== input.items.length) throw Object.assign(new Error('One or more menu items are unavailable.'), { status: 409, code: 'MENU_ITEM_UNAVAILABLE' })
   const items = input.items.map((inputItem) => { const menuItem = menuItems.find((item) => item.id === inputItem.menuItemId); return { menuItemId: menuItem.id, name: menuItem.name, unitPriceMinor: menuItem.priceMinor, quantity: inputItem.quantity, instructions: inputItem.instructions } })
   const subtotalMinor = items.reduce((sum, item) => sum + item.unitPriceMinor * item.quantity, 0)
   if (subtotalMinor < restaurant.minimumOrderMinor) throw Object.assign(new Error('Order total is below this business’s minimum order.'), { status: 409, code: 'MINIMUM_ORDER_NOT_MET' })
   // Distance-based Sapele pricing once DOORSTEP has published it (Admin › Delivery pricing); until then the
   // original flat ₦800 delivery fee and 3% service fee stay in place.
+  const base = { restaurantId: restaurant.id, storeAddress: restaurant.address, vertical: verticalOf(restaurant), orderType: pickup ? 'PICKUP' : 'DELIVERY', scheduledFor: schedule.at, address: pickup ? null : address, serviceAreaCityId: activeServiceArea.cityId, items, subtotalMinor }
+  if (pickup) {
+    // Pickup: no rider and no delivery fee; the service fee follows the published pricing (3% until then).
+    const pricing = await getDeliveryPricing(prisma)
+    const serviceFeeMinor = pricing.published ? serviceFeeFor(subtotalMinor, pricing.serviceFee) : Math.round(subtotalMinor * 0.03)
+    return { ...base, deliveryFeeMinor: 0, serviceFeeMinor, totalMinor: subtotalMinor + serviceFeeMinor, delivery: null }
+  }
   const destination = { point: address?.latitude != null ? { latitude: address.latitude, longitude: address.longitude } : input.latitude != null ? { latitude: input.latitude, longitude: input.longitude } : null, addressLine: address?.addressLine || input.addressLine }
   const delivery = await quoteOrderDelivery({ db: prisma, restaurant, destination, subtotalMinor })
   const deliveryFeeMinor = delivery ? delivery.customer.deliveryFeeMinor : 80000
   const serviceFeeMinor = delivery ? delivery.serviceFeeMinor : Math.round(subtotalMinor * 0.03)
-  return { restaurantId: restaurant.id, address, serviceAreaCityId: activeServiceArea.cityId, items, subtotalMinor, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor, delivery }
+  return { ...base, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor, delivery }
+}
+
+/**
+ * The full price of a basket: items, delivery (or pickup), service fee, rider tip and any promo.
+ * A typed promo code that can't be used is an error when placing the order (strictPromo) and a message in the
+ * quote otherwise, so the checkout can show why.
+ */
+async function priceOrder(input, { strictPromo = false } = {}) {
+  const quote = await quoteOrder(input)
+  const tipMinor = cleanTip(input.tipMinor, quote.orderType)
+  const [settings, restaurant] = await Promise.all([
+    getFinanceSettings(prisma),
+    prisma.restaurant.findUnique({ where: { id: quote.restaurantId }, select: { commissionDoorstepRiderPercent: true, commissionOwnRiderPercent: true, application: { select: { deliveryPreference: true } } } }),
+  ])
+  const fulfilment = quote.orderType === 'PICKUP' ? 'PICKUP' : plannedFulfilment(restaurant?.application?.deliveryPreference)
+  const room = platformRoom(orderShares(quote, fulfilment, withBusinessCommission(settings, restaurant)))
+  const promo = await choosePromotion(prisma, { customerId: input.customerId, restaurantId: quote.restaurantId, vertical: quote.vertical, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, orderType: quote.orderType }, { code: input.promoCode, roomMinor: room })
+  if (promo.problem && strictPromo) throw Object.assign(new Error(promo.problem.message), { status: 409, code: promo.problem.code })
+  const discountMinor = promo.discountMinor || 0
+  return {
+    ...quote,
+    tipMinor,
+    discountMinor,
+    promotion: promo.promotion ? { id: promo.promotion.id, code: promo.promotion.code, name: promo.promotion.name, type: promo.promotion.type, label: promo.label, auto: promo.auto, capped: Boolean(promo.capped) } : null,
+    promoProblem: promo.problem || null,
+    totalMinor: quote.subtotalMinor + quote.deliveryFeeMinor + quote.serviceFeeMinor + tipMinor - discountMinor,
+  }
 }
 
 function isRestaurantOpen(restaurant, now = new Date()) {

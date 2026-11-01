@@ -172,3 +172,17 @@ html body .ro-card h2 { color: #fff; font-size: 1.35rem; letter-spacing: -.01em;
 .rb-clear-all > span { align-items: center; display: flex; gap: 12px; }
 .rb-danger { background: #b3261e; border: 0; border-radius: 12px; color: #fff; cursor: pointer; font: inherit; font-size: .88rem; font-weight: 800; min-height: 44px; padding: 0 16px; }
 .rb-danger:disabled { opacity: .6; }
+
+/* Pickup, scheduled and tip tags on the business board */
+.rb-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
+.rb-tag { align-items: center; border-radius: 999px; display: inline-flex; font-size: .74rem; font-weight: 700; gap: 5px; padding: 4px 9px; }
+.rb-tag.is-pickup { background: #e8f0ff; color: #1f3f8a; }
+.rb-tag.is-scheduled { background: var(--t-gold-100, #fff3d4); color: var(--t-gold-800, #7a5300); }
+.rb-tag.is-tip { background: var(--t-mint-100, #e6f2eb); color: var(--t-forest-800, #123d2d); }
+.rb-pickup { align-items: center; background: var(--t-surface, #fff); border: 1px solid var(--t-line, #e3e8e2); border-radius: 14px; display: grid; gap: 12px; grid-template-columns: auto 1fr auto; margin: 0 0 12px; padding: 12px 14px; }
+.rb-pickup > div { display: grid; gap: 2px; }
+.rb-pickup small { color: var(--t-muted, #5b6b63); font-size: .8rem; }
+.rb-switch { background: var(--t-line-strong, #cfd9d2); border: 0; border-radius: 999px; cursor: pointer; height: 28px; padding: 3px; position: relative; transition: background .15s; width: 48px; }
+.rb-switch span { background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.2); display: block; height: 22px; transition: transform .15s; width: 22px; }
+.rb-switch.is-on { background: var(--t-green-600, #007c63); }
+.rb-switch.is-on span { transform: translateX(20px); }

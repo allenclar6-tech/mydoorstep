@@ -46,15 +46,17 @@ export function withBusinessCommission(settings, restaurant) {
  * - DOORSTEP rider: DOORSTEP keeps commission + service fee + delivery fee (it pays the rider).
  * - Business's own rider: lower commission, and the business keeps the delivery fee (it pays its rider).
  */
-export function orderShares({ subtotalMinor, deliveryFeeMinor, serviceFeeMinor, totalMinor }, fulfilment, settings) {
-  for (const value of [subtotalMinor, deliveryFeeMinor, serviceFeeMinor, totalMinor]) if (!Number.isSafeInteger(value) || value < 0) throw new Error('Order amounts must be whole, non-negative kobo values.')
-  if (subtotalMinor + deliveryFeeMinor + serviceFeeMinor !== totalMinor) throw new Error('Order total does not equal subtotal plus fees.')
-  const businessRider = fulfilment === 'BUSINESS_RIDER'
+export function orderShares({ subtotalMinor, deliveryFeeMinor, serviceFeeMinor, totalMinor, tipMinor = 0, discountMinor = 0 }, fulfilment, settings) {
+  for (const value of [subtotalMinor, deliveryFeeMinor, serviceFeeMinor, totalMinor, tipMinor, discountMinor]) if (!Number.isSafeInteger(value) || value < 0) throw new Error('Order amounts must be whole, non-negative kobo values.')
+  // Tip goes to the rider; a promo discount is paid by DOORSTEP out of its own part of the order.
+  if (subtotalMinor + deliveryFeeMinor + serviceFeeMinor + tipMinor - discountMinor !== totalMinor) throw new Error('Order total does not equal subtotal plus fees.')
+  // Pickup: the customer collects, no DOORSTEP rider is involved, so the lower own-rider rate applies.
+  const businessRider = fulfilment === 'BUSINESS_RIDER' || fulfilment === 'PICKUP'
   const commissionPercent = businessRider ? settings.commission.ownRiderPercent : settings.commission.doorstepRiderPercent
   const commissionMinor = Math.round(subtotalMinor * commissionPercent / 100)
   const partnerShareMinor = subtotalMinor - commissionMinor + (businessRider ? deliveryFeeMinor : 0)
   const platformShareMinor = totalMinor - partnerShareMinor
-  return { fulfilment, commissionPercent, commissionMinor, partnerShareMinor, platformShareMinor, deliveryFeeToPlatformMinor: businessRider ? 0 : deliveryFeeMinor, serviceFeeMinor }
+  return { fulfilment, commissionPercent, commissionMinor, partnerShareMinor, platformShareMinor, deliveryFeeToPlatformMinor: businessRider ? 0 : deliveryFeeMinor, serviceFeeMinor, tipMinor, discountMinor }
 }
 
 /** Rider earning for a delivery distance, from the published Sapele rate bands. Null when it can't be priced honestly. */
@@ -84,6 +86,7 @@ export function orderPaidEntries(order, shares, { splitSettled }) {
     { ...base, party: 'PLATFORM', type: 'ORDER_COMMISSION', amountMinor: shares.commissionMinor, status: 'RETAINED', description: `${shares.commissionPercent}% commission on ${order.orderNumber}`, dedupeKey: `ORDER_COMMISSION:${order.id}` },
     { ...base, party: 'PLATFORM', type: 'SERVICE_FEE', amountMinor: shares.serviceFeeMinor, status: 'RETAINED', description: `Service fee on ${order.orderNumber}`, dedupeKey: `SERVICE_FEE:${order.id}` },
     ...(shares.deliveryFeeToPlatformMinor ? [{ ...base, party: 'PLATFORM', type: 'DELIVERY_FEE', amountMinor: shares.deliveryFeeToPlatformMinor, status: 'RETAINED', description: `Delivery fee on ${order.orderNumber}`, dedupeKey: `DELIVERY_FEE:${order.id}` }] : []),
+    ...(shares.discountMinor ? [{ ...base, party: 'PLATFORM', type: 'PROMO_DISCOUNT', amountMinor: -shares.discountMinor, status: 'RETAINED', description: `Promo paid by DOORSTEP on ${order.orderNumber}${order.promoCode ? ` (${order.promoCode})` : ''}`, dedupeKey: `PROMO_DISCOUNT:${order.id}` }] : []),
     { ...base, party: 'RESTAURANT', restaurantId: order.restaurantId, type: 'PARTNER_SHARE', amountMinor: shares.partnerShareMinor, status: splitSettled ? 'SETTLED_BY_SPLIT' : 'DUE', description: splitSettled ? `Paid to your bank by Paystack for ${order.orderNumber}` : `Your share of ${order.orderNumber}`, dedupeKey: `PARTNER_SHARE:${order.id}` },
   ].filter((entry) => entry.amountMinor !== 0)
 }

@@ -48,3 +48,4 @@
 .orders-updates-icon { align-items: center; background: var(--t-mint-100, #e6f2eb); border-radius: 50%; color: var(--t-forest-800, #123d2d); display: flex; flex: 0 0 auto; height: 42px; justify-content: center; position: relative; width: 42px; }
 .orders-updates-icon b { background: #e4572e; border: 2px solid #fff; border-radius: 999px; color: #fff; font-size: 11px; line-height: 1; min-width: 20px; padding: 3px 5px; position: absolute; right: -6px; text-align: center; top: -6px; }
 .orders-updates:active { transform: scale(.99); }
+.order-plan-note { align-items: flex-start; background: var(--t-gold-100, #fff3d4); border-radius: 14px; color: var(--t-gold-800, #7a5300); display: flex; gap: 10px; line-height: 1.45; margin: 0 0 14px; padding: 12px 14px; }

@@ -215,6 +215,10 @@ model Restaurant {
   commissionDoorstepRiderPercent Decimal?   @db.Decimal(5, 2)
   commissionOwnRiderPercent      Decimal?   @db.Decimal(5, 2)
   storeType         StoreType                @default(RESTAURANT)
+  /// Customer-app section: FOOD, GROCERIES, SHOPS or PHARMACY_BEAUTY (null = from storeType).
+  vertical          String?
+  /// Customers may collect the order themselves (no delivery fee, no rider).
+  pickupEnabled     Boolean                  @default(true)
   phone             String?
   email             String?
   address           String
@@ -546,6 +550,15 @@ model Order {
   deliveryFeeMinor   Int
   serviceFeeMinor    Int
   discountMinor      Int               @default(0)
+  /// DELIVERY or PICKUP (customer collects at the store).
+  orderType          String            @default("DELIVERY")
+  /// Scheduled order: when the customer wants it (null = as soon as possible).
+  scheduledFor       DateTime?
+  /// Rider tip; 100% goes to whoever delivers.
+  tipMinor           Int               @default(0)
+  promotionId        String?
+  promotion          Promotion?        @relation(fields: [promotionId], references: [id])
+  promoCode          String?
   totalMinor         Int
   status             OrderStatus       @default(PENDING_PAYMENT)
   createdAt          DateTime          @default(now())
@@ -562,6 +575,7 @@ model Order {
   @@index([status, createdAt])
 
   @@index([customerId, customerHiddenAt, createdAt])
+  @@index([promotionId, customerId])
 }
 
 model OrderItem {
@@ -768,15 +782,28 @@ model Promotion {
   id           String      @id @default(cuid())
   name         String
   code         String?     @unique
+  /// FREE_DELIVERY, PERCENT (of the item subtotal) or FIXED (naira off). DOORSTEP funds every discount.
   type         String
   valueMinor   Int?
   percentage   Decimal?    @db.Decimal(5, 2)
+  maxDiscountMinor Int?
+  minSubtotalMinor Int      @default(0)
+  description  String?
   startsAt     DateTime
   endsAt       DateTime
   usageLimit   Int?
+  perCustomerLimit Int      @default(1)
+  firstOrderOnly Boolean    @default(false)
+  /// Applied automatically at checkout (no code to type), e.g. first-order free delivery.
+  autoApply    Boolean     @default(false)
+  /// Shown as a banner/offer in the customer app.
+  showInApp    Boolean     @default(true)
+  vertical     String?
   active       Boolean     @default(true)
   restaurantId String?
   restaurant   Restaurant? @relation(fields: [restaurantId], references: [id])
+  orders       Order[]
+  createdAt    DateTime    @default(now())
 }
 
 model Review {

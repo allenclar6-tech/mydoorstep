@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { ArrowRight, BarChart3, Bell, Check, ChevronRight, Clock3, DollarSign, LayoutDashboard, LogOut, Menu, Package, Pencil, Plus, Settings, Store, Utensils, X, MessageCircle } from 'lucide-react'
 import { formatNaira, restaurants } from './data'
 import { RestaurantOrderBoard } from './live/RestaurantOrderBoard'
+import { PickupToggle } from './live/PickupToggle'
 import { WorkspaceTabBar } from './mobile/WorkspaceTabBar'
 import { NotificationBell, WorkspaceInbox } from './notifications/NotificationCenter'
 import { ProfileCompletenessCard } from './account/ProfileCompleteness'
@@ -49,7 +50,7 @@ function Dashboard() {
 
 function OrderRow({ order, onStatus }) { const customer = typeof order.customer === 'string' ? order.customer : `${order.customer?.firstName || 'Customer'} ${order.customer?.lastName || ''}`.trim(); const items = Array.isArray(order.items) ? order.items.map((item) => `${item.quantity}× ${item.nameSnapshot}`).join(', ') : order.items; const total = order.total ?? (order.totalMinor ? order.totalMinor / 100 : 0); return <div className="portal-order-row"><div className="order-id"><strong>{order.orderNumber || order.id}</strong><small>{order.time || new Date(order.createdAt).toLocaleString('en-NG')} · {customer}</small></div><div className="order-items">{items}</div><strong>{formatNaira(total)}</strong><span className={`portal-status ${order.status.toLowerCase()}`}>{order.status.replaceAll('_', ' ')}</span>{onStatus && order.status === 'PAID' && <button className="small-action" onClick={() => onStatus(order.id)}>Accept</button>}</div> }
 
-function Orders() { return <RestaurantOrderBoard /> }
+function Orders() { return <><PickupToggle /><RestaurantOrderBoard /></> }
 
 function Earnings() { const grocery = useContext(PartnerBusinessContext)?.storeType === 'GROCERY'; return <><PortalIntro eyebrow={grocery ? 'STORE MONEY' : 'MONEY'} title="Earnings & payouts" /><Wallet kind="RESTAURANT" /></> }
 

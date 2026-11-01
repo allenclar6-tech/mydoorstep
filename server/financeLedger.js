@@ -15,8 +15,8 @@ export function plannedOrderShares(order, settings) {
   if (order.commissionPercent != null && order.partnerShareMinor != null) {
     const commissionPercent = Number(order.commissionPercent)
     const commissionMinor = Math.round(order.subtotalMinor * commissionPercent / 100)
-    const businessRider = order.fulfilment === 'BUSINESS_RIDER'
-    return { fulfilment: order.fulfilment, commissionPercent, commissionMinor, partnerShareMinor: order.partnerShareMinor, platformShareMinor: order.totalMinor - order.partnerShareMinor, deliveryFeeToPlatformMinor: businessRider ? 0 : order.deliveryFeeMinor, serviceFeeMinor: order.serviceFeeMinor }
+    const businessRider = order.fulfilment === 'BUSINESS_RIDER' || order.fulfilment === 'PICKUP'
+    return { fulfilment: order.fulfilment, commissionPercent, commissionMinor, partnerShareMinor: order.partnerShareMinor, platformShareMinor: order.totalMinor - order.partnerShareMinor, deliveryFeeToPlatformMinor: businessRider ? 0 : order.deliveryFeeMinor, serviceFeeMinor: order.serviceFeeMinor, tipMinor: order.tipMinor || 0, discountMinor: order.discountMinor || 0 }
   }
   return orderShares(order, order.fulfilment || 'DOORSTEP_RIDER', settings)
 }
@@ -72,6 +72,13 @@ export async function recordDeliveryCompleted(db, deliveryId) {
     riderEntry = { parcelBookingId: booking.id, party: 'RIDER', riderId: delivery.rider.id, type: 'RIDER_EARNING', amountMinor: earning.amountMinor ?? 0, status: earning.amountMinor == null ? 'NEEDS_REVIEW' : 'DUE', description: earning.amountMinor == null ? `${booking.reference}: rider rates not published — DOORSTEP will set this amount` : `${booking.reference} · ${(booking.distanceMeters / 1000).toFixed(1)} km`, dedupeKey: `RIDER_EARNING:parcel:${booking.id}` }
   }
   if (riderEntry) entries.push(riderEntry)
+  // Customer tip: all of it goes to whoever delivered (a business's own rider is paid through the business).
+  if (delivery.order?.tipMinor > 0) {
+    const order = delivery.order
+    entries.push(businessRider
+      ? { orderId: order.id, party: 'RESTAURANT', restaurantId: order.restaurantId, type: 'TIP', amountMinor: order.tipMinor, status: 'DUE', description: `Customer tip for your rider on ${order.orderNumber} — please pass it on in full`, dedupeKey: `TIP:${order.id}` }
+      : { orderId: order.id, party: 'RIDER', riderId: delivery.rider.id, type: 'TIP', amountMinor: order.tipMinor, status: 'DUE', description: `${order.orderNumber} · tip from the customer (100% yours)`, dedupeKey: `TIP:${order.id}` })
+  }
   // DOORSTEP's percentage fee on the rider's earning; unpriced earnings get it when an admin sets the amount.
   if (riderEntry?.status === 'DUE') entries.push(...riderFeeEntries(riderFeeSource(riderEntry), riderEntry.amountMinor, settings))
   await writeEntries(db, entries)

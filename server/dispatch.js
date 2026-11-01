@@ -2,6 +2,7 @@
 // online rider for a short window. If they decline or the window passes, the next rider gets it. Riders who
 // already passed are skipped for a few minutes; if nobody can take it, the order stays in the open pool that
 // every online rider can see, and DOORSTEP admins are alerted when an order waits too long.
+import { heldForSchedule, SCHEDULE_DISPATCH_LEAD_MS } from './promotions.js'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const OFFER_SECONDS = 45
@@ -175,10 +176,12 @@ export async function offerToRider(db, deliveryId, riderId, { now = new Date(), 
 export async function dispatchDelivery(db, deliveryId, { now = new Date(), notifyUsers } = {}) {
   const delivery = await db.delivery.findUnique({
     where: { id: deliveryId },
-    include: { order: { select: { id: true, orderNumber: true, status: true, restaurantId: true, addressSnapshot: true, plannedRiderPayMinor: true, deliveryQuote: true, restaurant: { select: { name: true, latitude: true, longitude: true, application: { select: { deliveryPreference: true } } } } } } },
+    include: { order: { select: { id: true, orderNumber: true, status: true, scheduledFor: true, restaurantId: true, addressSnapshot: true, plannedRiderPayMinor: true, deliveryQuote: true, restaurant: { select: { name: true, latitude: true, longitude: true, application: { select: { deliveryPreference: true } } } } } } },
   })
   if (!delivery?.order || delivery.riderId) return { offered: false, reason: 'NOT_DISPATCHABLE' }
   if (!DISPATCHABLE_ORDER_STATUSES.includes(delivery.order.status)) return { offered: false, reason: 'ORDER_NOT_READY_FOR_DISPATCH' }
+  // Scheduled orders go to riders about 35 minutes before the customer's chosen time.
+  if (heldForSchedule(delivery.order, now)) return { offered: false, reason: 'SCHEDULED_LATER' }
   if (delivery.status === 'REQUESTED' && delivery.requestExpiresAt && delivery.requestExpiresAt > now) return { offered: false, reason: 'OFFER_PENDING' }
   if (!['AVAILABLE', 'REQUESTED'].includes(delivery.status)) return { offered: false, reason: 'NOT_DISPATCHABLE' }
 
@@ -218,7 +221,7 @@ export async function sweepDispatch(db, { now = new Date(), notifyUsers, notifyA
   }
   const waiting = await db.delivery.findMany({
     where: { riderId: null, orderId: { not: null }, OR: [{ status: 'AVAILABLE' }, { status: 'REQUESTED', requestExpiresAt: { lte: now } }], order: { status: { in: DISPATCHABLE_ORDER_STATUSES } } },
-    select: { id: true, stuckAlertedAt: true, order: { select: { orderNumber: true, acceptedAt: true, paidAt: true, restaurant: { select: { name: true } } } } },
+    select: { id: true, stuckAlertedAt: true, order: { select: { orderNumber: true, acceptedAt: true, paidAt: true, scheduledFor: true, restaurant: { select: { name: true } } } } },
     take: 50,
   })
   let offered = 0
@@ -228,7 +231,8 @@ export async function sweepDispatch(db, { now = new Date(), notifyUsers, notifyA
   for (const delivery of waiting) {
     const result = await dispatchDelivery(db, delivery.id, { now, notifyUsers })
     if (result.offered) offered += 1
-    const since = delivery.order.acceptedAt || delivery.order.paidAt
+    const scheduledStart = delivery.order.scheduledFor ? new Date(new Date(delivery.order.scheduledFor).getTime() - SCHEDULE_DISPATCH_LEAD_MS) : null
+    const since = [delivery.order.acceptedAt || delivery.order.paidAt, scheduledStart].filter(Boolean).map((value) => new Date(value)).sort((a, b) => b - a)[0]
     if (!result.offered && !delivery.stuckAlertedAt && since && now - new Date(since) > alertAfter) {
       const marked = await db.delivery.updateMany({ where: { id: delivery.id, stuckAlertedAt: null }, data: { stuckAlertedAt: now } })
       const why = pool && pool.online === 0 ? 'No riders are online right now.' : `It has had no rider for over ${Math.round(alertAfter / 60_000)} minutes.`

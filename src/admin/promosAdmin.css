@@ -1,0 +1,24 @@
+/* Admin › Promo codes */
+.pa-top { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 16px; }
+.pa-form { display: grid; gap: 12px; }
+.pa-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.pa-form label { display: grid; font-size: .82rem; font-weight: 700; gap: 5px; }
+.pa-form input:not([type='checkbox']), .pa-form select { border: 1px solid var(--t-line, #e3e8e2); border-radius: 10px; font: inherit; padding: 10px; }
+.pa-checks { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.pa-checks label { align-items: center; display: inline-flex; font-weight: 600; gap: 6px; }
+.pa-hint { background: var(--t-mint-50, #f2f8f4); border-radius: 10px; color: var(--t-ink-soft, #3d4f47); font-size: .82rem; margin: 0; padding: 10px 12px; }
+.pa-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.pa-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.pa-list li { border: 1px solid var(--t-line, #e3e8e2); border-left: 4px solid var(--t-line-strong, #cfd9d2); border-radius: 12px; display: grid; gap: 4px; padding: 12px; }
+.pa-list li.is-live { border-left-color: var(--t-gold-500, #f5b223); }
+.pa-list small { color: var(--t-muted, #5b6b63); }
+.pa-main { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.pa-code { background: var(--t-mint-100, #e6f2eb); border-radius: 6px; font-size: .78rem; font-weight: 800; letter-spacing: .05em; padding: 2px 7px; }
+.pa-state { border-radius: 999px; color: var(--t-muted, #5b6b63); font-size: .74rem; font-weight: 800; margin-left: auto; }
+.pa-state.is-live { color: #0a7a4f; }
+.pa-row-actions { display: flex; gap: 8px; margin-top: 4px; }
+.pa-sections ul { display: grid; gap: 8px; list-style: none; margin: 10px 0 0; padding: 0; }
+.pa-sections li { align-items: center; display: grid; gap: 10px; grid-template-columns: 1fr auto auto 18px; }
+.pa-sections select { border: 1px solid var(--t-line, #e3e8e2); border-radius: 8px; font: inherit; padding: 6px 8px; }
+.pa-sections label { align-items: center; display: inline-flex; font-size: .85rem; gap: 5px; }
+@media (max-width: 560px) { .pa-sections li { grid-template-columns: 1fr auto; } }
