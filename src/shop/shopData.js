@@ -260,3 +260,33 @@ export function applyAppearance(value = read(APPEARANCE_KEY, 'light')) {
 }
 export function setAppearance(value) { write(APPEARANCE_KEY, value); applyAppearance(value) }
 export const appearance = () => read(APPEARANCE_KEY, 'light')
+
+// Signed-in customer and their recent orders (for the greeting, the live order card and “Order again”) -------------
+let meCache = null
+export function useMe() {
+  const [me, setMe] = useState(meCache)
+  useEffect(() => {
+    if (!token() || meCache) return undefined
+    let active = true
+    fetch(`${apiBase}/api/auth/me`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => { if (body?.user) { meCache = body.user; if (active) setMe(body.user) } }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
+  return me
+}
+export const ACTIVE_ORDER_STATUSES = ['PAID', 'RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY']
+export function useMyOrders() {
+  const [orders, setOrders] = useState([])
+  useEffect(() => {
+    if (!token()) return undefined
+    let active = true
+    const load = () => { if (document.hidden) return; fetch(`${apiBase}/api/orders?limit=20`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => { if (active && body?.orders) setOrders(body.orders) }).catch(() => undefined) }
+    load()
+    const timer = window.setInterval(load, 30_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [])
+  return orders
+}
+export function greeting(now = new Date()) {
+  const hour = now.getHours()
+  return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+}

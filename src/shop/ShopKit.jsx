@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Ban, Bike, ChevronDown, ChevronRight, Clock3, Compass, Heart, Home, LocateFixed, MapPin, Package, Pill, Plus, Search, ShoppingBag, ShoppingBasket, Star, Store, Truck, User, UtensilsCrossed, X } from 'lucide-react'
+import { ArrowLeft, Ban, Bell, Bike, ChevronDown, ChevronRight, Clock3, Compass, Heart, Home, LocateFixed, MapPin, Plus, Search, ShoppingBag, ThumbsUp, Truck, User, X } from 'lucide-react'
+import { CATEGORY_ART } from './Illustrations'
 import { chooseAddress, etaText, navigate, ratingPercent, storeHref, token, useAddress, useCart, useDeliveryCheck, useSavedAddresses, VERTICALS } from './shopData'
 
 // Building blocks shared by every customer screen.
 
 export const CATEGORY_TILES = [
-  { key: 'FOOD', label: 'Food', icon: UtensilsCrossed, href: VERTICALS.FOOD.path, tone: 'gold' },
-  { key: 'GROCERIES', label: 'Groceries', icon: ShoppingBasket, href: VERTICALS.GROCERIES.path, tone: 'mint' },
-  { key: 'SHOPS', label: 'Shops', icon: Store, href: VERTICALS.SHOPS.path, tone: 'sky' },
-  { key: 'PHARMACY_BEAUTY', label: 'Pharmacy & Beauty', icon: Pill, href: VERTICALS.PHARMACY_BEAUTY.path, tone: 'rose' },
-  { key: 'PACKAGE', label: 'Package Delivery', icon: Package, href: '/send', tone: 'forest' },
+  { key: 'FOOD', label: 'Food', href: VERTICALS.FOOD.path, tone: 'sun' },
+  { key: 'GROCERIES', label: 'Groceries', href: VERTICALS.GROCERIES.path, tone: 'mint' },
+  { key: 'SHOPS', label: 'Shops', href: VERTICALS.SHOPS.path, tone: 'sky' },
+  { key: 'PHARMACY_BEAUTY', label: 'Pharmacy & Beauty', href: VERTICALS.PHARMACY_BEAUTY.path, tone: 'rose' },
+  { key: 'PACKAGE', label: 'Package Delivery', href: '/send', tone: 'sand' },
+  { key: 'OFFERS', label: 'Offers', href: '/account/promos', tone: 'sun' },
 ]
 
 const link = (href) => (event) => { event.preventDefault(); navigate(href) }
@@ -35,15 +37,17 @@ export function Sheet({ title, onClose, children, className = '' }) {
   </div>, document.body)
 }
 
-/** Address pill + sheet: current pin, saved places, current location and the map picker. */
-export function AddressPill({ compact = false }) {
+/** “Delivering to …” button for the yellow band; opens the address sheet. */
+export function AddressPill() {
   const address = useAddress()
   const [open, setOpen] = useState(false)
   const check = useDeliveryCheck(address)
-  const short = address.label ? address.label.split(',')[0] : 'Set delivery address'
+  const out = check && !check.deliverable
   return <>
-    <button type="button" className={`sp-address-pill${check && !check.deliverable ? ' is-out' : ''}${compact ? ' is-compact' : ''}`} onClick={() => setOpen(true)} aria-label={`Delivery address: ${address.label || 'not set'}. Change`}>
-      <MapPin size={16} aria-hidden="true" /><span>{short}</span><ChevronDown size={15} aria-hidden="true" />
+    <button type="button" className={`sp-address${out ? ' is-out' : ''}`} onClick={() => setOpen(true)} aria-label={`Delivery address: ${address.label || 'not set'}. Change`}>
+      <MapPin size={18} aria-hidden="true" />
+      <span><small>{out ? 'Outside our delivery area' : address.label ? 'Delivering to' : 'Where should we deliver?'}</small><strong>{address.label || 'Set your address'}</strong></span>
+      <ChevronDown size={18} aria-hidden="true" />
     </button>
     {open && <AddressSheet onClose={() => setOpen(false)} />}
   </>
@@ -101,18 +105,58 @@ export function OutOfArea({ check }) {
   </section>
 }
 
-export function ShopHeader({ title, back, search = true, address = true }) {
+/** DOORSTEP pin logo, as in the site header. */
+export function Logo() {
+  return <a className="sp-logo" href="/" onClick={link('/')} aria-label="DOORSTEP home"><span className="sp-logo-mark" aria-hidden="true" /><span className="sp-logo-word">DOORSTEP</span></a>
+}
+
+function CartButton() {
   const { count } = useCart()
-  return <header className="sp-header">
-    {back ? <button type="button" className="sp-icon-btn" onClick={() => (window.history.length > 1 ? window.history.back() : navigate(back))} aria-label="Back"><ChevronRight size={20} style={{ transform: 'rotate(180deg)' }} /></button>
-      : <a className="sp-brand" href="/" onClick={link('/')} aria-label="DOORSTEP home"><span className="sp-brand-mark">d</span><span className="sp-brand-word">doorstep</span></a>}
-    {title ? <h1 className="sp-header-title">{title}</h1> : address ? <AddressPill /> : <span />}
-    <div className="sp-header-actions">
-      {search && <a className="sp-icon-btn" href="/discover" onClick={link('/discover')} aria-label="Search"><Search size={19} /></a>}
-      <a className="sp-icon-btn sp-cart-btn" href="/checkout" onClick={link('/checkout')} aria-label={`Basket, ${count} item${count === 1 ? '' : 's'}`}><ShoppingBag size={19} />{count > 0 && <b>{count}</b>}</a>
+  return <a className="sp-band-btn" href="/checkout" onClick={link('/checkout')} aria-label={`Basket, ${count} item${count === 1 ? '' : 's'}`}><ShoppingBag size={19} />{count > 0 && <b>{count}</b>}</a>
+}
+const goBack = (fallback) => () => (window.history.length > 1 ? window.history.back() : navigate(fallback))
+
+/**
+ * Yellow top band (the DOORSTEP marketplace header). Home shows the logo and address; inner screens show a back
+ * button and a title. A search box can sit inside the band.
+ */
+export function Band({ title, back, search, children }) {
+  return <header className="sp-band">
+    <div className="sp-band-row">
+      {back ? <button type="button" className="sp-band-btn" onClick={goBack(back)} aria-label="Back"><ArrowLeft size={20} /></button> : !title && <Logo />}
+      {title && <h1 className={`sp-band-title${back ? '' : ' is-big'}`}>{title}</h1>}
+      <div className="sp-band-actions">
+        {!back && token() && <a className="sp-band-btn" href="/account/notifications" onClick={link('/account/notifications')} aria-label="Notifications"><Bell size={19} /></a>}
+        <CartButton />
+      </div>
     </div>
+    {children}
+    {search}
   </header>
 }
+
+/** Search field for the band. With `href`, it is a button that opens Discover. */
+export function BandSearch({ value, onChange, placeholder, href, autoFocus }) {
+  if (href) return <a className="sp-search" href={href} onClick={link(href)}><Search size={18} aria-hidden="true" /><span>{placeholder}</span></a>
+  return <label className="sp-search"><Search size={18} aria-hidden="true" /><input type="search" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={placeholder} autoFocus={autoFocus} enterKeyHint="search" />{value && <button type="button" onClick={() => onChange('')} aria-label="Clear search"><X size={15} /></button>}</label>
+}
+
+/** Plain white header for inner screens (checkout, promo codes, FAQ). */
+export function ShopHeader({ title, back = '/' }) {
+  return <header className="sp-header">
+    <button type="button" className="sp-icon-btn" onClick={goBack(back)} aria-label="Back"><ArrowLeft size={20} /></button>
+    <h1 className="sp-header-title">{title}</h1>
+    <span className="sp-header-spacer" />
+  </header>
+}
+
+/** Round illustrated category button. */
+export function Bubble({ art: Art, label, href, tone = 'mint', active, onClick, size = 'md' }) {
+  const body = <><span className={`sp-bubble-art is-${tone}`} aria-hidden="true">{Art && <Art />}</span><span className="sp-bubble-label">{label}</span></>
+  if (href) return <a className={`sp-bubble is-${size}`} href={href} onClick={link(href)}>{body}</a>
+  return <button type="button" className={`sp-bubble is-${size}${active ? ' is-active' : ''}`} aria-pressed={active} onClick={onClick}>{body}</button>
+}
+export const categoryArt = (key) => CATEGORY_ART[key]
 
 export function TabBar({ active }) {
   const items = [
@@ -122,7 +166,7 @@ export function TabBar({ active }) {
     ['orders', 'Orders', '/account/orders', Clock3],
     ['profile', 'Profile', '/profile', User],
   ]
-  return <nav className="sp-tabbar" aria-label="Main">{items.map(([key, label, href, Icon]) => <a key={key} href={href} onClick={link(href)} className={active === key ? 'is-active' : undefined} aria-current={active === key ? 'page' : undefined}><Icon size={21} aria-hidden="true" /><span>{label}</span></a>)}</nav>
+  return <nav className="sp-tabbar" aria-label="Main">{items.map(([key, label, href, Icon]) => <a key={key} href={href} onClick={link(href)} className={active === key ? 'is-active' : undefined} aria-current={active === key ? 'page' : undefined}><span className="sp-tab-icon"><Icon size={21} aria-hidden="true" /></span><span>{label}</span></a>)}</nav>
 }
 
 /** Sticky basket bar at the bottom of store screens. */
@@ -130,7 +174,7 @@ export function BasketBar() {
   const { cart, count, subtotal } = useCart()
   if (!count) return null
   return <a className="sp-basket-bar" href="/checkout" onClick={link('/checkout')}>
-    <span className="sp-basket-count">{count}</span>
+    <span className="sp-basket-count" key={count}>{count}</span>
     <span className="sp-basket-text"><b>View basket</b><small>{cart[0]?.restaurantName}</small></span>
     <span className="sp-basket-total">₦{Math.round(subtotal).toLocaleString('en-NG')}</span>
   </a>
@@ -145,39 +189,51 @@ export function SectionHead({ title, href, hint }) {
 
 function StoreImage({ store }) {
   const [failed, setFailed] = useState(false)
-  if (!store.image || failed) return <div className="sp-store-fallback" aria-hidden="true"><span>{store.name.slice(0, 1)}</span></div>
+  if (!store.image || failed) { const Art = CATEGORY_ART[store.vertical] || CATEGORY_ART.FOOD; return <div className={`sp-store-fallback is-${store.vertical || 'FOOD'}`} aria-hidden="true"><span className="sp-fallback-art"><Art /></span><b>{store.name}</b></div> }
   return <img src={store.image} alt="" loading="lazy" onError={() => setFailed(true)} />
 }
 
 export function StoreFacts({ store, freeDelivery }) {
   const percent = ratingPercent(store)
   return <div className="sp-store-facts">
-    {percent != null ? <span className="sp-rating"><Star size={13} aria-hidden="true" />{percent}% <small>({store.ratingCount})</small></span> : <span className="sp-new">New</span>}
+    {percent != null ? <span className="sp-rating"><ThumbsUp size={13} aria-hidden="true" />{percent}%<small> ({store.ratingCount})</small></span> : <span className="sp-new">New</span>}
+    <span className={freeDelivery ? 'sp-fee is-free' : 'sp-fee'}><Bike size={14} aria-hidden="true" />{freeDelivery ? 'Free delivery' : 'By distance'}</span>
     <span><Clock3 size={13} aria-hidden="true" />{etaText(store.eta)}</span>
-    <span className={freeDelivery ? 'sp-fee is-free' : 'sp-fee'}><Bike size={13} aria-hidden="true" />{freeDelivery ? <><s>Fee</s> Free</> : 'Fee by distance'}</span>
   </div>
 }
 
-/** Full-width card used in lists. */
+function MediaTags({ store, freeDelivery, badge }) {
+  if (!store.openNow) return <span className="sp-closed-tag">{store.temporarilyClosed ? 'Paused' : store.openingTime ? `Opens ${store.openingTime}` : 'Closed'}</span>
+  return <>{badge && <span className="sp-rank-tag">{badge}</span>}{freeDelivery && <span className="sp-promo-tag">Free delivery</span>}</>
+}
+
+/** Full-width store card used in lists. */
 export function StoreCard({ store, freeDelivery, badge }) {
-  const closed = !store.openNow
-  return <a className={`sp-store-card${closed ? ' is-closed' : ''}`} href={storeHref(store)} onClick={link(storeHref(store))}>
-    <div className="sp-store-media"><StoreImage store={store} />{closed && <span className="sp-closed-tag">{store.temporarilyClosed ? 'Closed for now' : store.openingTime ? `Opens ${store.openingTime}` : 'Closed'}</span>}{badge && !closed && <span className="sp-promo-tag">{badge}</span>}</div>
+  return <a className={`sp-store-card${store.openNow ? '' : ' is-closed'}`} href={storeHref(store)} onClick={link(storeHref(store))}>
+    <div className="sp-store-media"><StoreImage store={store} /><MediaTags store={store} freeDelivery={freeDelivery} badge={badge} /></div>
     <div className="sp-store-info">
       <div className="sp-store-title"><h3>{store.name}</h3>{store.pickupEnabled && <span className="sp-pickup-chip">Pickup</span>}</div>
-      <p>{store.cuisine || store.description || VERTICALS[store.vertical]?.label}</p>
       <StoreFacts store={store} freeDelivery={freeDelivery} />
     </div>
   </a>
 }
 
 /** Compact card for horizontal rails. */
-export function StoreTile({ store, freeDelivery }) {
+export function StoreTile({ store, freeDelivery, badge }) {
   return <a className={`sp-store-tile${store.openNow ? '' : ' is-closed'}`} href={storeHref(store)} onClick={link(storeHref(store))}>
-    <div className="sp-store-media"><StoreImage store={store} />{freeDelivery && store.openNow && <span className="sp-promo-tag">Free delivery</span>}</div>
+    <div className="sp-store-media"><StoreImage store={store} /><MediaTags store={store} freeDelivery={freeDelivery} badge={badge} /></div>
     <h3>{store.name}</h3>
     <StoreFacts store={store} freeDelivery={freeDelivery} />
   </a>
+}
+
+/** “Popular brands”: round store logos. */
+export function BrandCircles({ stores }) {
+  return <div className="sp-brands" role="list">{stores.map((store) => <a key={store.id} role="listitem" className="sp-brand" href={storeHref(store)} onClick={link(storeHref(store))}>
+    <span className="sp-brand-logo">{store.logo || store.image ? <img src={store.logo || store.image} alt="" loading="lazy" /> : <b>{store.name.slice(0, 1)}</b>}</span>
+    <span className="sp-brand-name">{store.name}</span>
+    {store.eta && <small>{store.eta[0]}–{store.eta[1]} min</small>}
+  </a>)}</div>
 }
 
 export function Rail({ children, label }) {

@@ -3,7 +3,7 @@ import { Bell, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCard, Globe, 
 import { apiBase } from '../config/apiBase'
 import { ProfileAvatar } from '../ProfileAvatar'
 import { signOut } from '../services/authService'
-import { EmptyState, Sheet, ShopHeader, SkeletonList, TabBar } from './ShopKit'
+import { Band, EmptyState, Sheet, ShopHeader, SkeletonList, TabBar } from './ShopKit'
 import { appearance, authHeaders, naira, navigate, setAppearance, token } from './shopData'
 
 const link = (href) => (event) => { event.preventDefault(); navigate(href) }
@@ -63,8 +63,8 @@ export function ProfileHub() {
   const [sheet, setSheet] = useState(null)
   const name = user ? (user.preferredName || [user.firstName, user.lastName].filter(Boolean).join(' ') || 'DOORSTEP customer') : 'Your profile'
   return <div className="sp-screen sp-profile">
-    <ShopHeader title="Profile" search={false} />
-    <main className="sp-main">
+    <Band title="Profile" />
+    <main className="sp-body">
       {signedIn ? <a className="sp-profile-card" href="/account/profile" onClick={link('/account/profile')}><ProfileAvatar className="sp-avatar" size={48} /><span><b>{name}</b><small>{user?.email || user?.phone || 'Loading…'}</small></span><ChevronRight size={18} aria-hidden="true" /></a>
         : <div className="sp-profile-card is-guest"><span className="sp-avatar is-guest" aria-hidden="true"><User size={24} /></span><span><b>Welcome to DOORSTEP</b><small>Sign in to order, track deliveries and save addresses.</small></span><div className="sp-guest-actions"><button type="button" className="sp-primary" onClick={() => navigate('/login')}>Sign in</button><button type="button" className="sp-ghost" onClick={() => navigate('/register')}>Create account</button></div></div>}
 

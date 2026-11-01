@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Bike, Clock3, Heart, Info, MapPin, Minus, Plus, Search, Share2, Star, Store, X } from 'lucide-react'
+import { ArrowLeft, Bike, ChevronRight, Clock3, Heart, Info, MapPin, Minus, Plus, Search, Share2, Store, ThumbsUp, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { BasketBar, EmptyState, Sheet, SkeletonList } from './ShopKit'
+import { toast } from './Toaster'
+import { CATEGORY_ART } from './Illustrations'
 import { freeDeliveryFor } from './ShopHome'
 import { addItem, authHeaders, changeItem, etaText, navigate, nairaWhole, ratingPercent, setItemNote, token, useCart, useHome, useStorePage } from './shopData'
 
@@ -92,6 +94,12 @@ export function StorePage({ slug }) {
   const sectionRefs = useRef({})
   const store = page.store
   const [favorite, toggleFavorite] = useFavorite(store?.id)
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 200)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   const sections = useMemo(() => {
     if (!store) return []
@@ -113,7 +121,7 @@ export function StorePage({ slug }) {
   }, [store?.id])
 
   if (page.status === 'loading') return <div className="sp-screen"><div className="sp-store-hero is-loading" /><main className="sp-main"><SkeletonList rows={5} /></main></div>
-  if (page.status === 'error') return <div className="sp-screen"><header className="sp-header"><button type="button" className="sp-icon-btn" onClick={() => navigate('/')} aria-label="Back"><ArrowLeft size={20} /></button><h1 className="sp-header-title">Store</h1><span /></header><main className="sp-main"><EmptyState icon={Store} title="Store unavailable" body={page.error} action={<button type="button" className="sp-primary" onClick={() => navigate('/discover')}>Find another store</button>} /></main></div>
+  if (page.status === 'error') return <div className="sp-screen"><header className="sp-header"><button type="button" className="sp-icon-btn" onClick={() => navigate('/')} aria-label="Back"><ArrowLeft size={20} /></button><h1 className="sp-header-title">Store</h1><span className="sp-header-spacer" /></header><main className="sp-main"><EmptyState icon={Store} title="Store unavailable" body={page.error} action={<button type="button" className="sp-primary" onClick={() => navigate('/discover')}>Find another store</button>} /></main></div>
 
   const quantityOf = (id) => cart.find((entry) => entry.id === id && entry.restaurantId === store.id)?.quantity || 0
   const free = home.data ? freeDeliveryFor(store, home.data) : false
@@ -123,6 +131,7 @@ export function StorePage({ slug }) {
     if (result === 'OTHER_STORE') { setPending({ item, quantity, note }); return }
     for (let index = 1; index < quantity; index += 1) changeItem(item.id, 1)
     if (note) setItemNote(item.id, note)
+    toast(`${quantity > 1 ? `${quantity} × ` : ''}${item.name} added`)
     setSheet(null)
   }
   const chooseType = (value) => { setOrderType(value); writeOrderType(value) }
@@ -130,8 +139,13 @@ export function StorePage({ slug }) {
   const share = () => { const url = window.location.href.split('#')[0]; if (navigator.share) navigator.share({ title: store.name, url }).catch(() => undefined); else navigator.clipboard?.writeText(url).catch(() => undefined) }
 
   return <div className="sp-screen sp-store">
+    <div className={`sp-store-mini${scrolled ? ' is-on' : ''}`} aria-hidden={!scrolled}>
+      <button type="button" className="sp-icon-btn" tabIndex={scrolled ? 0 : -1} onClick={() => (window.history.length > 1 ? window.history.back() : navigate('/'))} aria-label="Back"><ArrowLeft size={19} /></button>
+      <b>{store.name}</b>
+      <button type="button" className="sp-icon-btn" tabIndex={scrolled ? 0 : -1} onClick={toggleFavorite} aria-label={favorite ? 'Remove from favourites' : 'Save to favourites'}><Heart size={17} fill={favorite ? 'currentColor' : 'none'} /></button>
+    </div>
     <div className="sp-store-hero">
-      {store.image ? <img src={store.image} alt="" /> : <div className="sp-store-fallback is-hero" aria-hidden="true"><span>{store.name.slice(0, 1)}</span></div>}
+      {store.image ? <img src={store.image} alt="" /> : <div className={`sp-store-fallback is-hero is-${store.vertical || 'FOOD'}`} aria-hidden="true">{(() => { const Art = CATEGORY_ART[store.vertical || 'FOOD']; return <span className="sp-fallback-art"><Art /></span> })()}</div>}
       <div className="sp-hero-actions">
         <button type="button" className="sp-round" onClick={() => (window.history.length > 1 ? window.history.back() : navigate('/'))} aria-label="Back"><ArrowLeft size={19} /></button>
         <span>
@@ -142,6 +156,7 @@ export function StorePage({ slug }) {
     </div>
     <main className="sp-main sp-store-main">
       <section className="sp-store-head">
+        <span className="sp-store-logo" aria-hidden="true">{store.logo || store.image ? <img src={store.logo || store.image} alt="" /> : <b>{store.name.slice(0, 1)}</b>}</span>
         <h1>{store.name}</h1>
         <p>{[store.cuisine, store.address].filter(Boolean).join(' · ')}</p>
         {store.pickupEnabled && <div className="sp-mode-toggle" role="radiogroup" aria-label="Delivery or pickup">
@@ -149,13 +164,13 @@ export function StorePage({ slug }) {
           <button type="button" role="radio" aria-checked={orderType === 'PICKUP'} className={orderType === 'PICKUP' ? 'is-on' : ''} onClick={() => chooseType('PICKUP')}><Store size={15} aria-hidden="true" />Pickup</button>
         </div>}
         <div className="sp-store-stats">
-          <button type="button" onClick={() => setSheet({ kind: 'reviews' })}><Star size={15} aria-hidden="true" /><b>{percent != null ? `${percent}%` : 'New'}</b><small>{store.ratingCount ? `${store.ratingCount} rating${store.ratingCount === 1 ? '' : 's'}` : 'No ratings yet'}</small></button>
+          <button type="button" onClick={() => setSheet({ kind: 'reviews' })}><ThumbsUp size={15} aria-hidden="true" /><b>{percent != null ? `${percent}%` : 'New'}</b><small>{store.ratingCount ? `${store.ratingCount} rating${store.ratingCount === 1 ? '' : 's'}` : 'No ratings yet'}</small></button>
           <div><Clock3 size={15} aria-hidden="true" /><b>{etaText(orderType === 'PICKUP' ? store.pickupEta : store.eta)}</b><small>{orderType === 'PICKUP' ? 'Ready to collect' : 'Estimated'}</small></div>
           <div>{orderType === 'PICKUP' ? <MapPin size={15} aria-hidden="true" /> : <Bike size={15} aria-hidden="true" />}<b>{orderType === 'PICKUP' ? 'No fee' : free ? <><s>Fee</s> Free</> : 'By distance'}</b><small>{orderType === 'PICKUP' ? 'You collect' : free ? 'First order' : 'Delivery fee'}</small></div>
         </div>
         {!store.openNow && <p className="sp-closed-banner"><Clock3 size={15} aria-hidden="true" />{store.temporarilyClosed ? 'This store has paused orders for now.' : `Closed now${store.openingTime ? ` · opens ${store.openingTime}` : ''}. You can schedule your order at checkout.`}</p>}
         {store.minimumOrderMinor > 0 && <p className="sp-min-order">Minimum order {nairaWhole(store.minimumOrderMinor / 100)}</p>}
-        <button type="button" className="sp-fees-link" onClick={() => setSheet({ kind: 'fees' })}><Info size={14} aria-hidden="true" />Fees information</button>
+        <button type="button" className="sp-fees-link" onClick={() => setSheet({ kind: 'fees' })}><Info size={15} aria-hidden="true" /><span>Fees information</span><ChevronRight size={16} aria-hidden="true" /></button>
       </section>
 
       {(store.items || []).length === 0 ? <EmptyState icon={Store} title="Menu coming soon" body="This store hasn’t added items yet." /> : <>

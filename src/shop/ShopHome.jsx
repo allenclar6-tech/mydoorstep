@@ -1,7 +1,9 @@
-import { ChevronRight, Gift, Search, Sparkles, Tag } from 'lucide-react'
-import { AddressSheet, CATEGORY_TILES, EmptyState, OutOfArea, Rail, SectionHead, ShopHeader, SkeletonList, StoreTile, TabBar } from './ShopKit'
-import { navigate, token, useAddress, useDeliveryCheck, useHome } from './shopData'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Bike, ChefHat, ChevronRight, PackageCheck, Store as StoreIcon } from 'lucide-react'
+import { ORDER_STATUS_LABELS } from '../orders/OrderActions'
+import { Band, BandSearch, BrandCircles, Bubble, CATEGORY_TILES, categoryArt, EmptyState, OutOfArea, Rail, SectionHead, SkeletonList, StoreTile, TabBar, AddressPill } from './ShopKit'
+import { Parcel, PercentTag, ShoppingBag as BagArt, Burger, Basket, Scooter, Storefront } from './Illustrations'
+import { ACTIVE_ORDER_STATUSES, greeting, navigate, token, useAddress, useDeliveryCheck, useHome, useMe, useMyOrders } from './shopData'
 
 const link = (href) => (event) => { event.preventDefault(); navigate(href) }
 
@@ -16,10 +18,52 @@ export function freeDeliveryFor(store, home) {
 
 export const pick = (home, ids) => ids.map((id) => home.stores.find((store) => store.id === id)).filter(Boolean)
 
-function OfferCard({ offer }) {
-  return <a className="sp-offer-card" href="/account/promos" onClick={link('/account/promos')}>
-    <span className="sp-offer-icon" aria-hidden="true">{offer.type === 'FREE_DELIVERY' ? <Gift size={20} /> : <Tag size={20} />}</span>
-    <span><b>{offer.label}</b><small>{offer.name}{offer.code ? ` · code ${offer.code}` : offer.autoApply ? ' · applied at checkout' : ''}</small></span>
+/** Swipeable promo banners (one per live offer), with dots. */
+export function PromoBanners({ offers, signedIn }) {
+  const ref = useRef(null)
+  const [index, setIndex] = useState(0)
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return undefined
+    const onScroll = () => setIndex(Math.round(node.scrollLeft / Math.max(1, node.clientWidth)))
+    node.addEventListener('scroll', onScroll, { passive: true })
+    return () => node.removeEventListener('scroll', onScroll)
+  }, [])
+  if (!offers.length) return null
+  const art = (offer) => offer.type === 'FREE_DELIVERY' ? Parcel : offer.vertical === 'GROCERIES' ? Basket : offer.vertical === 'SHOPS' ? BagArt : offer.type === 'PERCENT' ? PercentTag : Burger
+  return <section className="sp-banners" aria-label="Offers">
+    <div className="sp-banner-track" ref={ref}>{offers.map((offer, position) => {
+      const Art = art(offer)
+      const href = offer.firstOrderOnly && !signedIn ? '/register' : '/account/promos'
+      return <a key={offer.id} className={`sp-banner is-${position % 3}`} href={href} onClick={link(href)}>
+        <span className="sp-banner-copy">
+          <small>{offer.firstOrderOnly ? 'New on DOORSTEP' : offer.autoApply ? 'Applied at checkout' : 'Promo code'}</small>
+          <b>{offer.type === 'FREE_DELIVERY' && offer.firstOrderOnly ? 'Your first delivery is free' : offer.label}</b>
+          <span>{offer.code ? <em>Use code {offer.code}</em> : offer.description || offer.name}</span>
+        </span>
+        <span className="sp-banner-art" aria-hidden="true"><Art /></span>
+      </a>
+    })}</div>
+    {offers.length > 1 && <div className="sp-dots" aria-hidden="true">{offers.map((offer, position) => <span key={offer.id} className={position === index ? 'is-on' : ''} />)}</div>}
+  </section>
+}
+
+
+const STEPS = [['PAID', 'Sent'], ['PREPARING', 'Preparing'], ['OUT_FOR_DELIVERY', 'On the way'], ['DELIVERED', 'Arrived']]
+const stepOf = (status) => ({ PAID: 0, RESTAURANT_ACCEPTED: 1, PREPARING: 1, READY_FOR_PICKUP: 1, RIDER_ASSIGNED: 2, PICKED_UP: 2, OUT_FOR_DELIVERY: 2, DELIVERED: 3 }[status] ?? 0)
+
+/** Live card for an order in progress: status, a four-step progress bar and a tap to track. */
+export function LiveOrderBanner({ order }) {
+  const step = stepOf(order.status)
+  const pickup = order.orderType === 'PICKUP'
+  const Icon = order.status === 'PREPARING' || order.status === 'RESTAURANT_ACCEPTED' ? ChefHat : ['PICKED_UP', 'OUT_FOR_DELIVERY', 'RIDER_ASSIGNED'].includes(order.status) ? Bike : order.status === 'READY_FOR_PICKUP' ? PackageCheck : StoreIcon
+  const href = `/account/orders/${order.id}`
+  return <a className="sp-live" href={href} onClick={link(href)}>
+    <span className="sp-live-icon" aria-hidden="true"><Icon size={22} /></span>
+    <span className="sp-live-text"><small>{order.restaurant?.name || 'Your order'}</small><b>{pickup && order.status === 'READY_FOR_PICKUP' ? 'Ready to collect' : ORDER_STATUS_LABELS[order.status] || 'In progress'}</b>
+      <span className="sp-live-bar" aria-label={`Step ${step + 1} of 4`}>{STEPS.map(([key, label], index) => <i key={key} className={index <= step ? 'is-on' : ''} title={label} />)}</span>
+    </span>
+    <span className="sp-live-go">Track<ChevronRight size={16} aria-hidden="true" /></span>
   </a>
 }
 
@@ -27,51 +71,46 @@ export function ShopHome() {
   const home = useHome()
   const address = useAddress()
   const check = useDeliveryCheck(address)
-  const [addressOpen, setAddressOpen] = useState(false)
   const data = home.data
   const signedIn = Boolean(token())
   const open = data ? data.stores.filter((store) => store.openNow) : []
   const forYou = data ? (() => { const ids = [...new Set([...data.sections.topRated, ...data.sections.mostInDemand, ...data.sections.topPerformers])]; const picked = pick(data, ids).filter((store) => store.openNow); return (picked.length >= 3 ? picked : open).slice(0, 10) })() : []
-  const demand = data ? pick(data, data.sections.mostInDemand) : []
-  const fresh = data ? pick(data, data.sections.newest) : []
-  const welcome = data?.firstOrder?.offer && data.firstOrder.eligible !== false ? data.firstOrder.offer : null
+  const demand = data ? pick(data, data.sections.mostInDemand).slice(0, 10) : []
+  const fresh = data ? pick(data, data.sections.newest).slice(0, 10) : []
+  const brands = data ? [...new Set([...data.sections.mostInDemand, ...data.sections.topRated, ...data.stores.map((store) => store.id)])].map((id) => data.stores.find((store) => store.id === id)).filter(Boolean).slice(0, 12) : []
   const outside = check && check.deliverable === false
+  const me = useMe()
+  const orders = useMyOrders()
+  const live = orders.filter((order) => ACTIVE_ORDER_STATUSES.includes(order.status)).slice(0, 2)
+  const again = data ? [...new Set(orders.filter((order) => order.status === 'DELIVERED').map((order) => order.restaurantId))].map((id) => data.stores.find((store) => store.id === id)).filter(Boolean).slice(0, 10) : []
+  const name = me?.preferredName || me?.firstName
 
   return <div className="sp-screen sp-home">
-    <ShopHeader />
-    <main className="sp-main">
-      <section className="sp-hello">
-        <h1>{address.label ? 'What can we get you today?' : 'Food, groceries and more — delivered in Sapele.'}</h1>
-        <a className="sp-search-bar" href="/discover" onClick={link('/discover')}><Search size={18} aria-hidden="true" /><span>Search food, stores or items</span></a>
-        {!address.label && <button type="button" className="sp-set-address" onClick={() => setAddressOpen(true)}>Set your delivery address to see what’s near you <ChevronRight size={15} aria-hidden="true" /></button>}
-      </section>
-
-      <nav className="sp-tiles" aria-label="Categories">{CATEGORY_TILES.map(({ key, label, icon: Icon, href, tone }) => <a key={key} href={href} onClick={link(href)} className={`sp-tile is-${tone}${key === 'FOOD' ? ' is-hero' : ''}`}>
-        <span className="sp-tile-label">{label}</span>
-        <span className="sp-tile-art" aria-hidden="true"><Icon size={key === 'FOOD' ? 46 : 30} strokeWidth={1.7} /></span>
-      </a>)}</nav>
-
-      {welcome && <a className="sp-welcome-banner" href={signedIn ? '/food' : '/register'} onClick={link(signedIn ? '/food' : '/register')}>
-        <span className="sp-welcome-icon" aria-hidden="true"><Sparkles size={22} /></span>
-        <span><b>{welcome.type === 'FREE_DELIVERY' ? 'Your first delivery is free' : `${welcome.label} your first order`}</b><small>{welcome.description || (signedIn ? 'Applied automatically at checkout.' : 'Create an account and it’s applied at checkout.')}{welcome.minSubtotalMinor ? ` Minimum basket ₦${Math.round(welcome.minSubtotalMinor / 100).toLocaleString('en-NG')}.` : ''}</small></span>
-        <ChevronRight size={18} aria-hidden="true" />
-      </a>}
+    <Band search={<BandSearch href="/discover" placeholder="What can we get you?" />}>{signedIn && <p className="sp-greeting">{greeting()}{name ? `, ${name}` : ''} 👋</p>}<AddressPill /></Band>
+    <main className="sp-body">
+      {live.map((order) => <LiveOrderBanner key={order.id} order={order} />)}
+      <nav className="sp-bubbles" aria-label="Categories">{CATEGORY_TILES.map((tile) => <Bubble key={tile.key} art={categoryArt(tile.key)} label={tile.label} href={tile.href} tone={tile.tone} size="lg" />)}</nav>
 
       {outside ? <OutOfArea check={check} /> : <>
         {home.status === 'loading' && <SkeletonList rows={3} />}
         {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
         {data && <>
-          {data.offers.filter((offer) => offer.id !== welcome?.id).length > 0 && <section className="sp-section">
-            <SectionHead title="Offers for you" href="/account/promos" />
-            <Rail label="Offers">{data.offers.filter((offer) => offer.id !== welcome?.id).map((offer) => <OfferCard key={offer.id} offer={offer} />)}</Rail>
-          </section>}
+          <PromoBanners offers={data.offers} signedIn={signedIn} />
           {forYou.length > 0 ? <section className="sp-section">
-            <SectionHead title="These are for you" href="/discover" hint="Well rated and popular around Sapele" />
+            <SectionHead title="These are for you" href="/discover" />
             <Rail label="Picked for you">{forYou.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
-          </section> : <EmptyState title="No stores open right now" body="Kitchens and shops open through the day. Check back soon, or schedule an order from a store page." action={<button type="button" className="sp-primary" onClick={() => navigate('/discover')}>Browse all stores</button>} />}
+          </section> : <EmptyState title="No stores open right now" body="Kitchens and shops open through the day. You can still schedule an order from a store page." action={<button type="button" className="sp-primary" onClick={() => navigate('/discover')}>Browse all stores</button>} />}
+          {again.length > 0 && <section className="sp-section">
+            <SectionHead title="Order again" href="/account/orders" />
+            <Rail label="Order again">{again.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
+          </section>}
+          {brands.length > 2 && <section className="sp-section">
+            <SectionHead title="Popular brands" href="/discover" />
+            <BrandCircles stores={brands} />
+          </section>}
           {demand.length > 0 && <section className="sp-section">
-            <SectionHead title="Most in demand" href="/discover?section=demand" hint="Most ordered in the last 30 days" />
-            <Rail label="Most in demand">{demand.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
+            <SectionHead title="Most in demand" href="/discover?section=demand" />
+            <Rail label="Most in demand">{demand.map((store, position) => <StoreTile key={store.id} store={store} badge={`#${position + 1}`} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
           </section>}
           {fresh.length > 0 && <section className="sp-section">
             <SectionHead title="New on DOORSTEP" />
@@ -80,12 +119,14 @@ export function ShopHome() {
         </>}
       </>}
 
-      <section className="sp-join">
-        <a href="/partner/register" onClick={link('/partner/register')}><b>Sell on DOORSTEP</b><small>Restaurants, groceries, shops and pharmacies</small></a>
-        <a href="/riders" onClick={link('/riders')}><b>Ride with DOORSTEP</b><small>Earn delivering around Sapele</small></a>
+      <section className="sp-section">
+        <SectionHead title="Grow with DOORSTEP" />
+        <div className="sp-grow">
+          <a className="sp-grow-card is-business" href="/partner/register" onClick={link('/partner/register')}><span className="sp-grow-art" aria-hidden="true"><Storefront /></span><span><b>Sell on DOORSTEP</b><small>Get orders from all over Sapele</small></span><ChevronRight size={18} aria-hidden="true" /></a>
+          <a className="sp-grow-card is-rider" href="/riders" onClick={link('/riders')}><span className="sp-grow-art" aria-hidden="true"><Scooter /></span><span><b>Ride and earn</b><small>Choose your hours, keep 100% of tips</small></span><ChevronRight size={18} aria-hidden="true" /></a>
+        </div>
       </section>
     </main>
     <TabBar active="home" />
-    {addressOpen && <AddressSheet onClose={() => setAddressOpen(false)} />}
   </div>
 }

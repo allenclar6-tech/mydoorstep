@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { ArrowDownUp, Baby, Beef, Bike, Check, ChevronDown, Clock3, CupSoda, Drumstick, Flame, Gift, Home, Laptop, Percent, Pill, Pizza, Sandwich, Search, Shirt, ShoppingBasket, Smartphone, Soup, Sparkles, Star, Store, UtensilsCrossed, Wheat, X, Croissant, Carrot, SprayCan, HandHeart } from 'lucide-react'
-import { BasketBar, EmptyState, OutOfArea, Rail, SectionHead, Sheet, ShopHeader, SkeletonList, StoreCard, StoreTile, TabBar } from './ShopKit'
-import { freeDeliveryFor, pick } from './ShopHome'
-import { navigate, nairaWhole, ratingPercent, storeHref, storeMatches, storeSearch, SUBCATEGORIES, useAddress, useDeliveryCheck, useHome, VERTICALS } from './shopData'
+import { ArrowDownUp, Bike, Check, ChevronDown, Clock3, Search, Sparkles, Star, Store, UtensilsCrossed } from 'lucide-react'
+import { Band, BandSearch, BasketBar, BrandCircles, Bubble, EmptyState, OutOfArea, Rail, SectionHead, Sheet, SkeletonList, StoreCard, StoreTile, TabBar } from './ShopKit'
+import { SUB_ART } from './Illustrations'
+import { freeDeliveryFor, pick, PromoBanners } from './ShopHome'
+import { navigate, nairaWhole, ratingPercent, storeHref, storeMatches, storeSearch, SUBCATEGORIES, token, useAddress, useDeliveryCheck, useHome, VERTICALS } from './shopData'
 
-const SUB_ICONS = { local: Soup, rice: Wheat, shawarma: Sandwich, grills: Flame, chicken: Drumstick, pizza: Pizza, burgers: Beef, snacks: Croissant, drinks: CupSoda, provisions: ShoppingBasket, staples: Wheat, fresh: Carrot, household: SprayCan, phones: Smartphone, electronics: Laptop, fashion: Shirt, home: Home, gifts: Gift, medicine: Pill, personal: HandHeart, beauty: Sparkles, baby: Baby }
+const SUB_TONES = ['sun', 'mint', 'sky', 'rose', 'sand']
 const SORTS = [['recommended', 'Recommended'], ['rating', 'Top rated'], ['fastest', 'Fastest'], ['price', 'Lowest prices'], ['popular', 'Most ordered']]
 
 function applyFilters(stores, { sort, topRated, pickup, openOnly, free, home }) {
@@ -58,24 +59,23 @@ export function VerticalPage({ vertical }) {
   const popular = data ? pick(data, data.sections.mostInDemand).filter((store) => store.vertical === vertical).slice(0, 10) : []
   const anyFilter = sub || query || filters.topRated || filters.pickup || filters.openOnly || filters.free || filters.sort !== 'recommended'
 
+  const brands = data ? (popular.length >= 3 ? popular : inVertical.filter((store) => store.openNow)).slice(0, 12) : []
+  const offers = data ? data.offers.filter((offer) => !offer.vertical || offer.vertical === vertical) : []
   return <div className="sp-screen sp-vertical">
-    <ShopHeader title={meta.label} back="/" />
-    <main className="sp-main">
-      <label className="sp-search-field"><Search size={17} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${meta.label.toLowerCase()}`} aria-label={`Search ${meta.label}`} />{query && <button type="button" onClick={() => setQuery('')} aria-label="Clear search"><X size={15} /></button>}</label>
-      {(visibleSubs.length > 0 || data?.offers.length > 0) && <div className="sp-sub-row" role="tablist" aria-label="Categories">
-        {data?.offers.length > 0 && <button type="button" role="tab" aria-selected={promoActive} className={promoActive ? 'is-on' : ''} onClick={() => setSub(promoActive ? null : 'promo')}><span className="sp-sub-icon is-promo"><Percent size={22} aria-hidden="true" /></span>Promotions</button>}
-        {visibleSubs.map((entry) => { const Icon = SUB_ICONS[entry.key] || UtensilsCrossed; return <button key={entry.key} type="button" role="tab" aria-selected={sub === entry.key} className={sub === entry.key ? 'is-on' : ''} onClick={() => setSub(sub === entry.key ? null : entry.key)}><span className="sp-sub-icon"><Icon size={22} aria-hidden="true" /></span>{entry.label}</button> })}
-      </div>}
+    <Band back="/" title={meta.label} search={<BandSearch value={query} onChange={setQuery} placeholder={`Search ${meta.label.toLowerCase()}`} />} />
+    <main className="sp-body">
+      {(visibleSubs.length > 0 || offers.length > 0) && <nav className="sp-sub-row" aria-label="Categories">
+        {offers.length > 0 && <Bubble art={SUB_ART.promo} label="Promotions" tone="sun" active={promoActive} onClick={() => setSub(promoActive ? null : 'promo')} />}
+        {visibleSubs.map((entry, position) => <Bubble key={entry.key} art={SUB_ART[entry.key]} label={entry.label} tone={SUB_TONES[(position + 1) % SUB_TONES.length]} active={sub === entry.key} onClick={() => setSub(sub === entry.key ? null : entry.key)} />)}
+      </nav>}
       <FilterChips filters={filters} setFilters={setFilters} />
       {check && check.deliverable === false && !filters.pickup ? <OutOfArea check={check} /> : <>
         {home.status === 'loading' && <SkeletonList rows={4} />}
         {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
-        {data && !anyFilter && popular.length > 1 && <section className="sp-section">
-          <SectionHead title="Popular right now" hint="Most ordered this month" />
-          <Rail label="Popular">{popular.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
-        </section>}
+        {data && !anyFilter && <PromoBanners offers={offers} signedIn={Boolean(token())} />}
+        {data && !anyFilter && brands.length > 2 && <section className="sp-section"><SectionHead title="Popular brands" /><BrandCircles stores={brands} /></section>}
         {data && <section className="sp-section">
-          <SectionHead title={anyFilter ? `${list.length} store${list.length === 1 ? '' : 's'}` : `All ${meta.label.toLowerCase()}`} />
+          <SectionHead title={anyFilter ? `${list.length} result${list.length === 1 ? '' : 's'}` : `All ${meta.label.toLowerCase()}`} />
           {list.length ? <div className="sp-store-list">{list.map((store) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</div>
             : inVertical.length ? <EmptyState icon={Search} title="Nothing matches" body="Try another category or clear a filter." action={<button type="button" className="sp-ghost" onClick={() => { setSub(null); setQuery(''); setFilters({ ...initialFilters(), pickup: false }) }}>Clear filters</button>} />
               : <EmptyState icon={Store} title={`No ${meta.label.toLowerCase()} stores yet`} body={`We’re signing up ${meta.label.toLowerCase()} businesses in Sapele. Know one? Tell them to join DOORSTEP.`} action={<button type="button" className="sp-ghost" onClick={() => navigate('/partner/register')}>Invite a business</button>} />}
@@ -108,9 +108,8 @@ export function DiscoverPage() {
   const filtering = trimmed || filters.topRated || filters.pickup || filters.openOnly || filters.free || filters.sort !== 'recommended'
 
   return <div className="sp-screen sp-discover">
-    <ShopHeader title={section ? section[1] : 'Discover'} back={section ? '/discover' : undefined} search={false} />
-    <main className="sp-main">
-      <label className="sp-search-field is-big"><Search size={18} aria-hidden="true" /><input autoFocus={!section} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search food, stores or items" aria-label="Search DOORSTEP" />{query && <button type="button" onClick={() => setQuery('')} aria-label="Clear search"><X size={15} /></button>}</label>
+    <Band back={section ? '/discover' : undefined} title={section ? section[1] : 'Discover'} search={<BandSearch value={query} onChange={setQuery} placeholder="Search food, stores or items" autoFocus={!section && Boolean(params.get('q'))} />} />
+    <main className="sp-body">
       <FilterChips filters={filters} setFilters={setFilters} />
       {home.status === 'loading' && <SkeletonList rows={4} />}
       {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
