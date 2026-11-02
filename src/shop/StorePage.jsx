@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Bike, ChevronRight, Clock3, Heart, Info, MapPin, Minus, Plus, Search, Share2, Store, ThumbsUp, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
-import { BasketBar, EmptyState, Sheet, SkeletonList } from './ShopKit'
+import { BasketBar, DesktopBasket, EmptyState, Sheet, SkeletonList } from './ShopKit'
 import { toast } from './Toaster'
 import { CATEGORY_ART } from './Illustrations'
 import { freeDeliveryFor } from './ShopHome'
@@ -154,7 +154,14 @@ export function StorePage({ slug }) {
         </span>
       </div>
     </div>
-    <main className="sp-main sp-store-main">
+    <div className="sp-store-layout">
+      <nav className="sp-store-side" aria-label="Menu sections">
+        <b>Menu</b>
+        {!query && topSellers.length > 0 && <button type="button" className={activeTab === '__top' ? 'is-on' : ''} onClick={() => scrollTo('__top')}>Top sellers</button>}
+        {sections.map(([name, items]) => <button key={name} type="button" className={activeTab === name ? 'is-on' : ''} onClick={() => scrollTo(name)}>{name}<small>{items.length}</small></button>)}
+        <button type="button" className="sp-store-side-info" onClick={() => setSheet({ kind: 'fees' })}>Fees information</button>
+      </nav>
+      <main className="sp-main sp-store-main">
       <section className="sp-store-head">
         <span className="sp-store-logo" aria-hidden="true">{store.logo || store.image ? <img src={store.logo || store.image} alt="" /> : <b>{store.name.slice(0, 1)}</b>}</span>
         <h1>{store.name}</h1>
@@ -191,7 +198,7 @@ export function StorePage({ slug }) {
         </section>)}
         {query && sections.length === 0 && <EmptyState icon={Search} title="No items match" body={`Nothing called “${query}” here.`} />}
       </>}
-    </main>
+    </main><DesktopBasket /></div>
     <BasketBar />
     {sheet?.kind === 'fees' && <FeesInfo onClose={() => setSheet(null)} />}
     {sheet?.kind === 'reviews' && <ReviewsSheet store={store} reviews={page.reviews} onClose={() => setSheet(null)} />}

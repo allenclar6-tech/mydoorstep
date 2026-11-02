@@ -24,15 +24,22 @@ export const verticalForPath = (path) => Object.values(VERTICALS).find((entry) =
 // Sub-category chips: matched against the store's cuisine, menu sections and item names (no invented data).
 export const SUBCATEGORIES = {
   FOOD: [
-    { key: 'local', label: 'Local food', words: ['local', 'nigerian', 'amala', 'eba', 'pounded', 'soup', 'egusi', 'banga', 'starch', 'owo', 'fufu', 'ofe'] },
-    { key: 'rice', label: 'Rice & Jollof', words: ['rice', 'jollof', 'fried rice', 'ofada'] },
+    { key: 'local', label: 'Local food', words: ['local', 'nigerian', 'native', 'buka', 'eba', 'pounded', 'soup', 'egusi', 'banga', 'starch', 'owo', 'fufu', 'ofe', 'pepper soup', 'beans', 'porridge'] },
+    { key: 'international', label: 'International', words: ['international', 'continental', 'chinese', 'italian', 'indian', 'lebanese', 'pasta', 'spaghetti', 'noodle', 'sushi', 'mexican', 'taco', 'stir fry', 'american', 'asian'] },
+    { key: 'snacks', label: 'Snacks', words: ['snack', 'chips', 'crisps', 'popcorn', 'plantain chips', 'chin chin', 'doughnut', 'donut', 'biscuit'] },
+    { key: 'chicken', label: 'Chicken', words: ['chicken', 'wings', 'turkey', 'drumstick'] },
     { key: 'shawarma', label: 'Shawarma', words: ['shawarma', 'wrap'] },
-    { key: 'grills', label: 'Suya & Grills', words: ['suya', 'grill', 'barbecue', 'bbq', 'kebab', 'asun', 'fish'] },
-    { key: 'chicken', label: 'Chicken', words: ['chicken', 'wings', 'turkey'] },
-    { key: 'pizza', label: 'Pizza', words: ['pizza'] },
+    { key: 'rice', label: 'Jollof', words: ['jollof', 'rice', 'fried rice', 'ofada'] },
+    { key: 'amala', label: 'Amala', words: ['amala', 'ewedu', 'gbegiri', 'swallow', 'semo', 'semovita', 'pounded yam'] },
+    { key: 'premium', label: 'Premium', words: ['premium', 'fine dining', 'lounge', 'grill house', 'steak', 'seafood', 'prawn', 'lobster'], premiumPriceMinor: 600000 },
     { key: 'burgers', label: 'Burgers', words: ['burger', 'sandwich', 'hot dog'] },
-    { key: 'snacks', label: 'Snacks & Pastries', words: ['snack', 'pastry', 'pastries', 'meat pie', 'puff', 'cake', 'bread', 'doughnut', 'chin chin'] },
-    { key: 'drinks', label: 'Drinks', words: ['drink', 'juice', 'smoothie', 'zobo', 'parfait', 'chapman', 'water', 'soda', 'yoghurt', 'yogurt'] },
+    { key: 'pizza', label: 'Pizza', words: ['pizza'] },
+    { key: 'bakery', label: 'Bakery', words: ['bakery', 'bake', 'bread', 'cake', 'cupcake', 'pastry', 'pastries', 'croissant', 'meat pie', 'sausage roll', 'muffin'] },
+    { key: 'icecream', label: 'Ice cream', words: ['ice cream', 'icecream', 'gelato', 'frozen', 'yoghurt', 'yogurt', 'sundae', 'milkshake'] },
+    { key: 'smallchops', label: 'Small Chops', words: ['small chops', 'smallchops', 'puff puff', 'puff-puff', 'samosa', 'spring roll', 'gizdodo', 'peppered', 'asun'] },
+    { key: 'healthy', label: 'Healthy', words: ['healthy', 'salad', 'fruit', 'smoothie', 'parfait', 'juice', 'vegan', 'vegetable', 'oat', 'wheat', 'diet', 'grilled fish'] },
+    { key: 'grills', label: 'Suya & Grills', words: ['suya', 'grill', 'barbecue', 'bbq', 'kebab', 'kilishi', 'fish'] },
+    { key: 'drinks', label: 'Drinks', words: ['drink', 'juice', 'smoothie', 'zobo', 'chapman', 'mocktail', 'water', 'soda', 'malt'] },
   ],
   GROCERIES: [
     { key: 'provisions', label: 'Provisions', words: ['provision', 'noodles', 'indomie', 'milk', 'sugar', 'tea', 'cereal', 'beverage'] },
@@ -56,7 +63,7 @@ export const SUBCATEGORIES = {
   ],
 }
 const haystack = (store) => [store.name, store.cuisine, store.description, ...(store.categories || []), ...(store.items || []).map((item) => `${item.name} ${item.category || ''}`)].join(' ').toLowerCase()
-export const storeMatches = (store, sub) => { const text = haystack(store); return sub.words.some((word) => text.includes(word)) }
+export const storeMatches = (store, sub) => { const text = haystack(store); return sub.words.some((word) => text.includes(word)) || (sub.premiumPriceMinor != null && (store.medianPriceMinor || 0) >= sub.premiumPriceMinor) }
 export const storeSearch = (store, query) => { const words = String(query || '').toLowerCase().trim().split(/\s+/).filter(Boolean); if (!words.length) return true; const text = haystack(store); return words.every((word) => text.includes(word)) }
 
 // Home feed ------------------------------------------------------------------------------------------------------

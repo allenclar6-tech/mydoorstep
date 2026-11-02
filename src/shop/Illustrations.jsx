@@ -334,9 +334,87 @@ export function MapPinArt() {
   </Art>
 }
 
+// More food sections ---------------------------------------------------------------------------------------------------
+export function Globe() {
+  const i = useIds('s')
+  return <Art defs={lg(i.s, '#6fd1ff', '#1f7fd1', 1, 1)}>
+    <circle cx="32" cy="30" r="21" fill={`url(#${i.s})`} />
+    <path d="M20 16c5 1 7 5 5 9s-8 4-8 9 4 7 2 11c-4-3-7-9-7-15 0-6 3-11 8-14zM36 12c6 1 11 5 14 10-3 1-6-1-8 1s0 6-3 8-7-1-8-5 2-6 0-9 1-5 5-5zM40 38c4-1 8 1 9 4-3 4-7 7-12 8 0-5-1-11 3-12z" fill="#5fc25a" />
+    <path d="M14 26c4 6 30 8 36 2" fill="none" stroke="#fff" strokeOpacity=".35" strokeWidth="1.6" />
+    {shine('M20 14c4-3 9-4 13-3-5 1-9 3-12 7z')}
+    <path d="M50 52l-6-6" stroke="#7a5a3a" strokeWidth="3" strokeLinecap="round" /><path d="M38 54h16" stroke="#7a5a3a" strokeWidth="3" strokeLinecap="round" />
+  </Art>
+}
+export function SnackBag() {
+  const i = useIds('b', 'd')
+  return <Art defs={<>{lg(i.b, '#62c94a', '#2b8a2a')}{lg(i.d, '#ffb2c8', '#f06292')}</>}>
+    <path d="M10 14l4-4h20l4 4-2 34H12z" fill={`url(#${i.b})`} />
+    <path d="M10 14h28" stroke="#1f6e1f" strokeWidth="2" /><rect x="15" y="22" width="18" height="12" rx="3" fill="#ffd23f" />
+    <g fill="#f6c453"><path d="M18 8l5-4 3 5z" /><path d="M27 7l5-3 1 6z" /></g>
+    {shine('M14 16h3l-1 28h-3z')}
+    <circle cx="44" cy="42" r="12" fill="#d9a35b" /><circle cx="44" cy="41" r="11" fill={`url(#${i.d})`} /><circle cx="44" cy="41" r="4" fill="#fff6e6" />
+    <g stroke="#fff" strokeWidth="1.6" strokeLinecap="round"><path d="M37 37l2 1" /><path d="M49 35l1 2" /><path d="M50 46l-2 1" /><path d="M39 47l1-2" /></g>
+  </Art>
+}
+export function Amala() {
+  const i = useIds('b', 's', 'a')
+  return <Art defs={<>{lg(i.b, '#ffffff', '#d7e1e6')}{lg(i.s, '#5fbf4a', '#2e7d32')}{lg(i.a, '#8a6a4f', '#5a3f2a')}</>}>
+    <path d="M6 30h52c0 13-11 22-26 22S6 43 6 30z" fill={`url(#${i.b})`} stroke="#c9d6de" />
+    <ellipse cx="32" cy="30" rx="26" ry="7" fill={`url(#${i.s})`} />
+    <ellipse cx="26" cy="27" rx="13" ry="9" fill={`url(#${i.a})`} />{shine('M18 24c2-3 6-5 10-5-3 1-6 3-8 6z')}
+    <ellipse cx="44" cy="30" rx="7" ry="4" fill="#e35d2a" /><circle cx="48" cy="28" r="2" fill="#f2a23c" />
+  </Art>
+}
+export function Premium() {
+  const i = useIds('c', 'g')
+  return <Art defs={<>{lg(i.c, '#f4f6f8', '#aab6be')}{lg(i.g, '#ff6b6b', '#b8232f')}</>}>
+    <ellipse cx="26" cy="46" rx="22" ry="5" fill="#cfd8dd" />
+    <path d="M6 44c0-12 9-21 20-21s20 9 20 21z" fill={`url(#${i.c})`} />
+    {shine('M11 40c1-7 6-12 12-14-4 3-7 8-8 14z')}
+    <circle cx="26" cy="21" r="3" fill="#aab6be" />
+    <path d="M46 22h12c0 7-3 11-6 11s-6-4-6-11z" fill="#eef7fb" stroke="#b9c9d2" /><path d="M47 26h10c-.5 4-2.5 6-5 6s-4.5-2-5-6z" fill={`url(#${i.g})`} />
+    <path d="M52 33v14M47 48h10" stroke="#b9c9d2" strokeWidth="2" strokeLinecap="round" />
+  </Art>
+}
+export function Bakery() {
+  const i = useIds('w', 'f', 'c')
+  return <Art defs={<>{lg(i.w, '#8fb2ff', '#4a6ad8')}{lg(i.f, '#a0663a', '#6a3d1e')}{lg(i.c, '#f9c873', '#cf8a2c')}</>}>
+    <path d="M10 34h26l-3 16H13z" fill={`url(#${i.w})`} /><g stroke="#2f4aa8" strokeOpacity=".5" strokeWidth="1.6"><path d="M16 36l1 13" /><path d="M23 36v13" /><path d="M30 36l-1 13" /></g>
+    <path d="M8 34c0-8 7-14 15-14s15 6 15 14z" fill={`url(#${i.f})`} /><circle cx="24" cy="17" r="4" fill="#ef4a3a" />{shine('M13 30c1-4 4-7 8-8-3 2-5 5-6 8z')}
+    <g fill={`url(#${i.c})`}><path d="M38 44c0-8 6-14 13-14 3 0 5 3 5 6 0 7-6 12-13 12-3 0-5-1-5-4z" /></g>
+    <g fill="none" stroke="#a8641c" strokeWidth="1.8" strokeLinecap="round"><path d="M43 34c2 4 2 9 0 12" /><path d="M49 31c2 5 2 11-1 16" /></g>
+  </Art>
+}
+export function IceCream() {
+  const i = useIds('p', 'c', 'cup')
+  return <Art defs={<>{lg(i.p, '#a0663a', '#5a3417')}{lg(i.c, '#ff9fb5', '#e24d76')}{lg(i.cup, '#fff2c2', '#f4c542')}</>}>
+    <g transform="rotate(-18 22 28)"><rect x="12" y="8" width="18" height="32" rx="9" fill={`url(#${i.p})`} /><g fill="#f3e1b5"><circle cx="17" cy="16" r="1.2" /><circle cx="24" cy="20" r="1.2" /><circle cx="19" cy="27" r="1.2" /><circle cx="25" cy="31" r="1.2" /></g>{shine('M15 11h3v22h-3z')}<rect x="19" y="39" width="4" height="13" rx="2" fill="#e6c79a" /></g>
+    <path d="M36 36h22l-3 18H39z" fill={`url(#${i.cup})`} /><path d="M38 40h18" stroke="#e24d76" strokeWidth="3" />
+    <path d="M36 36c0-7 5-11 11-11s11 4 11 11z" fill={`url(#${i.c})`} /><path d="M40 28c3-5 9-5 12-1" fill="#fff" opacity=".6" /><circle cx="47" cy="22" r="3" fill="#ef4a3a" />
+  </Art>
+}
+export function SmallChops() {
+  const i = useIds('p', 'b', 's')
+  return <Art defs={<>{lg(i.p, '#ffffff', '#d7e1e6')}{lg(i.b, '#e4a04a', '#b4691d')}{lg(i.s, '#f6c453', '#d48a1c')}</>}>
+    <ellipse cx="32" cy="44" rx="27" ry="10" fill={`url(#${i.p})`} stroke="#c9d6de" />
+    <g fill={`url(#${i.s})`}><path d="M10 40l10-18 10 18z" /><path d="M22 41l8-14 8 14z" /></g>
+    <g transform="rotate(-25 46 34)"><rect x="34" y="30" width="24" height="7" rx="3.5" fill="#f2c26b" /><rect x="34" y="37" width="24" height="7" rx="3.5" fill="#e3a94a" /></g>
+    {[[20, 46], [30, 48], [40, 47], [48, 44]].map(([x, y]) => <g key={x}><circle cx={x} cy={y} r="5" fill={`url(#${i.b})`} /><circle cx={x - 1.5} cy={y - 1.5} r="1.4" fill="#fff" opacity=".5" /></g>)}
+    <path d="M56 22l-4 6" stroke="#c49a6c" strokeWidth="2" strokeLinecap="round" />
+  </Art>
+}
+export function Healthy() {
+  const i = useIds('b', 'j', 'a')
+  return <Art defs={<>{lg(i.b, '#eef9ff', '#c7e6f4')}{lg(i.j, '#ff8a3d', '#e2442a')}{lg(i.a, '#8bd36a', '#3f8f2f')}</>}>
+    <rect x="13" y="6" width="10" height="6" rx="2" fill="#ef4a3a" /><path d="M14 12h8v6l4 6v28c0 2-2 4-4 4h-8c-2 0-4-2-4-4V24l4-6z" fill={`url(#${i.b})`} stroke="#a9d3e6" />
+    <path d="M11 30h14v22c0 1.5-1.5 3-3 3h-8c-1.5 0-3-1.5-3-3z" fill={`url(#${i.j})`} />{shine('M13 22h2v28h-2z')}
+    <g transform="rotate(20 44 36)"><ellipse cx="44" cy="36" rx="13" ry="17" fill="#2f6e22" /><ellipse cx="44" cy="37" rx="10.5" ry="14" fill={`url(#${i.a})`} /><ellipse cx="44" cy="40" rx="10" ry="11" fill="#eaf5b8" /><circle cx="44" cy="41" r="6" fill="#a5672e" /><circle cx="42" cy="39" r="1.6" fill="#fff" opacity=".5" /></g>
+  </Art>
+}
+
 export const CATEGORY_ART = { FOOD: Burger, GROCERIES: Basket, SHOPS: ShoppingBag, PHARMACY_BEAUTY: Pharmacy, PACKAGE: Parcel, OFFERS: PercentTag, DISCOVER: Compass }
 export const SUB_ART = {
-  promo: PercentTag, local: Soup, rice: Jollof, shawarma: Shawarma, grills: Suya, chicken: Drumstick, pizza: Pizza, burgers: Burger, snacks: Pastry, drinks: Drink,
+  promo: PercentTag, local: Soup, international: Globe, snacks: SnackBag, chicken: Drumstick, shawarma: Shawarma, rice: Jollof, amala: Amala, premium: Premium, burgers: Burger, pizza: Pizza, bakery: Bakery, icecream: IceCream, smallchops: SmallChops, healthy: Healthy, grills: Suya, drinks: Drink,
   provisions: Provisions, staples: RiceSack, fresh: Produce, household: Spray,
   phones: Phone, electronics: Headphones, fashion: Shirt, home: HomeLamp, gifts: Gift,
   medicine: PillBottle, personal: CareTube, beauty: Lipstick, baby: BabyBottle,

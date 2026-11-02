@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, Ban, Bell, Bike, ChevronDown, ChevronRight, Clock3, Compass, Heart, Home, LocateFixed, MapPin, Plus, Search, ShoppingBag, ThumbsUp, Truck, User, X } from 'lucide-react'
+import { ArrowLeft, Ban, Bell, Bike, ChevronDown, ChevronRight, Clock3, Heart, Home, LocateFixed, MapPin, Plus, Search, ShoppingBag, ThumbsUp, User, X } from 'lucide-react'
 import { CATEGORY_ART } from './Illustrations'
 import { chooseAddress, etaText, navigate, ratingPercent, storeHref, token, useAddress, useCart, useDeliveryCheck, useSavedAddresses, VERTICALS } from './shopData'
 
@@ -106,8 +106,8 @@ export function OutOfArea({ check }) {
 }
 
 /** DOORSTEP pin logo, as in the site header. */
-export function Logo() {
-  return <a className="sp-logo" href="/" onClick={link('/')} aria-label="DOORSTEP home"><span className="sp-logo-mark" aria-hidden="true" /><span className="sp-logo-word">DOORSTEP</span></a>
+export function Logo({ text }) {
+  return <a className={`sp-logo${text ? ' has-greeting' : ''}`} href="/" onClick={link('/')} aria-label="DOORSTEP home"><span className="sp-logo-mark" aria-hidden="true" /><span className="sp-logo-word">{text || 'DOORSTEP'}</span></a>
 }
 
 function CartButton() {
@@ -120,10 +120,10 @@ const goBack = (fallback) => () => (window.history.length > 1 ? window.history.b
  * Yellow top band (the DOORSTEP marketplace header). Home shows the logo and address; inner screens show a back
  * button and a title. A search box can sit inside the band.
  */
-export function Band({ title, back, search, children }) {
+export function Band({ title, back, search, children, brandText }) {
   return <header className="sp-band">
     <div className="sp-band-row">
-      {back ? <button type="button" className="sp-band-btn" onClick={goBack(back)} aria-label="Back"><ArrowLeft size={20} /></button> : !title && <Logo />}
+      {back ? <button type="button" className="sp-band-btn" onClick={goBack(back)} aria-label="Back"><ArrowLeft size={20} /></button> : !title && <Logo text={brandText} />}
       {title && <h1 className={`sp-band-title${back ? '' : ' is-big'}`}>{title}</h1>}
       <div className="sp-band-actions">
         {!back && token() && <a className="sp-band-btn" href="/account/notifications" onClick={link('/account/notifications')} aria-label="Notifications"><Bell size={19} /></a>}
@@ -161,9 +161,7 @@ export const categoryArt = (key) => CATEGORY_ART[key]
 export function TabBar({ active }) {
   const items = [
     ['home', 'Home', '/', Home],
-    ['discover', 'Discover', '/discover', Compass],
-    ['send', 'Send', '/send', Truck],
-    ['orders', 'Orders', '/account/orders', Clock3],
+    ['discover', 'Discover', '/discover', Search],
     ['profile', 'Profile', '/profile', User],
   ]
   return <nav className="sp-tabbar" aria-label="Main">{items.map(([key, label, href, Icon]) => <a key={key} href={href} onClick={link(href)} className={active === key ? 'is-active' : undefined} aria-current={active === key ? 'page' : undefined}><span className="sp-tab-icon"><Icon size={21} aria-hidden="true" /></span><span>{label}</span></a>)}</nav>
@@ -246,4 +244,64 @@ export function EmptyState({ icon: Icon = Heart, title, body, action }) {
 
 export function SkeletonList({ rows = 3 }) {
   return <div className="sp-skeletons" aria-label="Loading" role="status">{Array.from({ length: rows }, (_, index) => <div key={index} className="sp-skeleton" />)}</div>
+}
+
+// Desktop only (hidden on phones by CSS) -------------------------------------------------------------------------------
+const DESKTOP_LINKS = [['Food', '/food'], ['Groceries', '/groceries'], ['Shops', '/shops'], ['Pharmacy', '/pharmacy']]
+
+function DesktopSearch() {
+  const [value, setValue] = useState(() => new URLSearchParams(window.location.search).get('q') || '')
+  const submit = (event) => { event.preventDefault(); const query = value.trim(); navigate(query ? `/discover?q=${encodeURIComponent(query)}` : '/discover') }
+  return <form className="sp-dnav-search" role="search" onSubmit={submit}><Search size={17} aria-hidden="true" /><input type="search" value={value} onChange={(event) => setValue(event.target.value)} placeholder="Search DOORSTEP" aria-label="Search food, stores or items" /></form>
+}
+
+/** Top navigation for computers: logo, sections, address, search, basket and account. */
+export function DesktopNav() {
+  const path = window.location.pathname
+  const { count } = useCart()
+  const signedIn = Boolean(token())
+  return <header className="sp-dnav">
+    <div className="sp-dnav-inner">
+      <Logo />
+      <nav aria-label="Sections">{DESKTOP_LINKS.map(([label, href]) => <a key={href} href={href} onClick={link(href)} className={path === href ? 'is-active' : undefined}>{label}</a>)}</nav>
+      <div className="sp-dnav-right">
+        <AddressPill />
+        <DesktopSearch />
+        <a className="sp-dnav-cart" href="/checkout" onClick={link('/checkout')} aria-label={`Basket, ${count} item${count === 1 ? '' : 's'}`}><ShoppingBag size={18} aria-hidden="true" /><span>Basket</span>{count > 0 && <b>{count}</b>}</a>
+        <a className="sp-dnav-account" href={signedIn ? '/profile' : '/login'} onClick={link(signedIn ? '/profile' : '/login')}><User size={18} aria-hidden="true" /><span>{signedIn ? 'Account' : 'Sign in'}</span></a>
+      </div>
+    </div>
+  </header>
+}
+
+/** Footer for computers. */
+export function DesktopFooter() {
+  const columns = [
+    ['Order', [['Food', '/food'], ['Groceries', '/groceries'], ['Shops', '/shops'], ['Pharmacy & Beauty', '/pharmacy'], ['Send a package', '/send']]],
+    ['Partners', [['Sell on DOORSTEP', '/partner/register'], ['Ride with DOORSTEP', '/riders'], ['Partner sign in', '/partner/login'], ['Rider sign in', '/rider/login']]],
+    ['Help', [['FAQ', '/help/faq'], ['Track an order', '/track-order'], ['Contact us', '/contact'], ['Refund policy', '/refund-policy']]],
+    ['Legal', [['Terms', '/terms'], ['Privacy', '/privacy'], ['Delivery policy', '/delivery-policy']]],
+  ]
+  return <footer className="sp-dfoot">
+    <div className="sp-dfoot-inner">
+      <div className="sp-dfoot-brand"><Logo /><p>Food, groceries and everyday essentials from shops and kitchens in Sapele, delivered by local riders.</p></div>
+      {columns.map(([title, links]) => <nav key={title} aria-label={title}><b>{title}</b>{links.map(([label, href]) => <a key={href} href={href} onClick={link(href)}>{label}</a>)}</nav>)}
+    </div>
+    <small className="sp-dfoot-legal">© {new Date().getFullYear()} DOORSTEP · Sapele, Delta State</small>
+  </footer>
+}
+
+/** Basket panel shown beside a store's menu on computers. */
+export function DesktopBasket() {
+  const { cart, count, subtotal } = useCart()
+  return <aside className="sp-dbasket" aria-label="Your basket">
+    <h2>Your basket</h2>
+    {count === 0 ? <p className="sp-note">Add items from the menu and they’ll appear here.</p> : <>
+      <small className="sp-dbasket-store">{cart[0].restaurantName}</small>
+      <ul>{cart.map((item) => <li key={item.id}><span className="sp-dbasket-qty">{item.quantity}×</span><span>{item.name}</span><b>₦{Math.round(item.price * item.quantity).toLocaleString('en-NG')}</b></li>)}</ul>
+      <div className="sp-dbasket-total"><span>Products</span><b>₦{Math.round(subtotal).toLocaleString('en-NG')}</b></div>
+      <a className="sp-primary is-wide" href="/checkout" onClick={link('/checkout')}>Go to checkout</a>
+      <small className="sp-note">Delivery and service fees are shown at checkout.</small>
+    </>}
+  </aside>
 }

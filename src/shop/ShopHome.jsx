@@ -86,7 +86,13 @@ export function ShopHome() {
   const name = me?.preferredName || me?.firstName
 
   return <div className="sp-screen sp-home">
-    <Band search={<BandSearch href="/discover" placeholder="What can we get you?" />}>{signedIn && <p className="sp-greeting">{greeting()}{name ? `, ${name}` : ''} 👋</p>}<AddressPill /></Band>
+    <Band brandText={signedIn ? `${greeting()}${name ? `, ${name}` : ''} 👋` : undefined} search={<BandSearch href="/discover" placeholder="What can we get you?" />}>
+      <div className="sp-hero-desk">
+        <h1>{signedIn ? `${greeting()}${name ? `, ${name}` : ''}!` : 'Food, groceries and more,'}<br /><em>{signedIn ? 'What can we get you today?' : 'delivered across Sapele.'}</em></h1>
+        <div className="sp-hero-art" aria-hidden="true"><span><Burger /></span><span><Basket /></span><span><BagArt /></span><span><Parcel /></span></div>
+      </div>
+      <AddressPill />
+    </Band>
     <main className="sp-body">
       {live.map((order) => <LiveOrderBanner key={order.id} order={order} />)}
       <nav className="sp-bubbles" aria-label="Categories">{CATEGORY_TILES.map((tile) => <Bubble key={tile.key} art={categoryArt(tile.key)} label={tile.label} href={tile.href} tone={tile.tone} size="lg" />)}</nav>

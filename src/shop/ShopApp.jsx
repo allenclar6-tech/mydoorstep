@@ -6,6 +6,7 @@ import { ShopHome } from './ShopHome'
 import { StorePage } from './StorePage'
 import { BusinessLanding, RiderLanding } from './PartnerLanding'
 import { Toaster } from './Toaster'
+import { DesktopFooter, DesktopNav } from './ShopKit'
 import { applyAppearance, verticalForPath } from './shopData'
 import './shop.css'
 
@@ -44,5 +45,5 @@ export function ShopApp() {
   else if (path === '/partner/register' || path === '/partners/restaurants') page = <BusinessLanding />
   else if (path === '/riders') page = <RiderLanding />
   else { const slug = decodeURIComponent(path.split('/')[2] || ''); page = <StorePage key={slug} slug={slug} /> }
-  return <div className="sp-app">{page}<Toaster /></div>
+  return <div className="sp-app"><DesktopNav />{page}<DesktopFooter /><Toaster /></div>
 }

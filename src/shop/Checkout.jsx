@@ -196,6 +196,7 @@ export function CheckoutPage() {
         {quoteState.status === 'loading' && <p className="sp-note">Updating price…</p>}
         {quoteState.status === 'error' && <p className="sp-error" role="alert">{quoteState.error}</p>}
         {!request && !pickup && <p className="sp-note">Choose your delivery address to see the delivery fee.</p>}
+        <button type="button" className="sp-primary is-wide sp-desktop-pay" disabled={signedIn && !canPay} onClick={signedIn ? submit : () => navigate('/login')}>{busy ? 'Placing your order…' : !signedIn ? 'Sign in to order' : outside ? 'Address outside delivery area' : needsSlot ? 'Choose a time' : phone.trim().length < 7 ? 'Add your phone number' : `Order and pay${quote ? ` · ${naira(quote.totalMinor)}` : ''}`}</button>
       </section>
       {error && <p className="sp-error is-block" role="alert">{error}</p>}
     </main>

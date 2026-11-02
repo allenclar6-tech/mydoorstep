@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Bell, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCard, Globe, Heart, KeyRound, LogOut, MapPin, MessageCircle, Moon, ReceiptText, Store, Tag, Trash2, Truck, User } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
-import { ProfileAvatar } from '../ProfileAvatar'
+import { useProfilePhoto } from '../account/profilePhoto'
 import { signOut } from '../services/authService'
 import { Band, EmptyState, Sheet, ShopHeader, SkeletonList, TabBar } from './ShopKit'
 import { appearance, authHeaders, naira, navigate, setAppearance, token } from './shopData'
@@ -57,17 +57,34 @@ function useMe() {
   return user
 }
 
+
+/** Round profile picture: the uploaded photo, otherwise the person's initials on mint. */
+function ProfileFace({ user }) {
+  const photo = useProfilePhoto()
+  const initials = [user?.firstName, user?.lastName].filter(Boolean).map((part) => part.trim()[0]).join('').toUpperCase() || (user?.preferredName || '?').slice(0, 2).toUpperCase()
+  return <span className="sp-face" aria-hidden="true">{photo ? <img src={photo} alt="" /> : initials}</span>
+}
+
 export function ProfileHub() {
   const signedIn = Boolean(token())
   const user = useMe()
   const [sheet, setSheet] = useState(null)
   const name = user ? (user.preferredName || [user.firstName, user.lastName].filter(Boolean).join(' ') || 'DOORSTEP customer') : 'Your profile'
   return <div className="sp-screen sp-profile">
-    <Band title="Profile" />
+    <header className="sp-band sp-profile-band">
+      <div className="sp-band-row"><a className="sp-help-pill" href={signedIn ? '/account/support' : '/help'} onClick={link(signedIn ? '/account/support' : '/help')}>Help</a></div>
+      {signedIn ? <a className="sp-profile-hero" href="/account/profile" onClick={link('/account/profile')}>
+        <ProfileFace user={user} />
+        <span className="sp-profile-who"><b>{name}</b><small>{user ? 'View and edit your account' : 'Loading…'}</small></span>
+        <ChevronRight size={24} aria-hidden="true" />
+      </a> : <a className="sp-profile-hero" href="/login" onClick={link('/login')}>
+        <span className="sp-face" aria-hidden="true"><User size={30} /></span>
+        <span className="sp-profile-who"><b>Sign in</b><small>Or create an account to order</small></span>
+        <ChevronRight size={24} aria-hidden="true" />
+      </a>}
+    </header>
     <main className="sp-body">
-      {signedIn ? <a className="sp-profile-card" href="/account/profile" onClick={link('/account/profile')}><ProfileAvatar className="sp-avatar" size={48} /><span><b>{name}</b><small>{user?.email || user?.phone || 'Loading…'}</small></span><ChevronRight size={18} aria-hidden="true" /></a>
-        : <div className="sp-profile-card is-guest"><span className="sp-avatar is-guest" aria-hidden="true"><User size={24} /></span><span><b>Welcome to DOORSTEP</b><small>Sign in to order, track deliveries and save addresses.</small></span><div className="sp-guest-actions"><button type="button" className="sp-primary" onClick={() => navigate('/login')}>Sign in</button><button type="button" className="sp-ghost" onClick={() => navigate('/register')}>Create account</button></div></div>}
-
+      <h1 className="sp-profile-title">Profile</h1>
       <div className="sp-plus-card"><Crown size={22} aria-hidden="true" /><div><b>DOORSTEP Plus</b><small>Free deliveries and member prices — coming soon.</small></div></div>
 
       {signedIn && <ul className="sp-menu">

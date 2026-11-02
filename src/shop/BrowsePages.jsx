@@ -21,20 +21,50 @@ function applyFilters(stores, { sort, topRated, pickup, openOnly, free, home }) 
   return list
 }
 
-function FilterChips({ filters, setFilters }) {
+function FilterChips({ filters, setFilters, subs, sub, setSub, typeLabel = 'Food type' }) {
   const [sortOpen, setSortOpen] = useState(false)
+  const [typeOpen, setTypeOpen] = useState(false)
+  const chosen = subs?.find((entry) => entry.key === sub)
   const toggle = (key) => setFilters((current) => ({ ...current, [key]: !current[key] }))
   const sortLabel = SORTS.find(([key]) => key === filters.sort)?.[1]
   return <div className="sp-filter-row" role="toolbar" aria-label="Filters">
+    {subs?.length > 0 && <button type="button" className={`sp-filter${chosen ? ' is-on' : ''}`} onClick={() => setTypeOpen(true)}>{chosen ? chosen.label : typeLabel}<ChevronDown size={13} aria-hidden="true" /></button>}
     <button type="button" className={`sp-filter${filters.sort !== 'recommended' ? ' is-on' : ''}`} onClick={() => setSortOpen(true)}><ArrowDownUp size={14} aria-hidden="true" />{filters.sort === 'recommended' ? 'Sort by' : sortLabel}<ChevronDown size={13} aria-hidden="true" /></button>
     <button type="button" className={`sp-filter${filters.topRated ? ' is-on' : ''}`} aria-pressed={filters.topRated} onClick={() => toggle('topRated')}><Star size={14} aria-hidden="true" />Top rated</button>
     <button type="button" className={`sp-filter${filters.pickup ? ' is-on' : ''}`} aria-pressed={filters.pickup} onClick={() => toggle('pickup')}><Store size={14} aria-hidden="true" />Pickup</button>
     <button type="button" className={`sp-filter${filters.openOnly ? ' is-on' : ''}`} aria-pressed={filters.openOnly} onClick={() => toggle('openOnly')}><Clock3 size={14} aria-hidden="true" />Open now</button>
     <button type="button" className={`sp-filter${filters.free ? ' is-on' : ''}`} aria-pressed={filters.free} onClick={() => toggle('free')}><Bike size={14} aria-hidden="true" />Free delivery</button>
+    {typeOpen && <Sheet title={typeLabel} onClose={() => setTypeOpen(false)}>
+      <ul className="sp-type-grid">{[{ key: null, label: 'Everything' }, ...subs].map((entry) => { const Art = entry.key ? SUB_ART[entry.key] : null; return <li key={entry.key || 'all'}><button type="button" className={sub === entry.key ? 'is-selected' : ''} onClick={() => { setSub(entry.key); setTypeOpen(false) }}><span className="sp-bubble-art is-blob" aria-hidden="true">{Art ? <Art /> : <UtensilsCrossed size={26} />}</span>{entry.label}</button></li> })}</ul>
+    </Sheet>}
     {sortOpen && <Sheet title="Sort by" onClose={() => setSortOpen(false)}>
       <ul className="sp-choice-list">{SORTS.map(([key, label]) => <li key={key}><button type="button" className={filters.sort === key ? 'is-selected' : ''} onClick={() => { setFilters((current) => ({ ...current, sort: key })); setSortOpen(false) }}>{label}{filters.sort === key && <Check size={16} aria-hidden="true" />}</button></li>)}</ul>
     </Sheet>}
   </div>
+}
+
+
+/** Desktop sidebar (hidden on phones): categories with icons, then sort and filters. */
+function SidePanel({ subs, sub, setSub, filters, setFilters, title = 'Categories', showPromo = true }) {
+  const toggle = (key) => setFilters((current) => ({ ...current, [key]: !current[key] }))
+  return <aside className="sp-vside" aria-label="Browse and filter">
+    {subs?.length > 0 && <section>
+      <h3>{title}</h3>
+      <ul className="sp-vside-cats">
+        <li><button type="button" className={!sub ? 'is-on' : ''} onClick={() => setSub(null)}><span className="sp-vside-art is-all" aria-hidden="true"><UtensilsCrossed size={18} /></span>All</button></li>
+        {showPromo && <li><button type="button" className={sub === 'promo' ? 'is-on' : ''} onClick={() => setSub('promo')}><span className="sp-vside-art" aria-hidden="true"><SUB_ART.promo /></span>Promotions</button></li>}
+        {subs.map((entry) => { const Art = SUB_ART[entry.key]; return <li key={entry.key}><button type="button" className={sub === entry.key ? 'is-on' : ''} onClick={() => setSub(entry.key)}><span className="sp-vside-art" aria-hidden="true">{Art ? <Art /> : null}</span>{entry.label}</button></li> })}
+      </ul>
+    </section>}
+    <section>
+      <h3>Sort by</h3>
+      <ul className="sp-vside-radios">{SORTS.map(([key, label]) => <li key={key}><label><input type="radio" name="sp-sort" checked={filters.sort === key} onChange={() => setFilters((current) => ({ ...current, sort: key }))} />{label}</label></li>)}</ul>
+    </section>
+    <section>
+      <h3>Filters</h3>
+      <ul className="sp-vside-radios">{[['topRated', 'Top rated (85%+)'], ['pickup', 'Offers pickup'], ['openOnly', 'Open now'], ['free', 'Free delivery']].map(([key, label]) => <li key={key}><label><input type="checkbox" checked={filters[key]} onChange={() => toggle(key)} />{label}</label></li>)}</ul>
+    </section>
+  </aside>
 }
 
 const initialFilters = () => ({ sort: 'recommended', topRated: false, pickup: new URLSearchParams(window.location.search).get('pickup') === '1', openOnly: false, free: false })
@@ -51,7 +81,8 @@ export function VerticalPage({ vertical }) {
   const subs = SUBCATEGORIES[vertical] || []
   const data = home.data
   const inVertical = useMemo(() => data ? data.stores.filter((store) => store.vertical === vertical) : [], [data, vertical])
-  const visibleSubs = subs.filter((entry) => inVertical.some((store) => storeMatches(store, entry)))
+  // Every category is always shown; one with no store yet opens a friendly “coming soon” message.
+  const visibleSubs = subs
   const promoActive = sub === 'promo'
   const chosenSub = subs.find((entry) => entry.key === sub)
   const matching = inVertical.filter((store) => (!chosenSub || storeMatches(store, chosenSub)) && (!promoActive || freeDeliveryFor(store, data) || data.offers.some((offer) => offer.restaurantId === store.id || offer.vertical === vertical)) && storeSearch(store, query))
@@ -63,12 +94,14 @@ export function VerticalPage({ vertical }) {
   const offers = data ? data.offers.filter((offer) => !offer.vertical || offer.vertical === vertical) : []
   return <div className="sp-screen sp-vertical">
     <Band back="/" title={meta.label} search={<BandSearch value={query} onChange={setQuery} placeholder={`Search ${meta.label.toLowerCase()}`} />} />
-    <main className="sp-body">
-      {(visibleSubs.length > 0 || offers.length > 0) && <nav className="sp-sub-row" aria-label="Categories">
-        {offers.length > 0 && <Bubble art={SUB_ART.promo} label="Promotions" tone="sun" active={promoActive} onClick={() => setSub(promoActive ? null : 'promo')} />}
-        {visibleSubs.map((entry, position) => <Bubble key={entry.key} art={SUB_ART[entry.key]} label={entry.label} tone={SUB_TONES[(position + 1) % SUB_TONES.length]} active={sub === entry.key} onClick={() => setSub(sub === entry.key ? null : entry.key)} />)}
+    <main className="sp-body sp-vlayout">
+      <SidePanel subs={subs} sub={sub} setSub={setSub} filters={filters} setFilters={setFilters} title={vertical === 'FOOD' ? 'Food type' : 'Categories'} />
+      <div className="sp-vmain">
+      {visibleSubs.length > 0 && <nav className="sp-sub-row" aria-label="Categories">
+        {<Bubble art={SUB_ART.promo} label="Promotions" tone="blob" active={promoActive} onClick={() => setSub(promoActive ? null : 'promo')} />}
+        {visibleSubs.map((entry, position) => <Bubble key={entry.key} art={SUB_ART[entry.key]} label={entry.label} tone="blob" active={sub === entry.key} onClick={() => setSub(sub === entry.key ? null : entry.key)} />)}
       </nav>}
-      <FilterChips filters={filters} setFilters={setFilters} />
+      <FilterChips filters={filters} setFilters={setFilters} subs={subs} sub={sub === 'promo' ? null : sub} setSub={setSub} typeLabel={vertical === 'FOOD' ? 'Food type' : 'Category'} />
       {check && check.deliverable === false && !filters.pickup ? <OutOfArea check={check} /> : <>
         {home.status === 'loading' && <SkeletonList rows={4} />}
         {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
@@ -77,10 +110,11 @@ export function VerticalPage({ vertical }) {
         {data && <section className="sp-section">
           <SectionHead title={anyFilter ? `${list.length} result${list.length === 1 ? '' : 's'}` : `All ${meta.label.toLowerCase()}`} />
           {list.length ? <div className="sp-store-list">{list.map((store) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</div>
-            : inVertical.length ? <EmptyState icon={Search} title="Nothing matches" body="Try another category or clear a filter." action={<button type="button" className="sp-ghost" onClick={() => { setSub(null); setQuery(''); setFilters({ ...initialFilters(), pickup: false }) }}>Clear filters</button>} />
+            : inVertical.length ? <EmptyState icon={Search} title={chosenSub && !query ? `No ${chosenSub.label.toLowerCase()} on DOORSTEP yet` : promoActive ? 'No promotions right now' : 'Nothing matches'} body={chosenSub && !query ? 'We’re adding more businesses in Sapele every week. Try another category for now.' : 'Try another category or clear a filter.'} action={<button type="button" className="sp-ghost" onClick={() => { setSub(null); setQuery(''); setFilters({ ...initialFilters(), pickup: false }) }}>Clear filters</button>} />
               : <EmptyState icon={Store} title={`No ${meta.label.toLowerCase()} stores yet`} body={`We’re signing up ${meta.label.toLowerCase()} businesses in Sapele. Know one? Tell them to join DOORSTEP.`} action={<button type="button" className="sp-ghost" onClick={() => navigate('/partner/register')}>Invite a business</button>} />}
         </section>}
       </>}
+      </div>
     </main>
     <BasketBar />
     <TabBar active="home" />
@@ -109,7 +143,9 @@ export function DiscoverPage() {
 
   return <div className="sp-screen sp-discover">
     <Band back={section ? '/discover' : undefined} title={section ? section[1] : 'Discover'} search={<BandSearch value={query} onChange={setQuery} placeholder="Search food, stores or items" autoFocus={!section && Boolean(params.get('q'))} />} />
-    <main className="sp-body">
+    <main className="sp-body sp-vlayout">
+      <SidePanel filters={filters} setFilters={setFilters} />
+      <div className="sp-vmain">
       <FilterChips filters={filters} setFilters={setFilters} />
       {home.status === 'loading' && <SkeletonList rows={4} />}
       {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
@@ -127,6 +163,7 @@ export function DiscoverPage() {
           {stores.length ? <div className="sp-store-list">{stores.map((store) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</div> : <EmptyState icon={Search} title={trimmed ? `No results for “${query.trim()}”` : 'Nothing matches'} body="Try a dish name like “jollof”, a store, or clear a filter." />}
         </section>
       </>}
+      </div>
     </main>
     <BasketBar />
     <TabBar active="discover" />
