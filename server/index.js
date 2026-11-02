@@ -40,6 +40,7 @@ import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { serviceFeeFor } from './deliveryPricing.js'
 import { checkSchedule, choosePromotion, cleanTip, platformRoom, SCHEDULE_DISPATCH_LEAD_MS, verticalOf } from './promotions.js'
 import { createCustomerAppRouter } from './customerAppRoutes.js'
+import { parsePrepRange } from './customerApp.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
 
@@ -231,6 +232,7 @@ function publicRestaurant(restaurant) {
     closingTime: restaurant.closingTime,
     daysOpen: Array.isArray(restaurant.daysOpen) ? restaurant.daysOpen : null,
     prepTimeMinutes: restaurant.prepTimeMinutes,
+    prepTimeMaxMinutes: restaurant.prepTimeMaxMinutes ?? null,
     minimumOrderMinor: restaurant.minimumOrderMinor,
     temporarilyClosed: restaurant.temporarilyClosed,
     openNow: isRestaurantOpen(restaurant),
@@ -1686,18 +1688,43 @@ export const restaurantProfileSchema = z.object({
   address: z.string().min(5).max(240),
   openingTime: z.union([z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), z.literal('')]).transform(value => value || null),
   closingTime: z.union([z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), z.literal('')]).transform(value => value || null),
-  prepTimeMinutes: z.preprocess(value => value === '' || value === undefined ? null : Number(value), z.number().int().min(1).max(240).nullable()),
+  // "45" or a range such as "45-70" (stored as prepTimeMinutes + prepTimeMaxMinutes).
+  prepTimeMinutes: z.union([z.number(), z.string().max(40)]).optional().nullable(),
+  prepTimeMaxMinutes: z.union([z.number(), z.string().max(10)]).optional().nullable(),
 }).superRefine((value, context) => {
   if (Boolean(value.openingTime) !== Boolean(value.closingTime)) context.addIssue({ code: 'custom', path: ['openingTime'], message: 'Provide both opening and closing times.' })
+  const combined = value.prepTimeMaxMinutes != null && value.prepTimeMaxMinutes !== '' ? `${value.prepTimeMinutes}-${value.prepTimeMaxMinutes}` : value.prepTimeMinutes
+  const prep = parsePrepRange(combined)
+  if (prep.error) context.addIssue({ code: 'custom', path: ['prepTimeMinutes'], message: prep.error })
+}).transform((value) => {
+  const combined = value.prepTimeMaxMinutes != null && value.prepTimeMaxMinutes !== '' ? `${value.prepTimeMinutes}-${value.prepTimeMaxMinutes}` : value.prepTimeMinutes
+  const prep = parsePrepRange(combined)
+  return { ...value, prepTimeMinutes: prep.min, prepTimeMaxMinutes: prep.max }
 })
 
 app.patch('/api/restaurant/profile', requireUser, async (request, response) => {
   if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
   const result = restaurantProfileSchema.safeParse(request.body)
-  if (!result.success) return response.status(400).json({ error: 'INVALID_RESTAURANT_PROFILE' })
+  if (!result.success) return response.status(400).json({ error: 'INVALID_RESTAURANT_PROFILE', message: result.error.issues[0]?.message || 'Check the business details.' })
   const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
   if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
   try { return response.json({ restaurant: await prisma.restaurant.update({ where: { id: membership.restaurantId }, data: result.data }) }) } catch { return response.status(503).json({ error: 'RESTAURANT_PROFILE_SERVICE_UNAVAILABLE' }) }
+})
+
+// Business pins the exact spot of its store, so delivery fees and rider directions start from the right place.
+app.patch('/api/restaurant/location', requireUser, async (request, response) => {
+  if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
+  const result = z.object({ latitude: z.number().gte(-90).lte(90), longitude: z.number().gte(-180).lte(180) }).safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_STORE_LOCATION', message: 'Choose a point on the map.' })
+  const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
+  if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
+  const distanceKm = Math.hypot((result.data.latitude - 5.8916) * 111, (result.data.longitude - 5.6846) * 110.6)
+  if (distanceKm > 30) return response.status(409).json({ error: 'STORE_OUTSIDE_SAPELE', message: 'That point is outside Sapele. Move the pin to your store’s entrance.' })
+  try {
+    const restaurant = await prisma.restaurant.update({ where: { id: membership.restaurantId }, data: { latitude: result.data.latitude, longitude: result.data.longitude }, select: { id: true, latitude: true, longitude: true } })
+    await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'SET_STORE_LOCATION', entityType: 'Restaurant', entityId: restaurant.id, metadata: result.data } }).catch(() => undefined)
+    return response.json({ restaurant: { ...restaurant, latitude: Number(restaurant.latitude), longitude: Number(restaurant.longitude) } })
+  } catch { return response.status(503).json({ error: 'RESTAURANT_PROFILE_SERVICE_UNAVAILABLE' }) }
 })
 
 registerPartnerMedia(app, { prisma, requireUser })

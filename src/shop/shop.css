@@ -933,3 +933,6 @@ html[data-shop-theme='dark'] .sp-profile-hero { color: #fff3d4; }
 }
 @media (min-width: 1000px) { .sp-dnav .sp-address { flex: 0 0 210px; } .sp-dnav-search { min-width: 160px; } }
 @media (min-width: 1000px) { .sp-dnav-inner { max-width: 1320px; } .sp-dnav nav { flex: 0 0 auto; } }
+.sp-pin-prompt { align-items: center; background: #fff1c9; border: 1.5px solid #f2c94c; border-radius: 14px; color: #123d2d; display: grid; gap: 10px; grid-template-columns: auto 1fr auto; margin-top: 4px; padding: 12px; text-align: left; width: 100%; }
+.sp-pin-prompt > span { display: grid; gap: 2px; }
+.sp-pin-prompt small { color: #5b4a12; font-size: .8rem; }

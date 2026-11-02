@@ -139,6 +139,7 @@ export function CheckoutPage() {
         <h2>{pickup ? 'Pick up from' : 'Deliver to'}</h2>
         {pickup ? <div className="sp-place-row"><span className="sp-place-icon" aria-hidden="true"><Store size={18} /></span><span><b>{store?.name || cart[0].restaurantName}</b><small>{quote?.pickupAddress || store?.address || 'Store address shown after pricing'}</small></span>{store?.latitude != null && <a className="sp-link" href={`https://www.google.com/maps/dir/?api=1&destination=${store.latitude},${store.longitude}`} target="_blank" rel="noreferrer"><Navigation size={14} aria-hidden="true" /> Directions</a>}</div>
           : <button type="button" className={`sp-place-row is-button${outside ? ' is-out' : ''}`} onClick={() => setSheet('address')}><span className="sp-place-icon" aria-hidden="true"><MapPin size={18} /></span><span><b>{address.label || 'Choose your address'}</b><small>{outside ? check.message : address.point ? 'Exact pin set' : 'Pin your spot for the exact fee'}</small></span><ChevronRight size={17} aria-hidden="true" /></button>}
+        {!pickup && !address.point && <button type="button" className="sp-pin-prompt" onClick={() => navigate('/location?return=/checkout')}><MapPin size={18} aria-hidden="true" /><span><b>Pin your exact spot</b><small>Your delivery fee is based on distance. Without a pin we can only estimate it.</small></span><ChevronRight size={17} aria-hidden="true" /></button>}
         {!pickup && <label className="sp-field">Landmark or directions for the rider<input value={landmark} maxLength={200} onChange={(event) => setLandmark(event.target.value)} placeholder="e.g. blue gate opposite the church" /></label>}
         <label className="sp-field">Phone number<input value={phone} inputMode="tel" maxLength={30} onChange={(event) => setPhone(event.target.value)} placeholder="080 0000 0000" required /></label>
       </section>
@@ -186,7 +187,7 @@ export function CheckoutPage() {
         <div className="sp-card-head"><h2>Summary</h2><button type="button" className="sp-link" onClick={() => setSheet('fees')}><Info size={14} aria-hidden="true" />Fees information</button></div>
         <dl>
           <Row label="Products" value={nairaWhole(subtotal)} />
-          {!pickup && <Row label="Delivery" hint={quote?.delivery?.km ? `${quote.delivery.km} km` : undefined} value={quote ? (freeDelivery ? 'Free' : naira(quote.deliveryFeeMinor)) : '…'} strike={freeDelivery ? naira(quote.deliveryFeeMinor) : null} tone={freeDelivery ? 'good' : null} />}
+          {!pickup && <Row label="Delivery" value={quote ? (freeDelivery ? 'Free' : naira(quote.deliveryFeeMinor)) : '…'} strike={freeDelivery ? naira(quote.deliveryFeeMinor) : null} tone={freeDelivery ? 'good' : null} />}
           <Row label="Services" value={quote ? naira(quote.serviceFeeMinor) : '…'} />
           {quote?.tipMinor > 0 && <Row label="Rider tip" value={naira(quote.tipMinor)} />}
           {quote?.discountMinor > 0 && !freeDelivery && <Row label={quote.promotion?.label || 'Promo'} value={`−${naira(quote.discountMinor)}`} tone="good" />}

@@ -50,10 +50,26 @@ export function discoverSections(stores, stats, { limit = 10, now = new Date() }
   return { mostInDemand: ids(byDemand), budgetFriendly: ids(priced), topRated: ids(rated), topPerformers: ids(performers), newest: ids(fresh) }
 }
 
+/**
+ * Reads what a business typed for its preparation time: "45", "45-70", "45 – 70 mins".
+ * Returns { min, max } (max null for a single time) or { error }.
+ */
+export function parsePrepRange(value) {
+  if (value === '' || value == null) return { min: null, max: null }
+  if (typeof value === 'number') value = String(value)
+  const numbers = String(value).match(/\d+/g)
+  if (!numbers || numbers.length > 2 || /[^\d\s\-–—to mins]/i.test(String(value).replace(/minutes?|mins?/gi, ''))) return { error: 'Enter minutes like 45, or a range like 45-70.' }
+  const [min, max] = numbers.map(Number)
+  if (min < 1 || min > 240 || (max != null && (max < 1 || max > 240))) return { error: 'Preparation time must be between 1 and 240 minutes.' }
+  if (max != null && max < min) return { error: 'The second number must be bigger than the first, like 45-70.' }
+  return { min, max: max != null && max !== min ? max : null }
+}
+
 /** A rough, honest delivery time range for a store card (prep time plus a typical Sapele ride). */
 export function etaRange(store, { orderType = 'DELIVERY' } = {}) {
   const prep = Number(store.prepTimeMinutes) || 20
-  if (orderType === 'PICKUP') return [prep, prep + 10]
-  const low = prep + 10
-  return [Math.round(low / 5) * 5, Math.round((low + 15) / 5) * 5]
+  const prepMax = Number(store.prepTimeMaxMinutes) > prep ? Number(store.prepTimeMaxMinutes) : null
+  const round = (value) => Math.round(value / 5) * 5
+  if (orderType === 'PICKUP') return prepMax ? [prep, prepMax] : [prep, prep + 10]
+  return prepMax ? [round(prep + 10), round(prepMax + 15)] : [round(prep + 10), round(prep + 25)]
 }

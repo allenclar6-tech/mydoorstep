@@ -20,3 +20,10 @@
 .partner-menu-item > p { font-weight: 700; }
 .partner-menu-placeholder { color: #39674d; font-weight: 800; padding: 16px; }
 @media(max-width: 480px) { .partner-media-card { padding: 16px; } .partner-media-preview { width: 100%; } .partner-menu-item { padding: 16px; } }
+
+/* Photo picker inside the “Create an item” form */
+.menu-photo-pick { align-items: center; border: 1.5px dashed #cfd9d2; border-radius: 14px; cursor: pointer; display: grid !important; gap: 12px; grid-template-columns: 64px 1fr; padding: 10px; position: relative; }
+.menu-photo-pick > img, .menu-photo-pick > span:first-child { align-items: center; background: #f2f8f4; border-radius: 12px; display: flex; font-size: 1.6rem; height: 64px; justify-content: center; object-fit: cover; width: 64px; }
+.menu-photo-pick > span:nth-child(2) { display: grid; gap: 2px; }
+.menu-photo-pick small { color: #5b6b63; font-weight: 500; }
+.menu-photo-pick input { inset: 0; opacity: 0; position: absolute; cursor: pointer; }

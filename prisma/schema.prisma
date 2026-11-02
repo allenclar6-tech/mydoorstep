@@ -210,6 +210,8 @@ model Restaurant {
   cuisineCategory   String?
   coverImageUrl     String?
   prepTimeMinutes   Int?
+  /// Upper end of a preparation-time range (e.g. 45–70 min); null = a single time.
+  prepTimeMaxMinutes Int?
   minimumOrderMinor Int                     @default(0)
   /// Negotiated commission for this business (null = the platform rate in Admin → Money).
   commissionDoorstepRiderPercent Decimal?   @db.Decimal(5, 2)

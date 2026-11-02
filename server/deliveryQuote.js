@@ -58,7 +58,11 @@ export async function quoteOrderDelivery({ db, restaurant, destination, subtotal
   if (!pricing.published) return null
   const zones = await pricingZones(db, pricing, givenZones)
   const fulfilment = plannedFulfilment(restaurant.application?.deliveryPreference)
-  const pickupPoint = toPoint(restaurant)
+  // A store that hasn't pinned itself is placed at the centre of the Sapele area named in its address, so the fee
+  // still follows the real distance between areas instead of one flat "typical trip" price.
+  const pinnedPickup = toPoint(restaurant)
+  const pickupFromArea = pinnedPickup ? null : resolveDropoff({ point: null, addressLine: restaurant.address }, zones)
+  const pickupPoint = pinnedPickup || pickupFromArea?.point || null
   const pickupZone = pickupPoint ? zoneForPoint(pickupPoint, zones) : null
   const dropoff = resolveDropoff(destination, zones)
   if (dropoff.zone?.closed) throw new DeliveryQuoteError('AREA_PAUSED', `Deliveries to ${dropoff.zone.name} are paused${dropoff.zone.closedReason ? `: ${dropoff.zone.closedReason}` : ''}. Please try again later.`, 409)
@@ -69,6 +73,7 @@ export async function quoteOrderDelivery({ db, restaurant, destination, subtotal
   if (pickupPoint && dropoff.point) {
     distance = await measureDelivery(pickupPoint, dropoff.point, pricing.distance, cachedRoutes(fetchImpl))
     if (dropoff.source === 'AREA_CENTRE') extraWarnings.push('AREA_CENTRE')
+    if (!pinnedPickup) extraWarnings.push('PICKUP_AREA_CENTRE')
   } else {
     distance = { meters: Math.round(pricing.distance.assumedKm * 1000), source: 'ASSUMED', straightMeters: null, roadMeters: null, warnings: ['ASSUMED_DISTANCE'] }
     if (!pickupPoint) extraWarnings.push('PICKUP_NOT_PINNED')

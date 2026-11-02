@@ -99,3 +99,12 @@ test('approved location zones enforce pauses and minimum orders on the server', 
   const ok = await quoteOrderDelivery({ db: null, restaurant, destination: pin, subtotalMinor: 800_000, pricing, finance, zones: [approvedZone()], fetchImpl: mapbox([2600]) })
   assert.equal(ok.dropoffZone?.name, 'Amukpe (approved)')
 })
+
+test('an unpinned store is placed at the centre of the area in its address, so fees change with distance', async () => {
+  const unpinned = { ...restaurant, latitude: null, longitude: null, address: 'Shop 4, Amukpe, Sapele' }
+  const near = await quoteOrderDelivery({ db: null, restaurant: unpinned, destination: { point: { latitude: 5.912, longitude: 5.686 } }, subtotalMinor: 500_000, pricing: published(), finance, fetchImpl: mapbox([900]) })
+  const far = await quoteOrderDelivery({ db: null, restaurant: unpinned, destination: { point: { latitude: 5.86, longitude: 5.70 } }, subtotalMinor: 500_000, pricing: published(), finance, fetchImpl: mapbox([7_500]) })
+  assert.notEqual(near.distance.source, 'ASSUMED')
+  assert.ok(near.warnings.includes('PICKUP_AREA_CENTRE'))
+  assert.ok(far.customer.deliveryFeeMinor > near.customer.deliveryFeeMinor)
+})

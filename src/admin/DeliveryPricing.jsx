@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Bike, Calculator, Check, CloudRain, Handshake, Map as MapIcon, MapPin, Plus, Route, Save, Scale, Store, Trash2, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { MapPointPicker } from '../map/MapPointPicker'
-import { distanceTable, isPoint, priceDelivery, slug, starterZones } from '../../server/deliveryPricing.js'
+import { defaultDeliveryPricing, distanceTable, isPoint, priceDelivery, slug, starterZones, STARTER_RIDER_BANDS, STARTER_RIDER_PER_KM_AFTER_MINOR } from '../../server/deliveryPricing.js'
 import { SAPELE_DIRECTORY } from '../../server/sapeleDirectory.js'
 
 const DIRECTORY_BY_ID = new Map(SAPELE_DIRECTORY.map((area) => [area.id, area]))
@@ -23,7 +23,7 @@ const toMinor = (value) => value === '' || value == null ? null : Math.round(Num
 const toNaira = (minor) => minor == null ? '' : String(minor / 100)
 
 const SOURCE_LABEL = { ROAD: 'By road', ROAD_CAPPED: 'Detour capped', ESTIMATE: 'Estimated', ASSUMED: 'Assumed', TABLE: 'Table' }
-const TABS = [['calculator', 'Calculator', Calculator], ['rates', 'Fees & rider rates', Scale], ['areas', 'Sapele areas', MapPin], ['agreed', 'Agreed prices', Handshake]]
+const TABS = [['easy', 'Easy setup', Check], ['calculator', 'Test a trip', Calculator], ['rates', 'Fees & rider rates', Scale], ['areas', 'Sapele areas', MapPin], ['agreed', 'Agreed prices', Handshake]]
 
 function NairaField({ label, minor, onChange, allowEmpty = false, hint }) {
   return <label className="dp-field"><span>{label}</span><div className="dp-naira"><i>₦</i><input type="number" inputMode="decimal" min="0" step="10" value={toNaira(minor)} placeholder={allowEmpty ? 'Use formula' : '0'} onChange={(event) => onChange(event.target.value === '' && allowEmpty ? null : toMinor(event.target.value || 0))} /></div>{hint && <small>{hint}</small>}</label>
@@ -122,11 +122,76 @@ function EndPicker({ label, value, onChange, businesses, zones, allowBusiness })
   </fieldset>
 }
 
+
+// Simple, one-page setup in plain English. Suggested numbers are only a starting point: change any of them.
+const SUGGESTED = { customerFee: defaultDeliveryPricing.customerFee, serviceFee: defaultDeliveryPricing.serviceFee, margin: defaultDeliveryPricing.margin, riderBands: STARTER_RIDER_BANDS, riderPerKmAfter: STARTER_RIDER_PER_KM_AFTER_MINOR }
+const EXAMPLE_KM = [1, 2, 3, 4, 5, 6, 8, 10]
+
+function EasySetup({ pricing, setP, riderPay, setRiderPay, table, saving, onSave, published, unpinnedCount }) {
+  const useSuggested = () => {
+    setP(['customerFee'], { ...SUGGESTED.customerFee })
+    setP(['serviceFee'], { ...SUGGESTED.serviceFee })
+    setP(['margin'], { ...SUGGESTED.margin })
+    setRiderPay({ ...riderPay, enabled: true, bands: SUGGESTED.riderBands.map((band) => ({ ...band })), perKmAfterMinor: SUGGESTED.riderPerKmAfter })
+  }
+  const band = (index, key, value) => setRiderPay({ ...riderPay, bands: riderPay.bands.map((entry, i) => i === index ? { ...entry, [key]: value } : entry) })
+  const rows = table.filter((row) => EXAMPLE_KM.includes(row.km))
+  return <>
+    <div className="dp-card dp-easy-intro">
+      <h2>Set your delivery prices in 3 steps</h2>
+      <ol className="dp-steps"><li><b>Fill in the boxes</b> below (or press “Use suggested prices”).</li><li><b>Check the table</b> — it shows what a customer pays at each distance.</li><li><b>Press “Save and turn on”.</b> Checkout starts using these prices straight away.</li></ol>
+      <button type="button" className="dp-secondary" onClick={useSuggested}>Use suggested prices</button>
+      {unpinnedCount > 0 && <p className="dp-note"><AlertTriangle size={15} aria-hidden="true" /> {unpinnedCount} business{unpinnedCount === 1 ? ' has' : 'es have'} not pinned their shop on the map yet. Ask them to open <b>Business profile → Set location</b>, so their delivery fee is measured from the right place.</p>}
+    </div>
+
+    <div className="dp-card">
+      <h2>1. What the customer pays for delivery</h2>
+      <div className="dp-grid">
+        <NairaField label="Price for a short trip" minor={pricing.customerFee.baseMinor} onChange={(v) => setP(['customerFee', 'baseMinor'], v ?? 0)} hint={`Covers the first ${pricing.customerFee.includedKm} km`} />
+        <NumberField label="Short trip covers up to" value={pricing.customerFee.includedKm} suffix="km" onChange={(v) => setP(['customerFee', 'includedKm'], v)} />
+        <NairaField label="Add for every extra km" minor={pricing.customerFee.perKmMinor} onChange={(v) => setP(['customerFee', 'perKmMinor'], v ?? 0)} />
+        <NairaField label="Never charge less than" minor={pricing.customerFee.minimumMinor} onChange={(v) => setP(['customerFee', 'minimumMinor'], v ?? 0)} />
+        <NairaField label="Never charge more than" minor={pricing.customerFee.maximumMinor} onChange={(v) => setP(['customerFee', 'maximumMinor'], v ?? 0)} />
+        <NumberField label="Furthest we deliver" value={pricing.distance.maxDeliveryKm} suffix="km" step="1" onChange={(v) => setP(['distance', 'maxDeliveryKm'], v)} />
+      </div>
+    </div>
+
+    <div className="dp-card">
+      <h2>2. What the rider earns per trip</h2>
+      <div className="dp-easy-bands">{riderPay.bands.map((entry, index) => <div key={index} className="dp-easy-band">
+        <span>Trips up to</span>
+        <NumberField label="" value={entry.upToKm} suffix="km" step="0.5" onChange={(v) => band(index, 'upToKm', v)} />
+        <span>rider gets</span>
+        <NairaField label="" minor={entry.amountMinor} onChange={(v) => band(index, 'amountMinor', v ?? 0)} />
+      </div>)}</div>
+      <div className="dp-grid"><NairaField label="Longer trips: add per extra km" minor={riderPay.perKmAfterMinor || 0} onChange={(v) => setRiderPay({ ...riderPay, perKmAfterMinor: v ?? 0 })} /></div>
+      <Toggle checked={pricing.margin.protect} onChange={(v) => setP(['margin', 'protect'], v)} label="Never lose money on a delivery (raise the fee if the rider would earn more than the customer pays)" />
+    </div>
+
+    <div className="dp-card">
+      <h2>3. Small service fee on each order</h2>
+      <div className="dp-grid"><NumberField label="Service fee" value={pricing.serviceFee.percent} suffix="% of the food" step="0.5" onChange={(v) => setP(['serviceFee', 'percent'], v)} /><NairaField label="Service fee is never more than" minor={pricing.serviceFee.maximumMinor} onChange={(v) => setP(['serviceFee', 'maximumMinor'], v ?? 0)} /></div>
+    </div>
+
+    <div className="dp-card">
+      <h2>Check: what it costs at each distance</h2>
+      <div className="dp-table-wrap"><table className="dp-easy-table"><thead><tr><th>Distance</th><th>Customer pays</th><th>Rider gets</th><th>DOORSTEP keeps</th></tr></thead>
+        <tbody>{rows.map((row) => <tr key={row.km} className={row.deliveryMarginMinor != null && row.deliveryMarginMinor < 0 ? 'is-loss' : ''}><td>{row.km} km</td><td><b>{money(row.deliveryFeeMinor)}</b></td><td>{row.riderPayMinor == null ? '—' : money(row.riderPayMinor)}</td><td>{row.deliveryMarginMinor == null ? '—' : money(row.deliveryMarginMinor)}</td></tr>)}</tbody></table></div>
+      <p className="dp-muted">“DOORSTEP keeps” is the delivery part only. Your commission on the food and the service fee come on top.</p>
+    </div>
+
+    <div className="dp-card dp-easy-save">
+      <div><b>{published ? 'Prices are ON at checkout' : 'Prices are not on yet'}</b><small>{published ? 'Press Save after any change.' : 'Customers still pay the old flat ₦800 until you turn these on.'}</small></div>
+      <button type="button" className="dp-primary" disabled={saving} onClick={() => onSave(true)}>{saving ? 'Saving…' : published ? 'Save changes' : 'Save and turn on'}</button>
+    </div>
+  </>
+}
+
 export function DeliveryPricingAdmin() {
   const [loaded, setLoaded] = useState(null)
   const [pricing, setPricing] = useState(null)
   const [riderPay, setRiderPay] = useState(null)
-  const [tab, setTab] = useState('calculator')
+  const [tab, setTab] = useState('easy')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -198,15 +263,17 @@ export function DeliveryPricingAdmin() {
 
   return <section className="dp">
     <header className="dp-hero">
-      <div><span className="dp-kicker">SAPELE DELIVERY PRICING</span><h1>Balance fees, rider pay and your margin</h1>
-        <p>{pricing.published ? 'Live: checkout charges by road distance.' : 'Not live yet: checkout still uses the flat ₦800 fee. Set your rates, test trips, then publish.'}</p></div>
-      <span className={pricing.published ? 'dp-live is-on' : 'dp-live'}>{pricing.published ? <><Check size={14} />Live</> : 'Draft'}</span>
+      <div><span className="dp-kicker">DELIVERY SETUP</span><h1>Delivery prices</h1>
+        <p>{pricing.published ? 'ON: customers pay by how far they are from the shop.' : 'OFF: customers still pay a flat ₦800. Use “Easy setup” to turn on distance prices.'}</p></div>
+      <span className={pricing.published ? 'dp-live is-on' : 'dp-live'}>{pricing.published ? <><Check size={14} />ON</> : 'OFF'}</span>
     </header>
 
     {!loaded.routingConfigured && <div className="dp-card dp-alert"><AlertTriangle size={18} /><span>Road routing isn’t configured on the server yet (add the Mapbox server token on Render). Until it is, distances are estimated from the straight line × {pricing.distance.detourFactor}.</span></div>}
     {negativeRows > 0 && <div className="dp-card dp-alert"><AlertTriangle size={18} /><span>{negativeRows} distance{negativeRows > 1 ? 's' : ''} in the table lose money on delivery. Turn on margin protection or adjust the rates.</span></div>}
 
     <nav className="dp-tabs" aria-label="Delivery pricing sections">{TABS.map(([key, label, Icon]) => <button type="button" key={key} className={tab === key ? 'is-on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}><Icon size={15} aria-hidden="true" />{label}</button>)}</nav>
+
+    {tab === 'easy' && <EasySetup pricing={pricing} setP={setP} riderPay={riderPay} setRiderPay={setRiderPay} table={table} saving={saving} onSave={save} published={pricing.published} unpinnedCount={unpinned.length} />}
 
     {tab === 'calculator' && <>
       <div className="dp-card">

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { checkSchedule, choosePromotion, cleanTip, heldForSchedule, platformRoom, promoLabel, promoProblem, rawDiscount, verticalOf } from '../server/promotions.js'
-import { deliverability, discoverSections, etaRange } from '../server/customerApp.js'
+import { deliverability, discoverSections, etaRange, parsePrepRange } from '../server/customerApp.js'
 import { orderPaidEntries, orderShares } from '../server/financeService.js'
 
 const settings = { commission: { doorstepRiderPercent: 15, ownRiderPercent: 10 } }
@@ -93,4 +93,18 @@ test('store sections, delivery check and rankings', () => {
   assert.deepEqual(sections.topPerformers, ['a', 'b'])
   assert.deepEqual(sections.newest, ['b'])
   assert.deepEqual(etaRange({ prepTimeMinutes: 20 }), [30, 45])
+})
+
+test('preparation time can be a single number or a range', () => {
+  assert.deepEqual(parsePrepRange('45'), { min: 45, max: null })
+  assert.deepEqual(parsePrepRange('45-70'), { min: 45, max: 70 })
+  assert.deepEqual(parsePrepRange('45 – 70 mins'), { min: 45, max: 70 })
+  assert.deepEqual(parsePrepRange('45 to 70'), { min: 45, max: 70 })
+  assert.deepEqual(parsePrepRange(30), { min: 30, max: null })
+  assert.deepEqual(parsePrepRange(''), { min: null, max: null })
+  assert.ok(parsePrepRange('70-45').error)
+  assert.ok(parsePrepRange('241').error)
+  assert.ok(parsePrepRange('abc').error)
+  assert.deepEqual(etaRange({ prepTimeMinutes: 45, prepTimeMaxMinutes: 70 }), [55, 85])
+  assert.deepEqual(etaRange({ prepTimeMinutes: 45, prepTimeMaxMinutes: 70 }, { orderType: 'PICKUP' }), [45, 70])
 })

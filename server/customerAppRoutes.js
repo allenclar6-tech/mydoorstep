@@ -162,6 +162,34 @@ export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, pub
     } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }
   })
 
+  // Admin overview: what needs attention today, in plain words, each with where to go.
+  router.get('/admin/todo', requireUser, requireAdmin, async (_request, response) => {
+    try {
+      const safe = (promise) => promise.catch(() => 0)
+      const [businesses, riders, transfers, withdrawals, waiting, tickets, unpinned, pricing] = await Promise.all([
+        safe(prisma.restaurantApplication.count({ where: { status: 'PENDING_APPROVAL' } })),
+        safe(prisma.riderApplication.count({ where: { status: 'PENDING_APPROVAL' } })),
+        safe(prisma.payment.count({ where: { method: 'BANK_TRANSFER', status: 'PENDING_VERIFICATION' } })),
+        safe(prisma.payout.count({ where: { source: 'WITHDRAWAL', status: 'REQUESTED' } })),
+        safe(prisma.delivery.count({ where: { riderId: null, orderId: { not: null }, status: { in: ['AVAILABLE', 'REQUESTED'] }, order: { status: { in: ['RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP'] } } } })),
+        safe(prisma.supportTicket.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } })),
+        safe(prisma.restaurant.count({ where: { status: 'APPROVED', OR: [{ latitude: null }, { longitude: null }] } })),
+        getDeliveryPricing(prisma).catch(() => null),
+      ])
+      const items = [
+        { key: 'waiting', count: waiting, urgent: true, text: waiting === 1 ? '1 order is waiting for a rider' : `${waiting} orders are waiting for a rider`, href: '/admin/deliveries', action: 'Send a rider' },
+        { key: 'transfers', count: transfers, urgent: true, text: transfers === 1 ? '1 bank transfer to confirm' : `${transfers} bank transfers to confirm`, href: '/admin/payments', action: 'Check payments' },
+        { key: 'withdrawals', count: withdrawals, text: withdrawals === 1 ? '1 partner is asking to withdraw money' : `${withdrawals} partners are asking to withdraw money`, href: '/admin/finance', action: 'Pay them' },
+        { key: 'businesses', count: businesses, text: businesses === 1 ? '1 new business is waiting for approval' : `${businesses} new businesses are waiting for approval`, href: '/admin/restaurants', action: 'Review' },
+        { key: 'riders', count: riders, text: riders === 1 ? '1 new rider is waiting for approval' : `${riders} new riders are waiting for approval`, href: '/admin/riders', action: 'Review' },
+        { key: 'tickets', count: tickets, text: tickets === 1 ? '1 help message is open' : `${tickets} help messages are open`, href: '/admin/support', action: 'Reply' },
+        { key: 'unpinned', count: unpinned, text: unpinned === 1 ? '1 business hasn’t pinned its shop on the map' : `${unpinned} businesses haven’t pinned their shop on the map`, href: '/admin/pricing', action: 'See who' },
+        { key: 'pricing', count: pricing && !pricing.published ? 1 : 0, text: 'Delivery prices are OFF — customers pay a flat ₦800', href: '/admin/pricing', action: 'Turn on' },
+      ].filter((item) => item.count > 0)
+      return response.json({ items })
+    } catch { return response.status(503).json({ error: 'TODO_UNAVAILABLE' }) }
+  })
+
   // Admin › Promo codes ----------------------------------------------------------------------------------------
   router.get('/admin/promos', requireUser, requireAdmin, async (_request, response) => {
     try {
