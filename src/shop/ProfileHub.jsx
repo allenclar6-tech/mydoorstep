@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
-import { Bell, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCard, Globe, Heart, KeyRound, LogOut, MapPin, MessageCircle, Moon, ReceiptText, Store, Tag, Trash2, Truck, User } from 'lucide-react'
+import { Bell, BellRing, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCard, Globe, Heart, KeyRound, LogOut, MapPin, MessageCircle, Moon, ReceiptText, Tag, Trash2, User } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { useProfilePhoto } from '../account/profilePhoto'
 import { PushPrompt } from '../notifications/PushPrompt'
+import { permission as pushPermission, turnOnPush } from '../notifications/push'
 import { signOut } from '../services/authService'
 import { Band, EmptyState, Sheet, ShopHeader, SkeletonList, TabBar } from './ShopKit'
 import { appearance, authHeaders, naira, navigate, setAppearance, token } from './shopData'
 
 const link = (href) => (event) => { event.preventDefault(); navigate(href) }
 
-function MenuRow({ icon: Icon, label, hint, href, onClick, tone }) {
-  const content = <><span className="sp-menu-icon" aria-hidden="true"><Icon size={18} /></span><span className="sp-menu-text"><b>{label}</b>{hint && <small>{hint}</small>}</span><ChevronRight size={17} aria-hidden="true" /></>
+function MenuRow({ icon: Icon, label, hint, href, onClick, tone, status }) {
+  const content = <><span className="sp-menu-icon" aria-hidden="true"><Icon size={18} /></span><span className="sp-menu-text"><b>{label}</b>{hint && <small>{hint}</small>}</span>{status ? <span className={`sp-menu-status is-${status}`}>{status === 'on' ? 'On' : 'Off'}</span> : <ChevronRight size={17} aria-hidden="true" />}</>
+  if (!href && !onClick) return <li className={tone ? `is-${tone}` : undefined}><div className="sp-menu-static">{content}</div></li>
   return <li className={tone ? `is-${tone}` : undefined}>{href ? <a href={href} onClick={link(href)}>{content}</a> : <button type="button" onClick={onClick}>{content}</button>}</li>
 }
 
@@ -70,6 +72,8 @@ export function ProfileHub() {
   const signedIn = Boolean(token())
   const user = useMe()
   const [sheet, setSheet] = useState(null)
+  const [pushState, setPushState] = useState(() => pushPermission())
+  const turnOnNow = async () => { const result = await turnOnPush(); setPushState(result === 'on' ? 'granted' : result === 'denied' ? 'denied' : pushPermission()) }
   const name = user ? (user.preferredName || [user.firstName, user.lastName].filter(Boolean).join(' ') || 'DOORSTEP customer') : 'Your profile'
   return <div className="sp-screen sp-profile">
     <header className="sp-band sp-profile-band">
@@ -86,9 +90,10 @@ export function ProfileHub() {
     </header>
     <main className="sp-body">
       <h1 className="sp-profile-title">Profile</h1>
-      {signedIn && <PushPrompt who="customer" always />}
+      {signedIn && pushState !== 'granted' && pushState !== 'denied' && <PushPrompt who="customer" />}
       <div className="sp-plus-card"><Crown size={22} aria-hidden="true" /><div><b>DOORSTEP Plus</b><small>Free deliveries and member prices — coming soon.</small></div></div>
 
+      {signedIn && <h2 className="sp-menu-label">Your account</h2>}
       {signedIn && <ul className="sp-menu">
         <MenuRow icon={ReceiptText} label="Order history" href="/account/orders" />
         <MenuRow icon={User} label="Account" hint="Name, email and phone" href="/account/profile" />
@@ -99,17 +104,15 @@ export function ProfileHub() {
         <MenuRow icon={Bell} label="Notifications" href="/account/notifications" />
         <MenuRow icon={KeyRound} label="Sign-in & security" href="/account/security" />
       </ul>}
+      <h2 className="sp-menu-label">Settings & help</h2>
       <ul className="sp-menu">
+        {signedIn && pushState !== 'unsupported' && <MenuRow icon={BellRing} label="Phone notifications" hint={pushState === 'granted' ? 'On for this device' : pushState === 'denied' ? 'Blocked — allow them in your browser settings' : 'Off — tap to turn on'} status={pushState === 'granted' ? 'on' : 'off'} onClick={pushState === 'granted' || pushState === 'denied' ? undefined : turnOnNow} />}
         <MenuRow icon={Globe} label="Language" hint="English" onClick={() => setSheet('language')} />
         <MenuRow icon={Moon} label="Appearance" hint={{ light: 'Light', dark: 'Dark', system: 'Same as phone' }[appearance()]} onClick={() => setSheet('appearance')} />
         <MenuRow icon={CircleHelp} label="FAQ" href="/help/faq" />
         <MenuRow icon={MessageCircle} label="Help & support" href={signedIn ? '/account/support' : '/help'} />
       </ul>
-      <ul className="sp-menu">
-        <MenuRow icon={Store} label="Sell on DOORSTEP" href="/partner/register" />
-        <MenuRow icon={Truck} label="Ride with DOORSTEP" href="/riders" />
-      </ul>
-      {signedIn && <ul className="sp-menu">
+      {signedIn && <ul className="sp-menu sp-menu-last">
         <MenuRow icon={Trash2} label="Delete my account and data" tone="danger" onClick={() => setSheet('delete')} />
         <MenuRow icon={LogOut} label="Log out" onClick={() => signOut({ apiBase })} />
       </ul>}

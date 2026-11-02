@@ -9,3 +9,6 @@
 .push-on { background: #e2f2e8; border-radius: 12px; color: #123d2d; font-weight: 700; margin: 0 0 12px; padding: 10px 12px; }
 .push-note { background: #fff7e0; border-radius: 12px; margin: 0 0 12px; padding: 10px 12px; }
 @media (max-width: 480px) { .push-card { grid-template-columns: auto 1fr auto; } .push-btn { grid-column: 1 / -1; } }
+.push-card { padding-right: 40px; }
+.push-close { position: absolute; right: 8px; top: 8px; }
+@media (max-width: 480px) { .push-card { grid-template-columns: auto 1fr; } .push-btn { grid-column: 1 / -1; } }

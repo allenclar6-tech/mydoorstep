@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bike, ChefHat, ChevronRight, PackageCheck, Store as StoreIcon } from 'lucide-react'
 import { ORDER_STATUS_LABELS } from '../orders/OrderActions'
-import { Band, BandSearch, BrandCircles, Bubble, CATEGORY_TILES, categoryArt, EmptyState, OutOfArea, Rail, SectionHead, SkeletonList, StoreTile, TabBar, AddressPill } from './ShopKit'
-import { Parcel, PercentTag, ShoppingBag as BagArt, Burger, Basket, Scooter, Storefront } from './Illustrations'
+import { Band, BandSearch, BellButton, Bubble, CartButton, Logo, CATEGORY_TILES, categoryArt, EmptyState, OutOfArea, Rail, SectionHead, SkeletonList, StoreTile, TabBar, AddressPill } from './ShopKit'
+import { Parcel, PercentTag, ShoppingBag as BagArt, Burger, Basket } from './Illustrations'
 import { PushPrompt } from '../notifications/PushPrompt'
-import { ACTIVE_ORDER_STATUSES, greeting, navigate, token, useAddress, useDeliveryCheck, useHome, useMe, useMyOrders } from './shopData'
+import { ACTIVE_ORDER_STATUSES, greeting, navigate, storeHref, token, useAddress, useDeliveryCheck, useHome, useMe, useMyOrders } from './shopData'
 
 const link = (href) => (event) => { event.preventDefault(); navigate(href) }
 
@@ -68,6 +68,48 @@ export function LiveOrderBanner({ order }) {
   </a>
 }
 
+/** A store (or the Promotions shortcut) as a square tile with its name underneath. */
+function SquareTile({ href, label, image, art: Art }) {
+  const [failed, setFailed] = useState(false)
+  return <a className="sp-sq" href={href} onClick={link(href)} role="listitem">
+    <span className="sp-sq-box" aria-hidden="true">{image && !failed ? <img src={image} alt="" loading="lazy" onError={() => setFailed(true)} /> : Art ? <span className="sp-sq-art"><Art /></span> : <b>{label.slice(0, 1)}</b>}</span>
+    <span className="sp-sq-name">{label}</span>
+  </a>
+}
+
+/** Rows of four square tiles that swipe page by page, with dots underneath. */
+function TilePages({ label, children }) {
+  const ref = useRef(null)
+  const [page, setPage] = useState(0)
+  const count = Math.ceil(children.length / 4)
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return undefined
+    const onScroll = () => setPage(Math.round(node.scrollLeft / Math.max(1, node.clientWidth)))
+    node.addEventListener('scroll', onScroll, { passive: true })
+    return () => node.removeEventListener('scroll', onScroll)
+  }, [])
+  return <>
+    <div className="sp-sq-track" ref={ref} role="list" aria-label={label}>{children}</div>
+    {count > 1 && <div className="sp-dots" aria-hidden="true">{Array.from({ length: count }, (_, index) => <span key={index} className={index === page ? 'is-on' : ''} />)}</div>}
+  </>
+}
+
+/** One clear offer card, like “Enjoy free delivery on your first order”. */
+function OfferCard({ offer, signedIn }) {
+  if (!offer) return null
+  const href = offer.firstOrderOnly && !signedIn ? '/register' : '/account/promos'
+  const Art = offer.type === 'FREE_DELIVERY' ? Parcel : PercentTag
+  const title = offer.type === 'FREE_DELIVERY' && offer.firstOrderOnly ? 'Enjoy free delivery on your first order' : offer.label
+  return <a className="sp-offer-card" href={href} onClick={link(href)}>
+    <span className="sp-offer-copy"><b>{title}</b><small>{offer.code ? `Use code ${offer.code} at checkout.` : offer.autoApply ? 'Offer applied automatically.' : offer.description || offer.name}</small></span>
+    <span className="sp-offer-art" aria-hidden="true"><Art /></span>
+    <span className="sp-offer-go" aria-hidden="true"><ChevronRight size={18} /></span>
+  </a>
+}
+
+const BIG_CATEGORIES = CATEGORY_TILES.filter((tile) => tile.key !== 'OFFERS')
+
 export function ShopHome() {
   const home = useHome()
   const address = useAddress()
@@ -76,64 +118,79 @@ export function ShopHome() {
   const signedIn = Boolean(token())
   const open = data ? data.stores.filter((store) => store.openNow) : []
   const forYou = data ? (() => { const ids = [...new Set([...data.sections.topRated, ...data.sections.mostInDemand, ...data.sections.topPerformers])]; const picked = pick(data, ids).filter((store) => store.openNow); return (picked.length >= 3 ? picked : open).slice(0, 10) })() : []
-  const demand = data ? pick(data, data.sections.mostInDemand).slice(0, 10) : []
-  const fresh = data ? pick(data, data.sections.newest).slice(0, 10) : []
-  const brands = data ? [...new Set([...data.sections.mostInDemand, ...data.sections.topRated, ...data.stores.map((store) => store.id)])].map((id) => data.stores.find((store) => store.id === id)).filter(Boolean).slice(0, 12) : []
   const outside = check && check.deliverable === false
   const me = useMe()
   const orders = useMyOrders()
   const live = orders.filter((order) => ACTIVE_ORDER_STATUSES.includes(order.status)).slice(0, 2)
   const again = data ? [...new Set(orders.filter((order) => order.status === 'DELIVERED').map((order) => order.restaurantId))].map((id) => data.stores.find((store) => store.id === id)).filter(Boolean).slice(0, 10) : []
   const name = me?.preferredName || me?.firstName
+  const offer = data ? data.offers.find((entry) => entry.type === 'FREE_DELIVERY' && entry.firstOrderOnly && data.firstOrder?.eligible !== false) || data.offers[0] : null
 
   return <div className="sp-screen sp-home">
-    <Band brandText={signedIn ? `${greeting()}${name ? `, ${name}` : ''} 👋` : undefined} search={<BandSearch href="/discover" placeholder="What can we get you?" />}>
-      <div className="sp-hero-desk">
-        <h1>{signedIn ? `${greeting()}${name ? `, ${name}` : ''}!` : 'Food, groceries and more,'}<br /><em>{signedIn ? 'What can we get you today?' : 'delivered across Sapele.'}</em></h1>
-        <div className="sp-hero-art" aria-hidden="true"><span><Burger /></span><span><Basket /></span><span><BagArt /></span><span><Parcel /></span></div>
+    {/* Phone: simple yellow top with the address and big category circles. */}
+    <header className="sp-mtop sp-m-only">
+      <div className="sp-mtop-head">
+        <Logo text={signedIn ? `${greeting()}${name ? `, ${name}` : ''} 👋` : undefined} />
+        <div className="sp-band-actions"><BellButton /><CartButton /></div>
       </div>
-      <AddressPill />
-    </Band>
+      <div className="sp-mtop-address"><AddressPill compact /></div>
+      <nav className="sp-mcats" aria-label="What do you need?">{BIG_CATEGORIES.map((tile) => { const Art = categoryArt(tile.key); return <a key={tile.key} className="sp-mcat" href={tile.href} onClick={link(tile.href)}>
+        <span className="sp-mcat-circle" aria-hidden="true"><span className="sp-mcat-art"><Art /></span></span>
+        <span className="sp-mcat-label">{tile.label}</span>
+      </a> })}</nav>
+      <svg className="sp-mtop-wave" viewBox="0 0 390 48" preserveAspectRatio="none" aria-hidden="true"><path d="M0 22 C 90 2, 170 4, 250 16 S 360 30, 390 12 V48 H0 Z" fill="currentColor" opacity=".35" /><path d="M0 32 C 80 14, 180 14, 260 26 S 360 36, 390 24 V48 H0 Z" fill="currentColor" /></svg>
+    </header>
+
+    {/* Desktop: the wide hero with search. */}
+    <div className="sp-d-only">
+      <Band search={<BandSearch href="/discover" placeholder="What can we get you?" />}>
+        <div className="sp-hero-desk">
+          <h1>{signedIn ? `${greeting()}${name ? `, ${name}` : ''}!` : 'Food, groceries and more,'}<br /><em>{signedIn ? 'What can we get you today?' : 'delivered across Sapele.'}</em></h1>
+          <div className="sp-hero-art" aria-hidden="true"><span><Burger /></span><span><Basket /></span><span><BagArt /></span><span><Parcel /></span></div>
+        </div>
+        <AddressPill />
+      </Band>
+    </div>
+
     <main className="sp-body">
       {live.map((order) => <LiveOrderBanner key={order.id} order={order} />)}
-      {signedIn && <PushPrompt who="customer" />}
-      <nav className="sp-bubbles" aria-label="Categories">{CATEGORY_TILES.map((tile) => <Bubble key={tile.key} art={categoryArt(tile.key)} label={tile.label} href={tile.href} tone={tile.tone} size="lg" />)}</nav>
+      <nav className="sp-bubbles sp-d-only" aria-label="Categories">{CATEGORY_TILES.map((tile) => <Bubble key={tile.key} art={categoryArt(tile.key)} label={tile.label} href={tile.href} tone={tile.tone} size="lg" />)}</nav>
 
       {outside ? <OutOfArea check={check} /> : <>
-        {home.status === 'loading' && <SkeletonList rows={3} />}
+        {home.status === 'loading' && <SkeletonList rows={2} />}
         {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
         {data && <>
-          <PromoBanners offers={data.offers} signedIn={signedIn} />
-          {forYou.length > 0 ? <section className="sp-section">
-            <SectionHead title="These are for you" href="/discover" />
-            <Rail label="Picked for you">{forYou.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
-          </section> : <EmptyState title="No stores open right now" body="Kitchens and shops open through the day. You can still schedule an order from a store page." action={<button type="button" className="sp-primary" onClick={() => navigate('/discover')}>Browse all stores</button>} />}
-          {again.length > 0 && <section className="sp-section">
-            <SectionHead title="Order again" href="/account/orders" />
-            <Rail label="Order again">{again.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
-          </section>}
-          {brands.length > 2 && <section className="sp-section">
-            <SectionHead title="Popular brands" href="/discover" />
-            <BrandCircles stores={brands} />
-          </section>}
-          {demand.length > 0 && <section className="sp-section">
-            <SectionHead title="Most in demand" href="/discover?section=demand" />
-            <Rail label="Most in demand">{demand.map((store, position) => <StoreTile key={store.id} store={store} badge={`#${position + 1}`} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
-          </section>}
-          {fresh.length > 0 && <section className="sp-section">
-            <SectionHead title="New on DOORSTEP" />
-            <Rail label="New stores">{fresh.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
-          </section>}
+          {/* Phone layout */}
+          <div className="sp-m-only">
+            <section className="sp-section">
+              <h2 className="sp-mtitle">{name ? `${name}, these are for you` : 'These are for you'}</h2>
+              <TilePages label="Picked for you">
+                {forYou.map((store) => <SquareTile key={store.id} href={storeHref(store)} label={store.name} image={store.logo || store.image} art={categoryArt(store.vertical)} />)}
+                {data.offers.length > 0 && <SquareTile href="/account/promos" label="Promotions" art={PercentTag} />}
+              </TilePages>
+            </section>
+            <OfferCard offer={offer} signedIn={signedIn} />
+            {again.length > 0 && <section className="sp-section">
+              <h2 className="sp-mtitle">Order again</h2>
+              <TilePages label="Order again">{again.map((store) => <SquareTile key={store.id} href={storeHref(store)} label={store.name} image={store.logo || store.image} art={categoryArt(store.vertical)} />)}</TilePages>
+            </section>}
+            {signedIn && <PushPrompt who="customer" />}
+          </div>
+
+          {/* Desktop layout */}
+          <div className="sp-d-only">
+            <PromoBanners offers={data.offers} signedIn={signedIn} />
+            {forYou.length > 0 ? <section className="sp-section">
+              <SectionHead title="These are for you" href="/discover" />
+              <Rail label="Picked for you">{forYou.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
+            </section> : <EmptyState title="No stores open right now" body="Kitchens and shops open through the day. You can still schedule an order from a store page." action={<button type="button" className="sp-primary" onClick={() => navigate('/discover')}>Browse all stores</button>} />}
+            {again.length > 0 && <section className="sp-section">
+              <SectionHead title="Order again" href="/account/orders" />
+              <Rail label="Order again">{again.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail>
+            </section>}
+          </div>
         </>}
       </>}
-
-      <section className="sp-section">
-        <SectionHead title="Grow with DOORSTEP" />
-        <div className="sp-grow">
-          <a className="sp-grow-card is-business" href="/partner/register" onClick={link('/partner/register')}><span className="sp-grow-art" aria-hidden="true"><Storefront /></span><span><b>Sell on DOORSTEP</b><small>Get orders from all over Sapele</small></span><ChevronRight size={18} aria-hidden="true" /></a>
-          <a className="sp-grow-card is-rider" href="/riders" onClick={link('/riders')}><span className="sp-grow-art" aria-hidden="true"><Scooter /></span><span><b>Ride and earn</b><small>Choose your hours, keep 100% of tips</small></span><ChevronRight size={18} aria-hidden="true" /></a>
-        </div>
-      </section>
     </main>
     <TabBar active="home" />
   </div>

@@ -38,11 +38,17 @@ export function Sheet({ title, onClose, children, className = '' }) {
 }
 
 /** “Delivering to …” button for the yellow band; opens the address sheet. */
-export function AddressPill() {
+export function AddressPill({ compact = false }) {
   const address = useAddress()
   const [open, setOpen] = useState(false)
   const check = useDeliveryCheck(address)
   const out = check && !check.deliverable
+  if (compact) return <>
+    <button type="button" className={`sp-address-chip${out ? ' is-out' : ''}`} onClick={() => setOpen(true)} aria-label={`Delivery address: ${address.label || 'not set'}. Change`}>
+      <Home size={19} aria-hidden="true" /><span>{address.label || 'Set your address'}</span><ChevronDown size={19} aria-hidden="true" />
+    </button>
+    {open && <AddressSheet onClose={() => setOpen(false)} />}
+  </>
   return <>
     <button type="button" className={`sp-address${out ? ' is-out' : ''}`} onClick={() => setOpen(true)} aria-label={`Delivery address: ${address.label || 'not set'}. Change`}>
       <MapPin size={18} aria-hidden="true" />
@@ -110,8 +116,14 @@ export function Logo({ text }) {
   return <a className={`sp-logo${text ? ' has-greeting' : ''}`} href="/" onClick={link('/')} aria-label="DOORSTEP home"><span className="sp-logo-mark" aria-hidden="true" /><span className="sp-logo-word">{text || 'DOORSTEP'}</span></a>
 }
 
-function CartButton() {
+export function BellButton() {
+  if (!token()) return null
+  return <a className="sp-band-btn" href="/account/notifications" onClick={link('/account/notifications')} aria-label="Notifications"><Bell size={19} /></a>
+}
+
+export function CartButton({ hideEmpty = false }) {
   const { count } = useCart()
+  if (hideEmpty && !count) return null
   return <a className="sp-band-btn" href="/checkout" onClick={link('/checkout')} aria-label={`Basket, ${count} item${count === 1 ? '' : 's'}`}><ShoppingBag size={19} />{count > 0 && <b>{count}</b>}</a>
 }
 const goBack = (fallback) => () => (window.history.length > 1 ? window.history.back() : navigate(fallback))

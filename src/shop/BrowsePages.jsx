@@ -90,7 +90,7 @@ export function VerticalPage({ vertical }) {
   const popular = data ? pick(data, data.sections.mostInDemand).filter((store) => store.vertical === vertical).slice(0, 10) : []
   const anyFilter = sub || query || filters.topRated || filters.pickup || filters.openOnly || filters.free || filters.sort !== 'recommended'
 
-  const brands = data ? (popular.length >= 3 ? popular : inVertical.filter((store) => store.openNow)).slice(0, 12) : []
+  const brands = data ? [...new Map([...popular, ...inVertical.filter((store) => store.openNow), ...inVertical].map((store) => [store.id, store])).values()].slice(0, 12) : []
   const offers = data ? data.offers.filter((offer) => !offer.vertical || offer.vertical === vertical) : []
   return <div className="sp-screen sp-vertical">
     <Band back="/" title={meta.label} search={<BandSearch value={query} onChange={setQuery} placeholder={`Search ${meta.label.toLowerCase()}`} />} />
@@ -105,8 +105,8 @@ export function VerticalPage({ vertical }) {
       {check && check.deliverable === false && !filters.pickup ? <OutOfArea check={check} /> : <>
         {home.status === 'loading' && <SkeletonList rows={4} />}
         {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
-        {data && !anyFilter && <PromoBanners offers={offers} signedIn={Boolean(token())} />}
         {data && !anyFilter && brands.length > 2 && <section className="sp-section"><SectionHead title="Popular brands" /><BrandCircles stores={brands} /></section>}
+        {data && !anyFilter && <PromoBanners offers={offers} signedIn={Boolean(token())} />}
         {data && <section className="sp-section">
           <SectionHead title={anyFilter ? `${list.length} result${list.length === 1 ? '' : 's'}` : `All ${meta.label.toLowerCase()}`} />
           {list.length ? <div className="sp-store-list">{list.map((store) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</div>
@@ -121,11 +121,31 @@ export function VerticalPage({ vertical }) {
   </div>
 }
 
+export const DINNER_LIMIT = 4000
+
+/** Typical (median) item price of a store, in naira. */
+const typicalPrice = (store) => {
+  const prices = (store.items || []).map((item) => Number(item.price)).filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b)
+  if (!prices.length) return null
+  const middle = Math.floor(prices.length / 2)
+  return prices.length % 2 ? prices[middle] : (prices[middle - 1] + prices[middle]) / 2
+}
+
+/** Restaurants where a typical dish costs under ₦4,000, cheapest first. */
+const dinnerIds = (data) => data.stores
+  .filter((store) => store.vertical === 'FOOD' && !store.temporarilyClosed)
+  .map((store) => ({ id: store.id, price: typicalPrice(store) }))
+  .filter((entry) => entry.price != null && entry.price < DINNER_LIMIT)
+  .sort((a, b) => a.price - b.price)
+  .slice(0, 10)
+  .map((entry) => entry.id)
+
 const DISCOVER_SECTIONS = [
-  ['demand', 'Most in demand', 'mostInDemand', 'Most ordered in the last 30 days'],
-  ['budget', 'Budget friendly', 'budgetFriendly', 'Lowest typical prices'],
-  ['top', 'Top restaurants', 'topRated', 'Best rated by DOORSTEP customers'],
-  ['performers', 'Top performers', 'topPerformers', 'Most orders delivered this month'],
+  ['demand', 'Most in demand', (data) => data.sections.mostInDemand, 'Most ordered in the last 30 days'],
+  ['dinner', `Dinner for less than ${nairaWhole(DINNER_LIMIT)}`, dinnerIds, 'Filling meals that won’t break the bank'],
+  ['performers', 'Top performers', (data) => data.sections.topPerformers, 'Most orders delivered this month'],
+  ['budget', 'Budget friendly', (data) => data.sections.budgetFriendly, 'Lowest typical prices'],
+  ['top', 'Top restaurants', (data) => data.sections.topRated, 'Best rated by DOORSTEP customers'],
 ]
 
 /** Discover: search across every store and item, plus ranked rails. */
@@ -149,10 +169,10 @@ export function DiscoverPage() {
       <FilterChips filters={filters} setFilters={setFilters} />
       {home.status === 'loading' && <SkeletonList rows={4} />}
       {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
-      {data && section && !filtering && (() => { const list = pick(data, data.sections[section[2]]); return list.length ? <div className="sp-store-list">{list.map((store, index) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} badge={`#${index + 1}`} />)}</div> : <EmptyState icon={Sparkles} title="Not enough orders yet" body="This list fills in from real orders and reviews as DOORSTEP grows." /> })()}
+      {data && section && !filtering && (() => { const list = pick(data, section[2](data)); return list.length ? <div className="sp-store-list">{list.map((store, index) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} badge={`#${index + 1}`} />)}</div> : <EmptyState icon={Sparkles} title="Not enough orders yet" body="This list fills in from real orders and reviews as DOORSTEP grows." /> })()}
       {data && !section && !filtering && <>
-        {DISCOVER_SECTIONS.map(([key, title, field, hint]) => { const list = pick(data, data.sections[field]); if (!list.length) return null; return <section key={key} className="sp-section"><SectionHead title={title} hint={hint} href={`/discover?section=${key}`} /><Rail label={title}>{list.map((store) => <StoreTile key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail></section> })}
-        {DISCOVER_SECTIONS.every(([, , field]) => !data.sections[field].length) && <p className="sp-note">Rankings appear once stores have orders and reviews. Every store is below.</p>}
+        {DISCOVER_SECTIONS.map(([key, title, ids]) => { const list = pick(data, ids(data)); if (!list.length) return null; const ranked = key === 'demand' || key === 'performers'; return <section key={key} className="sp-section"><SectionHead title={title} href={`/discover?section=${key}`} /><Rail label={title}>{list.map((store, index) => <StoreTile key={store.id} store={store} badge={ranked ? `#${index + 1}` : undefined} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail></section> })}
+        {DISCOVER_SECTIONS.every(([, , ids]) => !ids(data).length) && <p className="sp-note">Rankings appear once stores have orders and reviews. Every store is below.</p>}
         <section className="sp-section"><SectionHead title="All stores" /><div className="sp-store-list">{applyFilters(data.stores, { ...filters, home: data }).map((store) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</div></section>
       </>}
       {data && filtering && <>
