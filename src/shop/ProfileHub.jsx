@@ -3,7 +3,7 @@ import { Bell, BellRing, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCar
 import { apiBase } from '../config/apiBase'
 import { useProfilePhoto } from '../account/profilePhoto'
 import { PushPrompt } from '../notifications/PushPrompt'
-import { permission as pushPermission, turnOnPush } from '../notifications/push'
+import { permission as pushPermission, turnOnPush, watchPermission } from '../notifications/push'
 import { signOut } from '../services/authService'
 import { Band, EmptyState, Sheet, ShopHeader, SkeletonList, TabBar } from './ShopKit'
 import { appearance, authHeaders, naira, navigate, setAppearance, token } from './shopData'
@@ -73,7 +73,15 @@ export function ProfileHub() {
   const user = useMe()
   const [sheet, setSheet] = useState(null)
   const [pushState, setPushState] = useState(() => pushPermission())
-  const turnOnNow = async () => { const result = await turnOnPush(); setPushState(result === 'on' ? 'granted' : result === 'denied' ? 'denied' : pushPermission()) }
+  const [pushBusy, setPushBusy] = useState('')
+  useEffect(() => watchPermission(setPushState), [])
+  const turnOnNow = async () => {
+    if (pushBusy) return
+    setPushBusy('saving')
+    const result = await turnOnPush({ onStep: setPushBusy })
+    setPushBusy('')
+    setPushState(result === 'on' ? 'granted' : result === 'denied' ? 'denied' : 'default')
+  }
   const name = user ? (user.preferredName || [user.firstName, user.lastName].filter(Boolean).join(' ') || 'DOORSTEP customer') : 'Your profile'
   return <div className="sp-screen sp-profile">
     <header className="sp-band sp-profile-band">
@@ -106,7 +114,7 @@ export function ProfileHub() {
       </ul>}
       <h2 className="sp-menu-label">Settings & help</h2>
       <ul className="sp-menu">
-        {signedIn && pushState !== 'unsupported' && <MenuRow icon={BellRing} label="Phone notifications" hint={pushState === 'granted' ? 'On for this device' : pushState === 'denied' ? 'Blocked — allow them in your browser settings' : 'Off — tap to turn on'} status={pushState === 'granted' ? 'on' : 'off'} onClick={pushState === 'granted' || pushState === 'denied' ? undefined : turnOnNow} />}
+        {signedIn && pushState !== 'unsupported' && <MenuRow icon={BellRing} label="Phone notifications" hint={pushBusy === 'asking' ? 'Tap “Allow” in your browser…' : pushBusy ? 'Turning on…' : pushState === 'granted' ? 'On for this device' : pushState === 'denied' ? 'Blocked — allow them in your browser settings' : 'Off — tap to turn on'} status={pushState === 'granted' ? 'on' : 'off'} onClick={pushState === 'granted' || pushState === 'denied' ? undefined : turnOnNow} />}
         <MenuRow icon={Globe} label="Language" hint="English" onClick={() => setSheet('language')} />
         <MenuRow icon={Moon} label="Appearance" hint={{ light: 'Light', dark: 'Dark', system: 'Same as phone' }[appearance()]} onClick={() => setSheet('appearance')} />
         <MenuRow icon={CircleHelp} label="FAQ" href="/help/faq" />
