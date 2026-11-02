@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bell, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCard, Globe, Heart, KeyRound, LogOut, MapPin, MessageCircle, Moon, ReceiptText, Store, Tag, Trash2, Truck, User } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { useProfilePhoto } from '../account/profilePhoto'
+import { PushPrompt } from '../notifications/PushPrompt'
 import { signOut } from '../services/authService'
 import { Band, EmptyState, Sheet, ShopHeader, SkeletonList, TabBar } from './ShopKit'
 import { appearance, authHeaders, naira, navigate, setAppearance, token } from './shopData'
@@ -85,6 +86,7 @@ export function ProfileHub() {
     </header>
     <main className="sp-body">
       <h1 className="sp-profile-title">Profile</h1>
+      {signedIn && <PushPrompt who="customer" always />}
       <div className="sp-plus-card"><Crown size={22} aria-hidden="true" /><div><b>DOORSTEP Plus</b><small>Free deliveries and member prices — coming soon.</small></div></div>
 
       {signedIn && <ul className="sp-menu">

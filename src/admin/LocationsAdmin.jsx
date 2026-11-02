@@ -192,6 +192,48 @@ function Detail({ id, labels, reviewer, all, onChanged, mapMode, setMapMode, dra
   </div>
 }
 
+
+/** Verify many places in one go. The reviewer confirms they checked them; places without a pin can't be verified. */
+function BulkVerify({ locations, onDone }) {
+  const candidates = locations.filter((row) => !row.mergedIntoId && row.verificationStatus !== 'verified')
+  const [open, setOpen] = useState(false)
+  const [chosen, setChosen] = useState(() => new Set(candidates.filter((row) => row.latitude != null).map((row) => row.id)))
+  const [method, setMethod] = useState('REMOTE_LOCAL_CONFIRMATION')
+  const [confirm, setConfirm] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState('')
+  if (!candidates.length && !result) return null
+  const toggle = (id) => setChosen((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  const pinned = candidates.filter((row) => row.latitude != null)
+  const run = async () => {
+    setBusy(true); setError('')
+    try {
+      const body = await call('/api/admin/locations/bulk-verify', { method: 'POST', body: { ids: [...chosen], method, confirm: true } })
+      setResult(body); setConfirm(false); onDone()
+    } catch (runError) { setError(runError.message) } finally { setBusy(false) }
+  }
+  return <div className="la-card la-bulk">
+    <div className="la-bulk-head"><div><b>Verify many places at once</b><small>{candidates.length} place{candidates.length === 1 ? '' : 's'} not verified yet · {pinned.length} have a map pin</small></div><button type="button" className="la-primary" onClick={() => setOpen(!open)}>{open ? 'Close' : 'Open'}</button></div>
+    {result && <p className="la-ok">{result.verified.length} verified.{result.skipped.length ? ` ${result.skipped.length} skipped: ${result.skipped.map((entry) => `${entry.name || 'one place'} (${entry.reason})`).join(', ')}.` : ''}</p>}
+    {open && <>
+      <div className="la-bulk-tools"><button type="button" onClick={() => setChosen(new Set(pinned.map((row) => row.id)))}>Select all with a pin</button><button type="button" onClick={() => setChosen(new Set())}>Clear</button></div>
+      <ul className="la-bulk-list">{candidates.map((row) => <li key={row.id}><label className={row.latitude == null ? 'is-off' : ''}>
+        <input type="checkbox" disabled={row.latitude == null} checked={chosen.has(row.id)} onChange={() => toggle(row.id)} />
+        <span className="la-dot" style={{ background: STATUS_COLORS[row.verificationStatus] }} />
+        <span><b>{row.name}</b><small>{STATUS_LABEL[row.verificationStatus]}{row.latitude == null ? ' · no pin yet — set the pin first' : ''}{row.verificationStatus === 'rejected' && row.verificationNotes ? ` · rejected because: ${row.verificationNotes}` : ''}</small></span>
+      </label></li>)}</ul>
+      <fieldset className="la-bulk-method"><legend>How did you check them?</legend>
+        {[['REMOTE_LOCAL_CONFIRMATION', 'I know these places and their pins are in the right spot'], ['MAP_REVIEW', 'I checked each pin on the map against roads and landmarks'], ['PHYSICAL_FIELD_CHECK', 'I (or my team) visited them']].map(([value, label]) => <label key={value}><input type="radio" name="bulk-method" checked={method === value} onChange={() => setMethod(value)} />{label}</label>)}
+      </fieldset>
+      <label className="la-bulk-confirm"><input type="checkbox" checked={confirm} onChange={(event) => setConfirm(event.target.checked)} />I confirm I checked the {chosen.size} selected place{chosen.size === 1 ? '' : 's'}. This is saved in my name.</label>
+      {error && <p className="la-error">{error}</p>}
+      <button type="button" className="la-primary" disabled={!confirm || !chosen.size || busy} onClick={run}>{busy ? 'Verifying…' : `Verify ${chosen.size} place${chosen.size === 1 ? '' : 's'}`}</button>
+      <p className="la-muted">Verifying a place doesn’t switch on deliveries by itself — that still needs its delivery area approved.</p>
+    </>}
+  </div>
+}
+
 export function LocationsAdmin() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -236,6 +278,7 @@ export function LocationsAdmin() {
     {!data.reviewer.restricted && <p className="la-banner"><ShieldCheck size={16} aria-hidden="true" />Every admin can currently approve locations. To limit approvals to named reviewers, set LOCATION_REVIEWER_EMAILS on Render.</p>}
     {!data.reviewer.canReview && <p className="la-banner">You can edit and submit, but only authorised reviewers can verify, approve coverage or switch on deliveries.</p>}
     {note && <p className="la-ok">{note}</p>}
+    {data.reviewer.canReview && <BulkVerify key={data.locations.length} locations={data.locations} onDone={load} />}
     {adding && <div className="la-card la-grid">
       <label>Name<input value={newLocation.name} onChange={(event) => setNewLocation({ ...newLocation, name: event.target.value })} /></label>
       <label>Type<select value={newLocation.localityType} onChange={(event) => setNewLocation({ ...newLocation, localityType: event.target.value })}>{data.labels.types.map((type) => <option key={type}>{type}</option>)}</select></label>

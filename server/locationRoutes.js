@@ -193,6 +193,39 @@ export function createLocationRouter({ prisma, requireUser, requireAdmin }) {
     } catch (error) { return fail(response, error) }
   })
 
+  // Verify several places at once. The reviewer confirms they personally know each place and checked its pin on the
+  // map; that confirmation is saved as evidence in their name. Places without a map pin are skipped, never guessed.
+  const bulkSchema = z.object({
+    ids: z.array(z.string().min(1)).min(1).max(200),
+    method: z.enum(['MAP_REVIEW', 'REMOTE_LOCAL_CONFIRMATION', 'PHYSICAL_FIELD_CHECK']),
+    confirm: z.literal(true, { errorMap: () => ({ message: 'Tick the box to confirm you checked these places.' }) }),
+    notes: text(500).optional(),
+  })
+  router.post('/admin/locations/bulk-verify', requireUser, requireAdmin, requireReviewer, async (request, response) => {
+    const parsed = bulkSchema.safeParse(request.body)
+    if (!parsed.success) return response.status(400).json({ error: 'INVALID_BULK_VERIFY', message: parsed.error.issues[0]?.message || 'Check your selection.' })
+    const { ids, method, notes } = parsed.data
+    const verified = []
+    const skipped = []
+    const today = new Date().toISOString().slice(0, 10)
+    const note = notes?.trim() || (method === 'MAP_REVIEW' ? 'Checked the pin on the map against roads and landmarks.' : method === 'PHYSICAL_FIELD_CHECK' ? 'Checked on site.' : 'Confirmed by the reviewer, who knows this area.')
+    for (const id of ids) {
+      try {
+        const before = await load(id)
+        if (before.mergedIntoId || !before.isActive) { skipped.push({ id, name: before.name, reason: 'Merged or switched off' }); continue }
+        if (before.verificationStatus === 'verified') { skipped.push({ id, name: before.name, reason: 'Already verified' }); continue }
+        if (!pointOf(before)) { skipped.push({ id, name: before.name, reason: 'No map pin yet — set the pin first' }); continue }
+        const entry = { kind: method === 'MAP_REVIEW' ? 'MAP_REVIEW' : 'LOCAL_CONFIRMATION', method, notes: note, checkedAt: today, by: request.user.id, bulk: true }
+        await prisma.$transaction(async (transaction) => {
+          const updated = await transaction.location.update({ where: { id }, data: { evidence: [...evidenceOf(before), entry], verificationStatus: 'verified', verificationMethod: method, verificationNotes: note, verificationCheckedAt: new Date(), reviewerId: request.user.id } })
+          await audit(transaction, request, 'LOCATION_STATUS_VERIFIED', updated, { from: before.verificationStatus, to: 'verified', method, bulk: true, notes: note })
+        })
+        verified.push({ id, name: before.name, from: before.verificationStatus })
+      } catch (error) { skipped.push({ id, reason: error?.message || 'Could not update' }) }
+    }
+    return response.json({ verified, skipped })
+  })
+
   const coverageSchema = z.discriminatedUnion('method', [
     z.object({ method: z.literal('POLYGON'), geometry: z.object({ type: z.literal('Polygon'), coordinates: z.array(z.array(z.tuple([lng, lat]))) }), notes: text(1000).optional() }),
     z.object({ method: z.literal('RADIUS'), radiusMeters: z.number().int().min(100).max(10_000), notes: text(1000).optional() }),

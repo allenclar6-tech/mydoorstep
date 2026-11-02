@@ -3,6 +3,7 @@ import { Bike, ChefHat, ChevronRight, PackageCheck, Store as StoreIcon } from 'l
 import { ORDER_STATUS_LABELS } from '../orders/OrderActions'
 import { Band, BandSearch, BrandCircles, Bubble, CATEGORY_TILES, categoryArt, EmptyState, OutOfArea, Rail, SectionHead, SkeletonList, StoreTile, TabBar, AddressPill } from './ShopKit'
 import { Parcel, PercentTag, ShoppingBag as BagArt, Burger, Basket, Scooter, Storefront } from './Illustrations'
+import { PushPrompt } from '../notifications/PushPrompt'
 import { ACTIVE_ORDER_STATUSES, greeting, navigate, token, useAddress, useDeliveryCheck, useHome, useMe, useMyOrders } from './shopData'
 
 const link = (href) => (event) => { event.preventDefault(); navigate(href) }
@@ -95,6 +96,7 @@ export function ShopHome() {
     </Band>
     <main className="sp-body">
       {live.map((order) => <LiveOrderBanner key={order.id} order={order} />)}
+      {signedIn && <PushPrompt who="customer" />}
       <nav className="sp-bubbles" aria-label="Categories">{CATEGORY_TILES.map((tile) => <Bubble key={tile.key} art={categoryArt(tile.key)} label={tile.label} href={tile.href} tone={tile.tone} size="lg" />)}</nav>
 
       {outside ? <OutOfArea check={check} /> : <>

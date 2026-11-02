@@ -25,6 +25,8 @@ export default {
     headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     headers.set('Permissions-Policy', 'geolocation=(self)')
     if (headers.get('Content-Type')?.includes('text/html')) headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate')
+    // The notification service worker must always be fresh so updates reach phones quickly.
+    if (url.pathname === '/sw.js') { headers.set('Cache-Control', 'no-cache'); headers.set('Service-Worker-Allowed', '/') }
     return new Response(webResponse.body, { status: webResponse.status, statusText: webResponse.statusText, headers })
   },
 }

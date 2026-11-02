@@ -101,3 +101,20 @@ html body .la-hero h1 { color: #fff; font-size: clamp(1.35rem, 5.4vw, 1.9rem); l
 .lr-choice { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
 .lr-choice button { background: #fff; border: 1.5px solid var(--t-line-strong, #cfd9d2); border-radius: 14px; color: inherit; cursor: pointer; font: inherit; font-size: .84rem; font-weight: 800; min-height: 52px; padding: 8px; }
 .lr-choice button.is-on { background: var(--t-forest-800, #123d2d); border-color: var(--t-forest-800, #123d2d); color: #fff; }
+
+/* Verify many places at once */
+.la-bulk { display: grid; gap: 12px; }
+.la-bulk-head { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+.la-bulk-head > div { display: grid; gap: 2px; }
+.la-bulk-head small, .la-bulk-list small { color: #5b6b63; }
+.la-bulk-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.la-bulk-tools button { background: #f2f8f4; border: 1px solid #cfe3d7; border-radius: 999px; cursor: pointer; font: inherit; font-weight: 700; padding: 6px 12px; }
+.la-bulk-list { border: 1px solid #e3e8e2; border-radius: 12px; display: grid; list-style: none; margin: 0; max-height: 320px; overflow-y: auto; padding: 4px; }
+.la-bulk-list label { align-items: center; border-radius: 8px; cursor: pointer; display: grid; gap: 10px; grid-template-columns: auto auto 1fr; padding: 8px; }
+.la-bulk-list label:hover { background: #f6f9f7; }
+.la-bulk-list label.is-off { cursor: not-allowed; opacity: .55; }
+.la-bulk-list label > span:last-child { display: grid; gap: 2px; }
+.la-bulk-method { border: 0; display: grid; gap: 8px; margin: 0; padding: 0; }
+.la-bulk-method legend { font-weight: 800; margin-bottom: 4px; }
+.la-bulk-method label, .la-bulk-confirm { align-items: flex-start; display: flex; gap: 8px; line-height: 1.4; }
+.la-bulk-confirm { background: #fff7e0; border-radius: 10px; font-weight: 700; padding: 10px 12px; }

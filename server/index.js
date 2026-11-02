@@ -40,6 +40,8 @@ import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { serviceFeeFor } from './deliveryPricing.js'
 import { checkSchedule, choosePromotion, cleanTip, platformRoom, SCHEDULE_DISPATCH_LEAD_MS, verticalOf } from './promotions.js'
 import { createCustomerAppRouter } from './customerAppRoutes.js'
+import { createPushRouter } from './pushRoutes.js'
+import { remindUnpaidOrders, sendPendingPushes } from './push.js'
 import { parsePrepRange } from './customerApp.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -98,6 +100,7 @@ app.use('/api', createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
 app.use('/api', createWithdrawalRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createDeliveryPricingRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createLocationRouter({ prisma, requireUser, requireAdmin }))
+app.use('/api', createPushRouter({ prisma, requireUser }))
 app.use('/api', createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant: (restaurant) => publicRestaurant(restaurant) }))
 app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))
 app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
@@ -2267,4 +2270,10 @@ if (process.env.NODE_ENV !== 'test') {
   deliveryRealtime.attach(server)
   if (process.env.DISPATCH_SWEEP !== 'off') setInterval(runDispatchSweep, 10_000).unref()
   if (process.env.PAYOUT_SWEEP !== 'off') setInterval(runPayoutLoop, 60_000).unref()
+  // Phone notifications: push every new alert, and remind customers once about orders left unpaid.
+  if (process.env.PUSH_SWEEP !== 'off') {
+    let pushing = false
+    setInterval(async () => { if (pushing) return; pushing = true; try { await sendPendingPushes(prisma) } catch (error) { console.error('[push] failed', error?.message) } finally { pushing = false } }, 5_000).unref()
+    setInterval(() => remindUnpaidOrders(prisma).catch((error) => console.error('[push] reminders failed', error?.message)), 5 * 60_000).unref()
+  }
 }

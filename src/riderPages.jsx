@@ -9,6 +9,7 @@ import { ProfileCompletenessCard } from './account/ProfileCompleteness'
 import { HelpPage } from './support/HelpChat'
 import { Wallet } from './finance/Wallet'
 import { WithdrawBanner, WithdrawButton } from './finance/WithdrawButton'
+import { PushPrompt } from './notifications/PushPrompt'
 import { SignInMethodsPage } from './auth/AltSignIn'
 import { AvailabilityLocationToggle, RiderParcelJobs } from './rider/RiderParcelJobs'
 import { LocationReviews } from './rider/LocationReviews'
@@ -208,6 +209,7 @@ function RiderDashboard() {
     </section>
     <AvailabilityLocationToggle online={online} />
     <AlertSoundControl />
+    <PushPrompt who="rider" />
     <WithdrawBanner earningsHref="/rider/earnings" title="Your earnings balance" />
     <section className="rider-layout">
       <div className="rider-work-column">

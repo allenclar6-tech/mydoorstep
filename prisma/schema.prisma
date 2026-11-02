@@ -543,6 +543,8 @@ model Order {
   deliveryQuote      Json?
   splitSubaccountCode String?
   customerHiddenAt   DateTime?
+  /// "Finish paying" reminder sent for an unpaid order.
+  paymentReminderAt  DateTime?
   restaurantHiddenAt DateTime?
   addressSnapshot    String
   landmarkSnapshot   String?
@@ -846,9 +848,12 @@ model Notification {
   body      String
   link      String?
   readAt    DateTime?
+  /// When this alert was sent to the person's phone/computer as a push notification (null = not yet).
+  pushedAt  DateTime?
   createdAt DateTime         @default(now())
 
   @@index([userId, readAt])
+  @@index([pushedAt, createdAt])
   @@index([userId, createdAt])
 }
 
@@ -1142,4 +1147,18 @@ model LocationReview {
 
   @@index([locationId, status])
   @@index([status, createdAt])
+}
+
+/// A browser/phone that agreed to receive DOORSTEP push notifications.
+model PushSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
 }

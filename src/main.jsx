@@ -30,6 +30,9 @@ import './live/live.css'
 import './admin/locationsAdmin.css'
 import './payments/bankTransfer.css'
 
+// Service worker for phone notifications (registered quietly; it never caches pages).
+if ('serviceWorker' in navigator) window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => undefined) })
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />

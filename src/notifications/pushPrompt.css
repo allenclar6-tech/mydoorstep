@@ -1,0 +1,11 @@
+.push-card { align-items: center; background: #123d2d; border-radius: 18px; color: #fff; display: grid; gap: 12px; grid-template-columns: auto 1fr auto auto; margin: 0 0 16px; padding: 14px; position: relative; }
+.push-card > div { display: grid; gap: 3px; }
+.push-card b { font-size: 1rem; }
+.push-card small { color: #cfe0d6; font-size: .82rem; line-height: 1.4; }
+.push-icon { align-items: center; background: #ffc244; border-radius: 14px; color: #123d2d; display: flex; height: 44px; justify-content: center; width: 44px; }
+.push-btn { background: #ffc244; border: 0; border-radius: 12px; color: #123d2d; cursor: pointer; font: inherit; font-weight: 800; min-height: 42px; padding: 0 16px; white-space: nowrap; }
+.push-close { background: transparent; border: 0; color: #cfe0d6; cursor: pointer; padding: 4px; }
+.push-error { color: #ffd2cc !important; }
+.push-on { background: #e2f2e8; border-radius: 12px; color: #123d2d; font-weight: 700; margin: 0 0 12px; padding: 10px 12px; }
+.push-note { background: #fff7e0; border-radius: 12px; margin: 0 0 12px; padding: 10px 12px; }
+@media (max-width: 480px) { .push-card { grid-template-columns: auto 1fr auto; } .push-btn { grid-column: 1 / -1; } }
