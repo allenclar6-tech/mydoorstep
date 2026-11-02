@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BellRing, X } from 'lucide-react'
-import { dismissedRecently, dismissPrompt, isIos, isStandalone, permission, pushSupported, refreshPushSubscription, turnOnPush, watchPermission } from './push'
+import { dismissedRecently, dismissPrompt, isIos, isStandalone, permission, pushSupported, pushErrorHelp, refreshPushSubscription, turnOnPush, watchPermission } from './push'
 import './pushPrompt.css'
 
 // “Turn on notifications” card. Shown to signed-in people whose device hasn’t been asked yet.
@@ -27,7 +27,7 @@ export function PushPrompt({ who = 'customer', admin = false, always = false }) 
     else if (result === 'denied') { setState('denied'); setNote('Notifications were blocked. You can allow them later in your browser settings.') }
     else if (result === 'dismissed') setNote('The browser’s question was closed. Tap “Turn on” again and choose Allow.')
     else if (result === 'signin') setNote('Please sign in again, then turn notifications on.')
-    else { setFailed(true); setNote('Couldn’t finish turning them on. Check your internet, then tap “Try again”.') }
+    else { setFailed(true); setNote(pushErrorHelp(result)) }
   }
   const label = !busy ? (failed ? 'Try again' : 'Turn on') : step === 'asking' ? 'Tap “Allow” above…' : 'Turning on…'
   return <section className="push-card" aria-label="Turn on notifications">

@@ -66,26 +66,45 @@ export async function turnOnPush({ admin = false, onStep } = {}) {
     if (result !== 'granted') return 'dismissed'
   }
   onStep?.('saving')
+  // Each step names itself, so a failure says exactly where it stopped.
+  let stage = 'helper'
   try {
     const registration = await activeRegistration()
+    stage = 'key'
     const keyResponse = await patientFetch(`${apiBase}/api/push/public-key`)
-    if (!keyResponse.ok) throw new Error('No notification key from the server')
+    if (!keyResponse.ok) throw new Error(`Key request failed (${keyResponse.status})`)
     const { publicKey } = await keyResponse.json()
     const key = urlBase64ToUint8Array(publicKey)
+    stage = 'subscribe'
     let subscription = await registration.pushManager.getSubscription()
     // A subscription made with an older key can’t be used; replace it.
     const oldKey = subscription?.options?.applicationServerKey
     if (subscription && oldKey && new Uint8Array(oldKey).join() !== key.join()) { await subscription.unsubscribe().catch(() => undefined); subscription = null }
     if (!subscription) subscription = await withTimeout(registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }), 20_000, 'Subscribing this device')
+    stage = 'save'
     const saved = await patientFetch(`${apiBase}/api/push/subscribe`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: subscription.toJSON() }) })
+    if (saved.status === 401) { stage = 'signin'; throw new Error('Signed out') }
     if (!saved.ok) throw new Error(`Saving failed (${saved.status})`)
     announce()
     return 'on'
   } catch (error) {
-    console.warn('[DOORSTEP push]', error?.message || error)
+    console.warn(`[DOORSTEP push] stopped at "${stage}":`, error?.name, error?.message || error)
     announce()
-    return 'error'
+    return stage === 'signin' ? 'signin' : `error:${stage}`
   }
+}
+
+/** Plain-English help for a failed step. */
+export function pushErrorHelp(result) {
+  const stage = String(result || '').split(':')[1]
+  const windows = /windows/i.test(navigator.userAgent || '')
+  const edge = /edg\//i.test(navigator.userAgent || '')
+  if (stage === 'subscribe') return windows
+    ? `Your browser’s notification service said no. On Windows: open Settings → System → Notifications, make sure Notifications are on and ${edge ? 'Microsoft Edge' : 'your browser'} is switched on, then tap “Try again”.`
+    : 'Your browser’s notification service said no. Check notifications are allowed for this browser in your device settings, then tap “Try again”.'
+  if (stage === 'helper') return 'The browser couldn’t start DOORSTEP’s notification helper. Reload the page, then tap “Try again”.'
+  if (stage === 'key' || stage === 'save') return 'DOORSTEP’s server didn’t answer in time. Check your internet, then tap “Try again”.'
+  return 'Couldn’t finish turning them on. Reload the page, then tap “Try again”.'
 }
 
 /** Calls back whenever notification permission changes (prompt answered, or changed in browser settings). */

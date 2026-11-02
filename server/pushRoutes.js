@@ -12,15 +12,15 @@ export function createPushRouter({ prisma, requireUser }) {
       return response.json({ publicKey: keys.publicKey })
     } catch { return response.status(503).json({ error: 'PUSH_UNAVAILABLE' }) }
   })
-  const subscriptionSchema = z.object({ endpoint: z.string().url().max(1000), keys: z.object({ p256dh: z.string().min(10).max(300), auth: z.string().min(8).max(100) }) })
+  const subscriptionSchema = z.object({ endpoint: z.string().url().startsWith('https://').max(2500), keys: z.object({ p256dh: z.string().min(10).max(400), auth: z.string().min(8).max(200) }) })
   router.post('/push/subscribe', requireUser, async (request, response) => {
     const parsed = subscriptionSchema.safeParse(request.body?.subscription)
-    if (!parsed.success) return response.status(400).json({ error: 'INVALID_SUBSCRIPTION' })
+    if (!parsed.success) { console.warn('[push] subscription rejected', parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')); return response.status(400).json({ error: 'INVALID_SUBSCRIPTION' }) }
     try {
       const { endpoint, keys } = parsed.data
       await prisma.pushSubscription.upsert({ where: { endpoint }, update: { userId: request.user.id, p256dh: keys.p256dh, auth: keys.auth, userAgent: String(request.get('user-agent') || '').slice(0, 300) }, create: { userId: request.user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent: String(request.get('user-agent') || '').slice(0, 300) } })
       return response.status(201).json({ subscribed: true })
-    } catch { return response.status(503).json({ error: 'PUSH_UNAVAILABLE' }) }
+    } catch (error) { console.error('[push] could not save subscription', error?.code || error?.message); return response.status(503).json({ error: 'PUSH_UNAVAILABLE' }) }
   })
   router.post('/push/unsubscribe', requireUser, async (request, response) => {
     const endpoint = String(request.body?.endpoint || '')
