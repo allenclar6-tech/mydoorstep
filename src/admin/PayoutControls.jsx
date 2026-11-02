@@ -165,7 +165,7 @@ export function CommissionCard({ payees, platform, onSaved }) {
   if (!payees || !platform) return null
   const shown = payees.restaurants.filter((entry) => entry.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 30)
   return <section className="fa-card fa-settings">
-    <h3><Percent size={16} aria-hidden="true" /> Commission per business</h3>
+    <h3><Percent size={16} aria-hidden="true" /> A different cut for one business</h3>
     <p className="fa-muted">Leave a field empty to use the standard {platform.doorstepRiderPercent}% / {platform.ownRiderPercent}%. Changes apply to new orders only.</p>
     {payees.restaurants.length > 8 && <label>Find a business<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Type a name" /></label>}
     {payees.restaurants.length === 0 ? <p className="fa-muted">No approved businesses yet.</p> : <ul className="fa-list">{shown.map((entry) => <CommissionRow key={entry.id} entry={entry} platform={platform} onSaved={onSaved} />)}</ul>}

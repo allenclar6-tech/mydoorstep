@@ -5,7 +5,8 @@ import { BUSINESS_STATUS, VerificationPanel } from './admin/VerificationPanel'
 
 
 function AdminIntro({ eyebrow, title }) {
-  return <div className="admin-intro"><div><span className="section-kicker">{eyebrow}</span><h2>{title}</h2></div></div>
+  // The top bar shows the page name and the “How this page works” guide explains it.
+  return null
 }
 
 export function ApplicationManagement({ kind, type }) {
@@ -100,7 +101,7 @@ export function ApplicationManagement({ kind, type }) {
         <label>From<input type="date" value={filters.from} onChange={(event) => updateFilter('from', event.target.value)} /></label>
         <label>To<input type="date" value={filters.to} onChange={(event) => updateFilter('to', event.target.value)} /></label>
         <select aria-label="Filter by application status" value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}>
-          <option value="OPEN">Needs review</option><option value="PENDING_APPROVAL">Pending review</option><option value="NEEDS_INFORMATION">Needs information</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option><option value="SUSPENDED">Suspended</option>
+          <option value="OPEN">All waiting</option><option value="PENDING_APPROVAL">New, not checked yet</option><option value="NEEDS_INFORMATION">Asked for more info</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option><option value="SUSPENDED">Suspended</option>
         </select>
       </div>
       {message && <div className="admin-login-error" role="status">{message}</div>}
@@ -128,9 +129,9 @@ export function ApplicationManagement({ kind, type }) {
           </dl>
           <div className="admin-application-documents"><strong>Private documents</strong>{documents.length ? documents.map((document) => <button type="button" key={document.id} onClick={() => downloadDocument(application, document)}><FileText size={14} /> {document.type.replaceAll('_', ' ').toLowerCase()}</button>) : <small>No files supplied</small>}</div>
           <VerificationPanel type={type} application={application} token={token} onChanged={() => setRevision((current) => current + 1)} />
-          <label className="admin-review-note">Review note<textarea value={notes[application.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [application.id]: event.target.value }))} maxLength="1000" rows="2" placeholder="Explain missing information or the reason for rejection." /></label>
+          <label className="admin-review-note">Review note<textarea value={notes[application.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [application.id]: event.target.value }))} maxLength="1000" rows="2" placeholder="Say what’s missing, or why you’re saying no. They will see this." /></label>
           <div className="admin-application-actions">
-            <button className="row-more" onClick={() => review(application.id, 'NEEDS_INFORMATION')}>Request information</button>
+            <button className="row-more" onClick={() => review(application.id, 'NEEDS_INFORMATION')}>Ask for more info</button>
             <button className="admin-review" onClick={() => review(application.id, 'REJECTED')}>Reject</button>
             <button className="admin-primary" onClick={() => review(application.id, 'APPROVED')}><Check size={14} /> Approve</button>
           </div>

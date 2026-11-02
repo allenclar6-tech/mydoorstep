@@ -1,62 +1,42 @@
-import { createContext, useContext, useEffect, useState } from 'react'
-import { ArrowRight, BarChart3, Bell, Check, ChevronRight, Clock3, DollarSign, LayoutDashboard, LogOut, Menu, Package, Pencil, Plus, Settings, Store, Utensils, X, MessageCircle } from 'lucide-react'
-import { formatNaira, restaurants } from './data'
 import { RestaurantOrderBoard } from './live/RestaurantOrderBoard'
 import { PickupToggle } from './live/PickupToggle'
 import { SetupChecklist } from './partner/SetupChecklist'
 import { PushPrompt } from './notifications/PushPrompt'
 import './partnerAccount.css'
-import { WorkspaceTabBar } from './mobile/WorkspaceTabBar'
-import { NotificationBell, WorkspaceInbox } from './notifications/NotificationCenter'
+import { WorkspaceInbox } from './notifications/NotificationCenter'
 import { ProfileCompletenessCard } from './account/ProfileCompleteness'
 import { HelpPage } from './support/HelpChat'
 import { Wallet } from './finance/Wallet'
-import { WithdrawBanner, WithdrawButton } from './finance/WithdrawButton'
+import { WithdrawBanner } from './finance/WithdrawButton'
 import { SignInMethodsPage } from './auth/AltSignIn'
-import { SessionSignOutButton } from './authControls'
 import { PartnerAccount } from './PartnerAccount'
 import { PartnerMenu } from './PartnerMenu'
-import { apiBase } from './config/apiBase'
+import { PartnerShell, PartnerToday, usePartner } from './partner/PartnerHub'
 
-const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
-const PartnerBusinessContext = createContext(null)
-
-const seededOrders = [
-  { id: 'DSP-20260917-000001', customer: 'A. Scott', items: 'Smoky party jollof x 1', total: 4305, status: 'PAID', time: '12:42 PM' },
-  { id: 'DSP-20260917-000002', customer: 'M. Ojo', items: 'Peppered chicken x 2', total: 9460, status: 'RESTAURANT_ACCEPTED', time: '12:28 PM' },
-  { id: 'DSP-20260916-000099', customer: 'T. Efe', items: 'Plantain & egg sauce x 1', total: 3884, status: 'DELIVERED', time: 'Yesterday' },
-]
-
-function PortalShell({ path, children }) {
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [user, setUser] = useState(null)
-  const [business, setBusiness] = useState(null)
-  useEffect(() => {
-    const headers = { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` }
-    Promise.all([fetch(`${apiBase}/api/auth/me`, { headers }), fetch(`${apiBase}/api/restaurant/profile`, { headers })])
-      .then(async ([accountResponse, profileResponse]) => [accountResponse.ok ? await accountResponse.json() : null, profileResponse.ok ? await profileResponse.json() : null])
-      .then(([account, profile]) => { if (account?.user) setUser(account.user); if (profile?.restaurant) setBusiness(profile.restaurant) })
-      .catch(() => undefined)
-  }, [])
-  const name = user ? `${user.firstName} ${user.lastName}` : 'Restaurant partner'
-  const grocery = business?.storeType === 'GROCERY'
-  const navItems = [['Overview', '/restaurant/dashboard', LayoutDashboard], ['Orders', '/restaurant/orders', Package], [grocery ? 'Products' : 'Menu', '/restaurant/menu', Utensils], ['Partner account', '/restaurant/profile', Store], [grocery ? 'Store earnings' : 'Sales & earnings', '/restaurant/earnings', BarChart3], ['Withdraw funds', '/restaurant/earnings#withdraw', DollarSign]]
-  return <PartnerBusinessContext.Provider value={business}><div className="portal-shell"><aside className={mobileOpen ? 'portal-sidebar is-open' : 'portal-sidebar'}><div className="portal-logo"><span className="brand-mark">✦</span><span>doorstep<span>{grocery ? 'grocery partner' : 'partner'}</span></span></div><div className="portal-restaurant"><div className="portal-avatar">{name.charAt(0)}</div><div><strong>{business?.name || name}</strong><small>{grocery ? 'Grocery partner' : 'Restaurant partner'}</small></div></div><nav>{navItems.map(([label, href, Icon]) => <button className={path === href ? 'portal-nav active' : 'portal-nav'} key={href} onClick={() => { navigate(href); setMobileOpen(false) }}><Icon size={17} />{label}</button>)}</nav><div className="portal-sidebar-bottom"><button className="portal-nav" onClick={() => { navigate('/restaurant/notifications'); setMobileOpen(false) }}><Bell size={17} />Notifications</button><button className="portal-nav" onClick={() => { navigate('/restaurant/support'); setMobileOpen(false) }}><MessageCircle size={17} />Help chat</button><button className="portal-nav" onClick={() => { navigate('/restaurant/settings'); setMobileOpen(false) }}><Settings size={17} />Settings</button><SessionSignOutButton className="portal-nav" /></div></aside><main className="portal-main"><header className="portal-header"><button className="portal-menu-toggle" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Open partner menu"><Menu size={21} /></button><div><span className="section-kicker">{grocery ? 'GROCERY PARTNER' : 'BUSINESS PARTNER'}</span><h1>{business?.name || name}</h1></div><div className="portal-header-actions"><WithdrawButton earningsHref="/restaurant/earnings" /><NotificationBell className="portal-bell" label="Partner notifications" /><button className="portal-bell" aria-label="Partner account" onClick={() => navigate('/restaurant/profile')}><Store size={18} /></button></div></header>{children}</main>{mobileOpen && <button type="button" className="ws-sheet-backdrop" aria-label="Close menu" onClick={() => setMobileOpen(false)} />}<WorkspaceTabBar label="Partner navigation" path={path} onMore={() => setMobileOpen(true)} items={[{ label: 'Today', href: '/restaurant/dashboard', icon: LayoutDashboard, match: (current) => current === '/restaurant/dashboard' || current === '/restaurant' }, { label: 'Orders', href: '/restaurant/orders', icon: Package }, { label: grocery ? 'Products' : 'Menu', href: '/restaurant/menu', icon: Utensils, match: (current) => current.startsWith('/restaurant/menu') }, { label: 'Earnings', href: '/restaurant/earnings', icon: BarChart3 }]} /></div></PartnerBusinessContext.Provider>
-}
-
-function PortalIntro({ eyebrow, title, action }) { return <div className="portal-intro"><div><span className="section-kicker">{eyebrow}</span><h2>{title}</h2></div>{action}</div> }
-
-function Dashboard() {
-  const grocery = useContext(PartnerBusinessContext)?.storeType === 'GROCERY'
-  return <><PortalIntro eyebrow="TODAY AT A GLANCE" title={grocery ? 'Your grocery store, in motion.' : 'Good afternoon, Palm Kitchen.'} action={<button className="portal-primary" onClick={() => navigate('/restaurant/menu/new')}><Plus size={16} /> Add {grocery ? 'product' : 'food'}</button>} /><div className="demo-banner"><span>DEMO PARTNER WORKSPACE</span><p>Live orders, payouts, and approvals will be API-backed after {grocery ? 'grocery' : 'restaurant'} authentication is connected.</p></div><section className="metric-grid"><div><span>Orders today</span><strong>18</strong><small>↑ 12% from yesterday</small></div><div><span>Today's sales</span><strong>{formatNaira(68400)}</strong><small>Before commission</small></div><div><span>Average rating</span><strong>4.8 <em>★</em></strong><small>From 126 reviews</small></div><div><span>Acceptance rate</span><strong>94%</strong><small>Last 30 days</small></div></section><section className="portal-columns"><div className="portal-panel"><div className="panel-heading"><div><span className="section-kicker">NEEDS YOUR ATTENTION</span><h3>Incoming orders</h3></div><button onClick={() => navigate('/restaurant/orders')}>View all <ArrowRight size={14} /></button></div>{seededOrders.slice(0, 2).map((order) => <OrderRow order={order} key={order.id} />)}</div><div className="portal-panel quick-actions"><div className="panel-heading"><div><span className="section-kicker">SHORTCUTS</span><h3>Quick actions</h3></div></div><button onClick={() => navigate('/restaurant/menu')}><Utensils size={18} /><span>Manage {grocery ? 'products' : 'menu'}</span><ChevronRight size={15} /></button><button onClick={() => navigate('/restaurant/profile')}><Store size={18} /><span>Update profile</span><ChevronRight size={15} /></button><button onClick={() => navigate('/restaurant/earnings')}><DollarSign size={18} /><span>View earnings</span><ChevronRight size={15} /></button></div></section></>
-}
-
-function OrderRow({ order, onStatus }) { const customer = typeof order.customer === 'string' ? order.customer : `${order.customer?.firstName || 'Customer'} ${order.customer?.lastName || ''}`.trim(); const items = Array.isArray(order.items) ? order.items.map((item) => `${item.quantity}× ${item.nameSnapshot}`).join(', ') : order.items; const total = order.total ?? (order.totalMinor ? order.totalMinor / 100 : 0); return <div className="portal-order-row"><div className="order-id"><strong>{order.orderNumber || order.id}</strong><small>{order.time || new Date(order.createdAt).toLocaleString('en-NG')} · {customer}</small></div><div className="order-items">{items}</div><strong>{formatNaira(total)}</strong><span className={`portal-status ${order.status.toLowerCase()}`}>{order.status.replaceAll('_', ' ')}</span>{onStatus && order.status === 'PAID' && <button className="small-action" onClick={() => onStatus(order.id)}>Accept</button>}</div> }
+// Business workspace (restaurants, groceries and shops). The shell and "Today" screen live in partner/PartnerHub.jsx.
 
 function Orders() { return <><PickupToggle /><RestaurantOrderBoard /></> }
 
-function Earnings() { const grocery = useContext(PartnerBusinessContext)?.storeType === 'GROCERY'; return <><PortalIntro eyebrow={grocery ? 'STORE MONEY' : 'MONEY'} title="Earnings & payouts" /><Wallet kind="RESTAURANT" /></> }
+function Earnings() { return <Wallet kind="RESTAURANT" /> }
 
-function OwnerDashboard() { const [summary, setSummary] = useState({ orders: [], grossMinor: 0, payoutMinor: 0 }); const grocery = useContext(PartnerBusinessContext)?.storeType === 'GROCERY'; const token = localStorage.getItem('doorstep-token'); useEffect(() => { fetch(`${apiBase}/api/restaurant/summary`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then(setSummary).catch(() => undefined) }, []); return <><PortalIntro eyebrow="TODAY AT A GLANCE" title={grocery ? 'Your grocery store, in motion.' : 'Your kitchen, in motion.'} action={<button className="portal-primary" onClick={() => navigate('/restaurant/menu/new')}><Plus size={16} /> Add {grocery ? 'product' : 'food'}</button>} /><PushPrompt who="business" /><SetupChecklist grocery={grocery} /><WithdrawBanner earningsHref="/restaurant/earnings" title={grocery ? 'Store balance' : 'Your DOORSTEP balance'} /><ProfileCompletenessCard className="ws-pc" /><section className="metric-grid"><div><span>Orders received</span><strong>{summary.orders.length}</strong><small>Latest 50 orders</small></div><div><span>Gross order value</span><strong>{formatNaira(Math.round(summary.grossMinor / 100))}</strong><small>From loaded orders</small></div><div><span>{grocery ? 'Store payout value' : 'Restaurant payout value'}</span><strong>{formatNaira(Math.round(summary.payoutMinor / 100))}</strong><small>Recorded payouts</small></div><div><span>Open orders</span><strong>{summary.orders.filter((order) => !['DELIVERED', 'CANCELLED', 'REFUNDED'].includes(order.status)).length}</strong><small>Need attention</small></div></section><section className="portal-panel orders-panel"><div className="panel-heading"><div><span className="section-kicker">RECENT ORDERS</span><h3>What needs your attention</h3></div><button onClick={() => navigate('/restaurant/orders')}>View all <ArrowRight size={14} /></button></div>{summary.orders.slice(0, 5).map((order) => <OrderRow order={order} key={order.id} />)}{summary.orders.length === 0 && <div className="empty-state">No orders have reached your {grocery ? 'store' : 'kitchen'} yet.</div>}</section></> }
+function Today() {
+  const grocery = usePartner().today?.store?.storeType === 'GROCERY'
+  return <PartnerToday extras={<>
+    <PushPrompt who="business" />
+    <SetupChecklist grocery={grocery} />
+    <WithdrawBanner earningsHref="/restaurant/earnings" title={grocery ? 'Store balance' : 'Your DOORSTEP balance'} />
+    <ProfileCompletenessCard className="ws-pc" />
+  </>} />
+}
 
-export function RestaurantPortal({ path }) { let content = <OwnerDashboard />; if (path === '/restaurant/orders') content = <Orders />; if (path === '/restaurant/menu' || path === '/restaurant/menu/new') content = <PartnerMenu />; if (path === '/restaurant/profile' || path === '/restaurant/settings') content = <PartnerAccount initialSection="business" />; if (path === '/restaurant/support') content = <HelpPage embedded />; if (path === '/restaurant/security') content = <SignInMethodsPage backHref="/restaurant/profile" />; if (path === '/restaurant/notifications') content = <WorkspaceInbox title="Notifications" subtitle="New orders, rider arrivals, payouts and messages from DOORSTEP." />; if (path === '/restaurant/earnings') content = <Earnings />; return <PortalShell path={path}>{content}</PortalShell> }
+export function RestaurantPortal({ path }) {
+  let content = <Today />
+  if (path === '/restaurant/orders') content = <Orders />
+  if (path === '/restaurant/menu' || path === '/restaurant/menu/new') content = <PartnerMenu />
+  if (path === '/restaurant/profile' || path === '/restaurant/settings') content = <PartnerAccount initialSection="business" />
+  if (path === '/restaurant/support') content = <HelpPage embedded />
+  if (path === '/restaurant/security') content = <SignInMethodsPage backHref="/restaurant/profile" />
+  if (path === '/restaurant/notifications') content = <WorkspaceInbox title="Notifications" subtitle="New orders, rider arrivals, payouts and messages from DOORSTEP." />
+  if (path === '/restaurant/earnings') content = <Earnings />
+  return <PartnerShell path={path}>{content}</PartnerShell>
+}

@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, Bike, Bell, Check, Clock3, DollarSign, Wallet as Wallet2, MapPin, Menu, Package, Settings, ShieldCheck, Store, Truck, MessageCircle } from 'lucide-react'
+import { ArrowRight, Bike, Check, Clock3, MapPin, ShieldCheck, Star, Store } from 'lucide-react'
 import { formatNaira } from './data'
-import { SessionSignOutButton } from './authControls'
 import { RiderAccount } from './RiderAccount'
-import { WorkspaceTabBar } from './mobile/WorkspaceTabBar'
-import { NotificationBell, WorkspaceInbox } from './notifications/NotificationCenter'
+import { WorkspaceInbox } from './notifications/NotificationCenter'
 import { ProfileCompletenessCard } from './account/ProfileCompleteness'
 import { HelpPage } from './support/HelpChat'
 import { Wallet } from './finance/Wallet'
-import { WithdrawBanner, WithdrawButton } from './finance/WithdrawButton'
+import { WithdrawBanner } from './finance/WithdrawButton'
 import { PushPrompt } from './notifications/PushPrompt'
 import { SignInMethodsPage } from './auth/AltSignIn'
 import { AvailabilityLocationToggle, RiderParcelJobs } from './rider/RiderParcelJobs'
@@ -17,19 +15,12 @@ import { apiBase } from './config/apiBase'
 import { DeliveryCodeSheet, RiderOfferCard } from './live/RiderOffer'
 import { OpenJobs } from './live/OpenJobs'
 import { AlertSoundControl } from './live/AlertSoundControl'
+import { firstNameOf, Hello, naira, Shortcuts, WeekChart } from './workspace/WorkspaceFrame'
+import { OnlineHero, RiderShell, riderShortcuts, useRider } from './rider/RiderHub'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 
-const riderNav = [['Dashboard', '/rider/dashboard', Truck], ['Available deliveries', '/rider/deliveries', Package], ['Delivery history', '/rider/history', Clock3], ['Earnings', '/rider/earnings', DollarSign], ['Withdraw funds', '/rider/earnings#withdraw', Wallet2], ['Local checks', '/rider/locations', MapPin], ['Verification', '/rider/verification', ShieldCheck], ['Rider account', '/rider/account', Settings]]
 const stages = ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED']
-
-function RiderShell({ path, children }) {
-  const [open, setOpen] = useState(false)
-  const [user, setUser] = useState(null)
-  useEffect(() => { fetch(`${apiBase}/api/auth/me`, { headers: { Authorization: `Bearer ${localStorage.getItem('doorstep-token')}` } }).then((response) => response.ok ? response.json() : null).then((body) => body?.user && setUser(body.user)).catch(() => undefined) }, [])
-  const name = user ? `${user.firstName} ${user.lastName}` : 'Rider'
-  return <div className="portal-shell"><aside className={open ? 'portal-sidebar is-open' : 'portal-sidebar'}><div className="portal-logo"><span className="brand-mark">✦</span><span>doorstep<span>rider</span></span></div><div className="portal-restaurant"><div className="portal-avatar">{name.charAt(0)}</div><div><strong>{name}</strong><small>Authenticated rider</small></div></div><nav>{riderNav.map(([label, href, Icon]) => <button className={path === href ? 'portal-nav active' : 'portal-nav'} key={href} onClick={() => { navigate(href); setOpen(false) }}><Icon size={17} />{label}</button>)}</nav><div className="portal-sidebar-bottom"><button className="portal-nav" onClick={() => { navigate('/rider/notifications'); setOpen(false) }}><Bell size={17} />Notifications</button><button className="portal-nav" onClick={() => { navigate('/rider/support'); setOpen(false) }}><MessageCircle size={17} />Help chat</button><button className="portal-nav" onClick={() => { navigate('/rider/account'); setOpen(false) }}><Settings size={17} />Account settings</button><SessionSignOutButton className="portal-nav" /></div></aside><main className="portal-main"><header className="portal-header"><button className="portal-menu-toggle" onClick={() => setOpen(!open)} aria-label="Open rider menu"><Menu size={21} /></button><div><span className="section-kicker">RIDER PORTAL</span><h1>{user ? `Hi, ${user.firstName}` : 'Rider workspace'}</h1></div><div className="portal-header-actions"><WithdrawButton earningsHref="/rider/earnings" /><NotificationBell className="portal-bell" label="Rider notifications" /><button className="portal-bell" aria-label="Open rider account" onClick={() => navigate('/rider/account')}><Settings size={18} /></button></div></header>{children}</main>{open && <button type="button" className="ws-sheet-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />}<WorkspaceTabBar label="Rider navigation" path={path} onMore={() => setOpen(true)} items={[{ label: 'Today', href: '/rider/dashboard', icon: Truck, match: (current) => current === '/rider/dashboard' || current === '/rider' }, { label: 'Jobs', href: '/rider/deliveries', icon: Package }, { label: 'History', href: '/rider/history', icon: Clock3 }, { label: 'Earnings', href: '/rider/earnings', icon: DollarSign }]} /></div>
-}
 
 function RiderIntro({ eyebrow, title, action }) { return <div className="portal-intro"><div><span className="section-kicker">{eyebrow}</span><h2>{title}</h2></div>{action}</div> }
 
@@ -121,34 +112,8 @@ function CurrentDelivery({ delivery, setDelivery }) {
   return <section className="rider-delivery-card"><div className="delivery-card-head"><div><span className="section-kicker">ACTIVE DELIVERY</span><h3>{delivery.order}</h3></div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span></div><div className="delivery-route"><div><Store size={17} /><span><small>Pickup</small><strong>{delivery.restaurant}</strong><em>{delivery.pickup}</em></span></div><div className="route-line" /><div><MapPin size={17} /><span><small>Drop-off</small><strong>{delivery.customer}</strong><em>{delivery.dropoff}</em>{delivery.landmark && <em className="rider-landmark">Landmark: {delivery.landmark}</em>}{delivery.destination ? <a className="rider-nav-link" href={`https://www.google.com/maps/dir/?api=1&destination=${delivery.destination.latitude},${delivery.destination.longitude}&travelmode=driving`} target="_blank" rel="noreferrer">Navigate to the customer’s pin</a> : <em className="rider-landmark">No exact pin from the customer — use the address and landmark, and call if unsure.</em>}</span></div></div><RiderLocationSharing deliveryId={delivery.id} active={active} />{error && <p className="rider-status-alert is-error" role="alert">{error}</p>}{next ? <button className="portal-primary" onClick={advance}>{next === 'DELIVERED' ? <Check size={16} /> : <ArrowRight size={16} />} {STAGE_ACTION[next] || next.replaceAll('_', ' ')}</button> : <div className="delivered-label"><Check size={17} /> Delivery completed</div>}{codeOpen && <DeliveryCodeSheet orderNumber={delivery.order} onClose={() => setCodeOpen(false)} onSubmit={async (code) => { await send({ status: 'DELIVERED', code }); setCodeOpen(false) }} />}</section>
 }
 
-function onlineFor(since, now) {
-  if (!since) return ''
-  const minutes = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60_000))
-  if (minutes < 1) return 'Online just now'
-  if (minutes < 60) return `Online for ${minutes} min`
-  return `Online for ${Math.floor(minutes / 60)}h ${minutes % 60}m`
-}
-
-/** The big go-online switch: one tap, clear state, never pretends a change happened. */
-function AvailabilitySwitch({ online, onlineSince, approved, loading, busy, onToggle }) {
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => { if (!online) return undefined; const timer = window.setInterval(() => setNow(Date.now()), 30_000); return () => window.clearInterval(timer) }, [online])
-  const disabled = loading || busy || (!approved && !online)
-  const title = loading ? 'Checking your status…' : online ? 'You’re online' : 'You’re offline'
-  const detail = loading ? 'One moment.' : !approved && !online ? 'You can go online once DOORSTEP approves your rider account.' : online ? `${onlineFor(onlineSince, now) || 'Online'} · new job requests will reach you` : 'Go online to start receiving delivery requests near you.'
-  return <section className={`rider-availability${online ? ' is-online' : ''}${busy ? ' is-busy' : ''}`} aria-live="polite">
-    <span className="rider-availability-dot" aria-hidden="true" />
-    <div className="rider-availability-text"><strong>{title}</strong><span>{detail}</span></div>
-    <button type="button" role="switch" aria-checked={online} aria-label={online ? 'Go offline' : 'Go online'} className="rider-switch" disabled={disabled} onClick={onToggle}>
-      <span className="rider-switch-track"><span className="rider-switch-thumb" /></span>
-      <span className="rider-switch-label">{busy ? (online ? 'Going offline…' : 'Going online…') : online ? 'Go offline' : 'Go online'}</span>
-    </button>
-  </section>
-}
-
 function RiderDashboard() {
-  const [summary, setSummary] = useState(null)
-  const [summaryError, setSummaryError] = useState('')
+  const { summary, summaryError, user, reload } = useRider()
   const [online, setOnline] = useState(false)
   const [onlineSince, setOnlineSince] = useState(null)
   const [switching, setSwitching] = useState(false)
@@ -157,27 +122,13 @@ function RiderDashboard() {
   const [delivery, setDelivery] = useState(null)
   const [activeParcel, setActiveParcel] = useState(null)
   const token = localStorage.getItem('doorstep-token')
-  const loadSummary = () => fetch(`${apiBase}/api/rider/summary`, { headers: { Authorization: `Bearer ${token}` } }).then(async (response) => {
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.message || 'Could not load your rider summary.')
-    setSummary(body)
-    setOnline(body.availability === 'ONLINE')
-    setOnlineSince(body.onlineSince || null)
-    setSummaryError('')
-  }).catch((error) => setSummaryError(error instanceof TypeError ? 'We could not reach DOORSTEP. Check your connection — we will keep trying.' : error.message))
-  // Keep the dashboard honest if availability changes on another device, and retry after network drops.
-  useEffect(() => {
-    const refresh = () => { if (!document.hidden) loadSummary() }
-    const timer = window.setInterval(refresh, 60_000)
-    document.addEventListener('visibilitychange', refresh)
-    window.addEventListener('online', refresh)
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refresh); window.removeEventListener('online', refresh) }
-  }, [token])
+  // The summary refreshes every 30 seconds (and on another device's change); keep the switch in step.
+  useEffect(() => { if (summary && !switching) { setOnline(summary.availability === 'ONLINE'); setOnlineSince(summary.onlineSince || null) } }, [summary, switching])
   const loadActive = () => fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => {
     const active = body.deliveries?.find((item) => item.riderId && item.order)
     setDelivery(active ? { id: active.id, order: active.order.orderNumber, restaurant: active.order.restaurant.name, pickup: active.order.restaurant.address, customer: 'Customer', dropoff: active.order.addressSnapshot, landmark: active.order.landmarkSnapshot || null, destination: active.order.latitude != null && active.order.longitude != null ? { latitude: Number(active.order.latitude), longitude: Number(active.order.longitude) } : null, status: active.status } : null)
   }).catch(() => undefined)
-  useEffect(() => { loadSummary(); loadActive() }, [token])
+  useEffect(() => { loadActive() }, [token])
   const toggleOnline = async () => {
     if (switching) return
     const next = online ? 'OFFLINE' : 'ONLINE'
@@ -185,42 +136,57 @@ function RiderDashboard() {
     try {
       const response = await fetch(`${apiBase}/api/rider/availability`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ availability: next }) })
       const body = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(body.error === 'RIDER_NOT_APPROVED' ? 'Your rider account must be approved before you can go online.' : response.status === 401 ? 'Your session has expired. Sign in again.' : 'Could not change your availability. Try again.')
+      if (!response.ok) throw new Error(body.error === 'RIDER_NOT_APPROVED' ? 'Your rider account must be approved before you can go online.' : response.status === 401 ? 'You’ve been signed out. Please sign in again.' : 'Couldn’t change your status. Try again.')
       setOnline(body.rider.availability === 'ONLINE')
       setOnlineSince(body.rider.onlineSince || null)
-      if (next === 'OFFLINE' && body.activeDeliveries > 0) setToggleNote('You are offline for new jobs. Please finish the delivery you already accepted.')
-      loadSummary()
-    } catch (error) { setToggleError(error instanceof TypeError ? 'No connection. Your status did not change — try again when you are back online.' : error.message) } finally { setSwitching(false) }
+      if (next === 'OFFLINE' && body.activeDeliveries > 0) setToggleNote('You won’t get new jobs now. Please finish the delivery you already accepted.')
+      await reload()
+    } catch (error) { setToggleError(error instanceof TypeError ? 'No internet. Your status didn’t change — try again when you’re back online.' : error.message) } finally { setSwitching(false) }
   }
   const approved = summary?.approval === 'APPROVED'
-  const metric = (value) => summary ? value : '…'
-  return <><RiderIntro eyebrow="TODAY AT A GLANCE" title={online ? 'You’re on the road.' : 'Ready for the next good trip?'} />
-    <AvailabilitySwitch online={online} onlineSince={onlineSince} approved={approved} loading={!summary && !summaryError} busy={switching} onToggle={toggleOnline} />
+  const refresh = () => { loadActive(); reload() }
+  const week = summary?.week || []
+  const weekMoney = week.reduce((sum, day) => sum + day.amountMinor, 0)
+  const weekTrips = week.reduce((sum, day) => sum + day.count, 0)
+  return <div className="ph-page">
+    <Hello name={firstNameOf(user)} />
+    <OnlineHero online={online} onlineSince={onlineSince} approved={approved} loading={!summary && !summaryError} busy={switching} onToggle={toggleOnline} />
     {toggleError && <p className="rider-status-alert is-error" role="alert">{toggleError}</p>}
     {toggleNote && <p className="rider-status-alert" role="status">{toggleNote}</p>}
     {summaryError && <p className="rider-status-alert is-error" role="alert">{summaryError}</p>}
-    <ProfileCompletenessCard className="ws-pc" />
-    {summary && !approved && <div className="demo-banner"><span>APPROVAL PENDING</span><p>DOORSTEP operations must approve your rider account before you can go online or accept deliveries.</p></div>}
-    <section className="metric-grid">
-      <div><span>Delivered today</span><strong>{metric(summary?.today.completedDeliveries)}</strong><small>{summary ? `${summary.activeDeliveries} active now` : 'Loading'}</small></div>
-      <div><span>Recorded earnings today</span><strong>{summary ? formatNaira(Math.round(summary.today.recordedEarningsMinor / 100)) : '…'}</strong><small>From payout records</small></div>
-      <div><span>All-time deliveries</span><strong>{metric(summary?.completedDeliveries)}</strong><small>Completed</small></div>
-      <div><span>Your rating</span><strong>{summary?.rating ? <>{summary.rating.average.toFixed(1)} <em>★</em></> : summary ? 'New' : '…'}</strong><small>{summary?.rating ? `From ${summary.rating.count} rating${summary.rating.count === 1 ? '' : 's'}` : 'No ratings yet'}</small></div>
+    <div className="ph-work">
+      {!delivery && approved && <RiderOfferCard online={online} busy={Boolean(delivery || activeParcel)} onAccepted={refresh} />}
+      {delivery && <CurrentDelivery delivery={delivery} setDelivery={(next) => { setDelivery(next); if (next.status === 'DELIVERED') window.setTimeout(refresh, 1500) }} />}
+      {activeParcel && <RiderLocationSharing deliveryId={activeParcel.deliveryId} active />}
+      {!delivery && <OpenJobs online={online} approved={approved} busy={Boolean(activeParcel)} onAccepted={refresh} />}
+      {!delivery && <RiderParcelJobs online={online} approved={approved} onActiveChange={setActiveParcel} />}
+    </div>
+    <section className="ph-stats" aria-label="Today">
+      <div className="ph-stat is-sales"><small>Earned today</small><strong>{summary ? naira(summary.today.recordedEarningsMinor) : '…'}</strong><span>From finished deliveries</span></div>
+      <div className="ph-stat"><small>Trips today</small><strong>{summary ? summary.today.completedDeliveries : '…'}</strong><span>{summary ? (summary.activeDeliveries ? `${summary.activeDeliveries} in progress now` : `${summary.completedDeliveries} in total`) : 'Loading'}</span></div>
+      <div className="ph-stat"><small>Your rating</small><strong>{summary?.rating ? <>{summary.rating.average.toFixed(1)}<Star size={18} aria-hidden="true" /></> : summary ? 'New' : '…'}</strong><span>{summary?.rating ? `From ${summary.rating.count} rating${summary.rating.count === 1 ? '' : 's'}` : 'Ratings appear after trips'}</span></div>
     </section>
-    <AvailabilityLocationToggle online={online} />
-    <AlertSoundControl />
-    <PushPrompt who="rider" />
-    <WithdrawBanner earningsHref="/rider/earnings" title="Your earnings balance" />
-    <section className="rider-layout">
-      <div className="rider-work-column">
-        {!delivery && approved && <RiderOfferCard online={online} busy={Boolean(delivery || activeParcel)} onAccepted={() => { loadActive(); loadSummary() }} />}
-        {!delivery && <OpenJobs online={online} approved={approved} busy={Boolean(activeParcel)} onAccepted={() => { loadActive(); loadSummary() }} />}
-        {delivery && <CurrentDelivery delivery={delivery} setDelivery={(next) => { setDelivery(next); if (next.status === 'DELIVERED') window.setTimeout(() => { loadActive(); loadSummary() }, 1500) }} />}
-        {activeParcel && <RiderLocationSharing deliveryId={activeParcel.deliveryId} active />}
-        {!delivery && <RiderParcelJobs online={online} approved={approved} onActiveChange={setActiveParcel} />}
-      </div>
-      <div className="portal-panel"><div className="panel-heading"><div><span className="section-kicker">DELIVERY CARE</span><h3>Before you move</h3></div></div><div className="rider-care"><Bike size={20} /><p>Live location is shared with the customer only during an active delivery, and only while this page is open in your browser. Keep the screen on during deliveries.</p></div><button className="text-link" onClick={() => navigate('/rider/verification')}>View verification <ArrowRight size={14} /></button></div>
-    </section></>
+    <div className="ph-extras">
+      {summary && !approved && <div className="ph-card ph-callout"><ShieldCheck size={20} aria-hidden="true" /><div><b>Waiting for approval</b><p>DOORSTEP checks every rider before they can take jobs. You can go online once you’re approved.</p></div></div>}
+      <ProfileCompletenessCard className="ws-pc" />
+      <AvailabilityLocationToggle online={online} />
+      <AlertSoundControl />
+      <PushPrompt who="rider" />
+      <WithdrawBanner earningsHref="/rider/earnings" title="Your earnings balance" />
+    </div>
+    <div className="ph-two">
+      {week.length > 0 && <WeekChart title="Your last 7 days" summary={`${weekTrips} trip${weekTrips === 1 ? '' : 's'} · ${naira(weekMoney)} earned`} week={week} linkLabel="Earnings" linkHref="/rider/earnings" />}
+      <section className="ph-card ph-safety"><div className="ph-card-head"><div><h3>Ride safe</h3><p>Before you move</p></div></div>
+        <ul>
+          <li><Bike size={17} aria-hidden="true" />Wear your helmet and keep to the road rules.</li>
+          <li><MapPin size={17} aria-hidden="true" />Your location is shared with the customer only during a delivery, while this page is open.</li>
+          <li><Clock3 size={17} aria-hidden="true" />Keep your screen on during a delivery so tracking keeps working.</li>
+        </ul>
+      </section>
+    </div>
+    <h3 className="ph-section-title">Shortcuts</h3>
+    <Shortcuts items={riderShortcuts} />
+  </div>
 }
 
 function Available() {

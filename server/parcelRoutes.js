@@ -12,6 +12,7 @@ import { activeLocationStatuses, claimDelivery, rejectDeliveryRequest, releaseDe
 import { notifyAdmins, notifyUsers } from './notify.js'
 import { dispatchDelivery } from './dispatch.js'
 import { recordParcelPaid } from './financeLedger.js'
+import { dailySeries } from './partnerToday.js'
 
 const phone = z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/, 'Enter a valid phone number')
 const text = (max) => z.string().trim().min(1).max(max)
@@ -517,13 +518,18 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
     try {
       const riderId = request.user.rider.id
       const since = startOfLagosDay()
-      const [rider, completedToday, active, completedTotal, payoutsToday] = await Promise.all([
+      const weekStart = new Date(Date.now() - 8 * 86_400_000)
+      const [rider, completedToday, active, completedTotal, payoutsToday, weekPayouts, weekDeliveries] = await Promise.all([
         prisma.rider.findUnique({ where: { id: riderId }, select: { status: true, availability: true, vehicleType: true, ratingAverage: true, ratingCount: true, availabilityLocatedAt: true, availabilityChangedAt: true } }),
         prisma.delivery.count({ where: { riderId, status: 'DELIVERED', deliveredAt: { gte: since } } }),
         prisma.delivery.count({ where: { riderId, status: { in: [...activeLocationStatuses] } } }),
         prisma.delivery.count({ where: { riderId, status: 'DELIVERED' } }),
         prisma.riderPayout.aggregate({ where: { riderId, order: { deliveredAt: { gte: since } } }, _sum: { amountMinor: true } }),
+        prisma.riderPayout.findMany({ where: { riderId, order: { deliveredAt: { gte: weekStart } } }, select: { amountMinor: true, order: { select: { deliveredAt: true } } }, take: 1000 }),
+        prisma.delivery.findMany({ where: { riderId, status: 'DELIVERED', deliveredAt: { gte: weekStart } }, select: { deliveredAt: true }, take: 1000 }),
       ])
+      // Last 7 days for the earnings chart: money from payout records, trips from delivered jobs.
+      const week = dailySeries([...weekPayouts.map((payout) => ({ at: payout.order?.deliveredAt, amountMinor: payout.amountMinor })), ...weekDeliveries.map((delivery) => ({ at: delivery.deliveredAt, count: 1 }))])
       return response.json({
         availability: rider.availability,
         onlineSince: rider.availability === 'ONLINE' ? rider.availabilityChangedAt : null,
@@ -534,6 +540,7 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
         activeDeliveries: active,
         completedDeliveries: completedTotal,
         availabilityLocationSharedAt: rider.availabilityLocatedAt,
+        week,
       })
     } catch (error) { return fail(response, error, 'RIDER_SUMMARY_UNAVAILABLE') }
   })

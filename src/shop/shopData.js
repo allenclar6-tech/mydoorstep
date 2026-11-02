@@ -142,11 +142,13 @@ const ADDRESS_CHANGED = 'doorstep-address-change'
 export function currentAddress() {
   const point = readConfirmedLocation()
   const label = read('doorstep-location') || point?.label || ''
-  return { label, point: point && Number.isFinite(point.latitude) ? { latitude: point.latitude, longitude: point.longitude } : null, savedAddressId: read('doorstep-address-id') }
+  return { label, point: point && Number.isFinite(point.latitude) ? { latitude: point.latitude, longitude: point.longitude } : null, savedAddressId: read('doorstep-address-id'), landmark: read('doorstep-location-landmark') || '' }
 }
-export function chooseAddress({ label, latitude, longitude, savedAddressId = null }) {
+/** Sets the delivery address. A typed address without a pin is fine: the fee is then priced by its area. */
+export function chooseAddress({ label, latitude, longitude, savedAddressId = null, landmark = null }) {
   write('doorstep-location', label)
   write('doorstep-address-id', savedAddressId)
+  write('doorstep-location-landmark', landmark || null)
   try {
     if (Number.isFinite(latitude) && Number.isFinite(longitude)) localStorage.setItem('doorstep-location-coordinates', JSON.stringify({ latitude, longitude, label }))
     else localStorage.removeItem('doorstep-location-coordinates')

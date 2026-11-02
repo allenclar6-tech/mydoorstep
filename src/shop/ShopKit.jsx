@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, Ban, Bell, Bike, ChevronDown, ChevronRight, Clock3, Heart, Home, LocateFixed, MapPin, Plus, Search, ShoppingBag, ThumbsUp, User, X } from 'lucide-react'
+import { ArrowLeft, Ban, Bell, Bike, ChevronDown, ChevronRight, Clock3, Heart, Home, LocateFixed, MapPin, Pencil, Plus, Search, ShoppingBag, ThumbsUp, User, X } from 'lucide-react'
 import { CATEGORY_ART } from './Illustrations'
 import { chooseAddress, etaText, navigate, ratingPercent, storeHref, token, useAddress, useCart, useDeliveryCheck, useSavedAddresses, VERTICALS } from './shopData'
 
@@ -77,9 +77,10 @@ export function AddressSheet({ onClose }) {
   return <Sheet title="Where should we deliver?" onClose={onClose} className="sp-address-sheet">
     <div className={`sp-current-address${check && !check.deliverable ? ' is-out' : ''}`}>
       <span className="sp-pin-dot" aria-hidden="true">{check && !check.deliverable ? <Ban size={18} /> : <MapPin size={18} />}</span>
-      <div><strong>{address.label || 'No address yet'}</strong><small>{check ? check.message : address.point ? 'Checking this spot…' : 'Pin your exact spot for an exact delivery fee.'}</small></div>
+      <div><strong>{address.label || 'No address yet'}</strong><small>{check ? check.message : address.point ? 'Checking this spot…' : address.label ? 'Priced by your area. Add a pin for the exact fee.' : 'Type your address or pick it on the map.'}</small></div>
     </div>
     <div className="sp-address-actions">
+      <button type="button" className="sp-row-btn" onClick={() => { onClose(); navigate(`/address/new?return=${encodeURIComponent(here)}`) }}><Pencil size={18} aria-hidden="true" /><span>Type an address</span><ChevronRight size={16} aria-hidden="true" /></button>
       <button type="button" className="sp-row-btn" onClick={locate} disabled={locating}><LocateFixed size={18} aria-hidden="true" /><span>{locating ? 'Finding you…' : 'Use my current location'}</span><ChevronRight size={16} aria-hidden="true" /></button>
       <button type="button" className="sp-row-btn" onClick={() => { onClose(); navigate(`/location?return=${encodeURIComponent(here)}`) }}><MapPin size={18} aria-hidden="true" /><span>{address.point ? 'Move my pin on the map' : 'Pick my spot on the map'}</span><ChevronRight size={16} aria-hidden="true" /></button>
     </div>
@@ -89,12 +90,12 @@ export function AddressSheet({ onClose }) {
       <ul className="sp-saved-list">{saved.map((entry) => {
         const lat = Number(entry.latitude); const lng = Number(entry.longitude)
         const selected = address.savedAddressId === entry.id
-        return <li key={entry.id}><button type="button" className={selected ? 'is-selected' : ''} onClick={() => { chooseAddress({ label: entry.addressLine, latitude: entry.latitude == null ? NaN : lat, longitude: entry.longitude == null ? NaN : lng, savedAddressId: entry.id }); onClose() }}>
-          <Home size={17} aria-hidden="true" /><span><b>{entry.label}</b><small>{entry.addressLine}{entry.landmark ? ` · ${entry.landmark}` : ''}</small></span>{selected && <span className="sp-check" aria-label="Selected">✓</span>}
+        return <li key={entry.id}><button type="button" className={selected ? 'is-selected' : ''} onClick={() => { chooseAddress({ label: entry.addressLine, latitude: entry.latitude == null ? NaN : lat, longitude: entry.longitude == null ? NaN : lng, savedAddressId: entry.id, landmark: entry.landmark || null }); onClose() }}>
+          <Home size={17} aria-hidden="true" /><span><b>{entry.label}</b><small>{entry.addressLine}{entry.landmark ? ` · ${entry.landmark}` : ''}</small>{entry.latitude == null && <small className="sp-saved-nopin">No pin · priced by area</small>}</span>{selected && <span className="sp-check" aria-label="Selected">✓</span>}
         </button></li>
       })}</ul>
     </>}
-    <button type="button" className="sp-add-address" onClick={() => { onClose(); navigate(token() ? '/account/addresses' : '/location') }}><Plus size={17} aria-hidden="true" />Add a new address</button>
+    <div className="sp-sheet-links"><button type="button" className="sp-add-address" onClick={() => { onClose(); navigate(`/address/new?return=${encodeURIComponent(here)}`) }}><Plus size={17} aria-hidden="true" />Add a new address</button>{token() && saved.length > 0 && <button type="button" className="sp-text-link" onClick={() => { onClose(); navigate('/account/addresses') }}>Manage addresses</button>}</div>
   </Sheet>
 }
 

@@ -4,7 +4,7 @@ import { apiBase } from '../config/apiBase'
 import { SavedCardChoices, useSavedCards } from '../account/SavedCards'
 import { AddressSheet, EmptyState, ShopHeader } from './ShopKit'
 import { FeesInfo, readOrderType, writeOrderType } from './StorePage'
-import { authHeaders, buildOrderRequest, changeItem, etaText, naira, navigate, nairaWhole, placeOrder, saveTip, savedTip, token, useAddress, useCart, useCheckoutQuote, useDeliveryCheck, useHome } from './shopData'
+import { authHeaders, buildOrderRequest, changeItem, currentAddress, etaText, naira, navigate, nairaWhole, placeOrder, saveTip, savedTip, token, useAddress, useCart, useCheckoutQuote, useDeliveryCheck, useHome } from './shopData'
 
 const TIP_CHOICES = [0, 20_000, 30_000, 50_000]
 const hash = (text) => { let value = 0; for (let index = 0; index < text.length; index += 1) value = (value * 31 + text.charCodeAt(index)) | 0; return (value >>> 0).toString(36) }
@@ -64,7 +64,10 @@ export function CheckoutPage() {
   const [keepTip, setKeepTip] = useState(() => savedTip() > 0)
   const [promoInput, setPromoInput] = useState('')
   const [promoCode, setPromoCode] = useState('')
-  const [landmark, setLandmark] = useState('')
+  // The landmark saved with the address comes along; it can still be changed for this order.
+  const [landmark, setLandmark] = useState(() => currentAddress().landmark || '')
+  // Switching to another saved address brings its landmark.
+  useEffect(() => { if (address.landmark) setLandmark(address.landmark) }, [address.savedAddressId, address.landmark])
   const [phone, setPhone] = usePhone()
   const [method, setMethod] = useState('PAYSTACK')
   const [cardChoice, setCardChoice] = useState('NEW')

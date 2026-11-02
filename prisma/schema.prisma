@@ -233,6 +233,8 @@ model Restaurant {
   closingTime       String?
   daysOpen          Json?
   temporarilyClosed Boolean                  @default(false)
+  /// End of a timed pause ("back in 30 minutes"); null with temporarilyClosed = paused until the business reopens.
+  pausedUntil       DateTime?
   latitude          Decimal?                 @db.Decimal(10, 7)
   longitude         Decimal?                 @db.Decimal(10, 7)
   createdAt         DateTime                 @default(now())

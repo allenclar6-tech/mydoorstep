@@ -35,7 +35,7 @@ export function AdminParcels() {
     } catch (error) { setMessage(error.message) } finally { setSaving(false) }
   }
   return <>
-    <div className="admin-intro"><div><span className="section-kicker">PACKAGE DELIVERY</span><h2>Fares, services and bookings.</h2></div></div>
+    <div className="admin-intro"><div><span className="section-kicker">PACKAGE DELIVERY</span><h2>Package prices and bookings</h2></div></div>
     {message && <div className="profile-message" role="status">{message}</div>}
     {routing === false && <div className="profile-message" role="alert">Road routing is not configured on the API host. Set the server-side Mapbox token before enabling package bookings; prices are never estimated from straight-line distance.</div>}
     {!pricing ? <div className="empty-state">Loading parcel pricing…</div> : <form className="admin-table" onSubmit={save}>

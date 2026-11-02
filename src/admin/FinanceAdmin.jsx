@@ -61,10 +61,10 @@ function SettingsForm({ onSaved }) {
     } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
   return <form className="fa-card fa-settings" onSubmit={save}>
-    <h3>Commission & rider pay</h3>
+    <h3>DOORSTEP’s cut (commission) & rider pay</h3>
     <div className="fa-grid">
-      <label>Commission when a DOORSTEP rider delivers (%)<input type="number" min="0" max="50" step="0.5" required value={form.doorstep} onChange={(event) => update({ doorstep: event.target.value })} /></label>
-      <label>Commission when the business’s own rider delivers (%)<input type="number" min="0" max="50" step="0.5" required value={form.own} onChange={(event) => update({ own: event.target.value })} /></label>
+      <label>DOORSTEP’s cut when our rider delivers (% of the food)<input type="number" min="0" max="50" step="0.5" required value={form.doorstep} onChange={(event) => update({ doorstep: event.target.value })} /></label>
+      <label>DOORSTEP’s cut when the business’s own rider delivers (% of the food)<input type="number" min="0" max="50" step="0.5" required value={form.own} onChange={(event) => update({ own: event.target.value })} /></label>
     </div>
     <p className="fa-muted">Taken from the item subtotal only. With its own rider, the business also keeps the delivery fee.</p>
 
@@ -150,11 +150,11 @@ export function FinanceAdmin() {
   const totalIncome = income ? income.commissionMinor + income.serviceFeesMinor + income.deliveryFeesMinor + income.parcelRevenueMinor + (income.cashOutFeesMinor || 0) + (income.riderFeesMinor || 0) : 0
   const owedTotal = overview?.owed.filter((row) => row.amountMinor > 0).reduce((sum, row) => sum + row.amountMinor, 0) || 0
   return <div className="fa">
-    <div className="admin-intro"><div><span className="section-kicker">MONEY</span><h2>Where every naira goes.</h2></div><button type="button" className="row-more" onClick={load}><RefreshCw size={14} /> Refresh</button></div>
+    <div className="admin-intro"><div><span className="section-kicker">MONEY</span><h2>Money in and money out</h2></div><button type="button" className="row-more" onClick={load}><RefreshCw size={14} /> Refresh</button></div>
     {error && <p className="fa-error fa-pad">{error}</p>}
     <section className="fa-cards">
       <div className="fa-stat is-main"><span><Coins size={16} aria-hidden="true" />DOORSTEP income</span><strong>{money(totalIncome)}</strong><small>Kept in your Paystack account</small></div>
-      <div className="fa-stat"><span>Commission</span><strong>{money(income?.commissionMinor)}</strong></div>
+      <div className="fa-stat"><span>DOORSTEP’s cut</span><strong>{money(income?.commissionMinor)}</strong></div>
       <div className="fa-stat"><span>Delivery fees</span><strong>{money(income?.deliveryFeesMinor)}</strong></div>
       <div className="fa-stat"><span>Service fees</span><strong>{money(income?.serviceFeesMinor)}</strong></div>
       <div className="fa-stat"><span><Package size={14} aria-hidden="true" />Package deliveries</span><strong>{money(income?.parcelRevenueMinor)}</strong></div>

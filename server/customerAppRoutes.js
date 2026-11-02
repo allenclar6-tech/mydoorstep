@@ -6,6 +6,7 @@ import { deliverability, discoverSections, etaRange, medianItemPrice } from './c
 import { pricingZones } from './deliveryQuote.js'
 import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { notifyAdmins } from './notify.js'
+import { PAUSE_CHOICES, pausedNow, todayStats } from './partnerToday.js'
 import { hasEarlierOrder, liveOrderWhere, normalizeCode, PROMO_TYPES, promoLabel, promoProblem, publicPromotion, VERTICALS } from './promotions.js'
 
 // Customer app API: home feed with Discover rankings, "do you deliver here?", offers and promo codes,
@@ -45,7 +46,7 @@ const promoInput = z.object({
   if (!value.autoApply && !value.code) context.addIssue({ code: 'custom', path: ['code'], message: 'Give the promo a code, or switch on “apply automatically”.' })
 })
 
-export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant }) {
+export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant, isOpen = () => true }) {
   const router = Router()
   const checkLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false })
 
@@ -159,6 +160,43 @@ export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, pub
       const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurant: { select: { id: true, pickupEnabled: true, vertical: true, storeType: true } } } })
       if (!membership) return response.status(404).json({ error: 'RESTAURANT_NOT_FOUND' })
       return response.json({ restaurant: membership.restaurant })
+    } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }
+  })
+
+  // Business "Today" screen: store status, live orders, today's sales, the last 7 days, best sellers.
+  const myStore = (userId, select) => prisma.restaurantUser.findFirst({ where: { userId }, select: { restaurant: { select } } }).then((row) => row?.restaurant || null)
+  const storeSelect = { id: true, name: true, slug: true, coverImageUrl: true, storeType: true, vertical: true, status: true, temporarilyClosed: true, pausedUntil: true, openingTime: true, closingTime: true, daysOpen: true, ratingAverage: true, ratingCount: true, prepTimeMinutes: true, prepTimeMaxMinutes: true, city: { select: { serviceAreas: { select: { enabled: true, timezone: true } } } } }
+  const storeStatus = (store) => {
+    const paused = pausedNow(store)
+    return { paused, pausedUntil: paused ? store.pausedUntil : null, openNow: isOpen(store), openingTime: store.openingTime, closingTime: store.closingTime }
+  }
+  router.get('/restaurant/today', requireUser, async (request, response) => {
+    if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
+    try {
+      const store = await myStore(request.user.id, storeSelect)
+      if (!store) return response.status(404).json({ error: 'RESTAURANT_NOT_FOUND' })
+      // A timed pause that has run out: switch the store back on for good.
+      if (store.temporarilyClosed && store.pausedUntil && !pausedNow(store)) await prisma.restaurant.update({ where: { id: store.id }, data: { temporarilyClosed: false, pausedUntil: null } }).catch(() => undefined)
+      const since = new Date(Date.now() - 8 * DAY)
+      const orders = await prisma.order.findMany({ where: { restaurantId: store.id, OR: [{ createdAt: { gte: since } }, { status: { in: ['PAID', 'RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'] } }] }, select: { status: true, subtotalMinor: true, createdAt: true, items: { select: { nameSnapshot: true, quantity: true } } }, take: 2000 })
+      return response.json({
+        store: { id: store.id, name: store.name, slug: store.slug, image: store.coverImageUrl, storeType: store.storeType, vertical: store.vertical, approved: store.status === 'APPROVED', rating: Number(store.ratingAverage || 0), ratingCount: store.ratingCount || 0, ...storeStatus(store) },
+        ...todayStats(orders),
+      })
+    } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }
+  })
+
+  // Pause: { minutes: 15 | 30 | 60 | 120 } or { minutes: null } for "until I reopen"; { open: true } to reopen now.
+  router.patch('/restaurant/pause', requireUser, async (request, response) => {
+    if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
+    const parsed = z.union([z.object({ open: z.literal(true) }), z.object({ minutes: z.union([z.literal(null), z.number().int().refine((value) => PAUSE_CHOICES.includes(value))]) })]).safeParse(request.body)
+    if (!parsed.success) return response.status(400).json({ error: 'INVALID_PAUSE', message: 'Choose 15, 30, 60 or 120 minutes, or pause until you reopen.' })
+    try {
+      const store = await myStore(request.user.id, { id: true })
+      if (!store) return response.status(404).json({ error: 'RESTAURANT_NOT_FOUND' })
+      const data = parsed.data.open ? { temporarilyClosed: false, pausedUntil: null } : { temporarilyClosed: true, pausedUntil: parsed.data.minutes ? new Date(Date.now() + parsed.data.minutes * 60_000) : null }
+      const updated = await prisma.restaurant.update({ where: { id: store.id }, data, select: storeSelect })
+      return response.json({ store: storeStatus(updated) })
     } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }
   })
 

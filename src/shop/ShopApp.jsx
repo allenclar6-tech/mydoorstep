@@ -6,6 +6,7 @@ import { ShopHome } from './ShopHome'
 import { StorePage } from './StorePage'
 import { BusinessLanding, RiderLanding } from './PartnerLanding'
 import { Toaster } from './Toaster'
+import { AddressBookPage, AddressEditorPage, PinPickerPage } from './AddressEditor'
 import { DesktopFooter, DesktopNav } from './ShopKit'
 import { applyAppearance, verticalForPath } from './shopData'
 import './shop.css'
@@ -17,7 +18,7 @@ const clean = (path) => path.replace(/\/$/, '') || '/'
 /** Paths this module draws (everything else stays with the older pages). */
 export function isShopPath(rawPath) {
   const path = clean(rawPath)
-  if (['/', '/food', '/restaurants', '/groceries', '/shops', '/pharmacy', '/discover', '/checkout', '/cart', '/profile', '/account/promos', '/help/faq', '/partner/register', '/partners/restaurants', '/riders'].includes(path)) return true
+  if (['/', '/food', '/restaurants', '/groceries', '/shops', '/pharmacy', '/discover', '/checkout', '/cart', '/profile', '/account/promos', '/help/faq', '/partner/register', '/partners/restaurants', '/riders', '/location', '/address/new', '/account/addresses'].includes(path)) return true
   return /^\/(store|restaurants|groceries)\/[^/]+$/.test(path)
 }
 
@@ -44,6 +45,10 @@ export function ShopApp() {
   else if (path === '/help/faq') page = <FaqPage />
   else if (path === '/partner/register' || path === '/partners/restaurants') page = <BusinessLanding />
   else if (path === '/riders') page = <RiderLanding />
+  else if (path === '/location') page = <PinPickerPage key={location} />
+  else if (path === '/address/new') page = <AddressEditorPage key={location} />
+  else if (path === '/account/addresses') page = <AddressBookPage />
   else { const slug = decodeURIComponent(path.split('/')[2] || ''); page = <StorePage key={slug} slug={slug} /> }
+  if (path === '/location') return <div className="sp-app is-fullmap">{page}<Toaster /></div>
   return <div className="sp-app"><DesktopNav />{page}<DesktopFooter /><Toaster /></div>
 }

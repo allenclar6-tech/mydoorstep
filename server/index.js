@@ -40,6 +40,7 @@ import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { serviceFeeFor } from './deliveryPricing.js'
 import { checkSchedule, choosePromotion, cleanTip, platformRoom, SCHEDULE_DISPATCH_LEAD_MS, verticalOf } from './promotions.js'
 import { createCustomerAppRouter } from './customerAppRoutes.js'
+import { dailySeries, localDay, pausedNow } from './partnerToday.js'
 import { createPushRouter } from './pushRoutes.js'
 import { remindUnpaidOrders, sendPendingPushes } from './push.js'
 import { parsePrepRange } from './customerApp.js'
@@ -101,7 +102,7 @@ app.use('/api', createWithdrawalRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createDeliveryPricingRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createLocationRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createPushRouter({ prisma, requireUser }))
-app.use('/api', createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant: (restaurant) => publicRestaurant(restaurant) }))
+app.use('/api', createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant: (restaurant) => publicRestaurant(restaurant), isOpen: (restaurant) => isRestaurantOpen(restaurant) }))
 app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))
 app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
 
@@ -237,7 +238,8 @@ function publicRestaurant(restaurant) {
     prepTimeMinutes: restaurant.prepTimeMinutes,
     prepTimeMaxMinutes: restaurant.prepTimeMaxMinutes ?? null,
     minimumOrderMinor: restaurant.minimumOrderMinor,
-    temporarilyClosed: restaurant.temporarilyClosed,
+    temporarilyClosed: pausedNow(restaurant),
+    pausedUntil: pausedNow(restaurant) && restaurant.pausedUntil ? restaurant.pausedUntil : null,
     openNow: isRestaurantOpen(restaurant),
     categories: restaurant.categories.map((category) => category.name),
     items,
@@ -780,7 +782,8 @@ app.patch('/api/addresses/:addressId', requireUser, async (request, response) =>
   if (!result.success) return response.status(400).json({ error: 'INVALID_ADDRESS' })
   try {
     if (result.data.cityId && !(await prisma.serviceArea.findFirst({ where: { cityId: result.data.cityId, enabled: true } }))) return response.status(400).json({ error: 'CITY_OUTSIDE_SERVICE_AREA' })
-    const address = await prisma.address.updateMany({ where: { id: request.params.addressId, userId: request.user.id }, data: result.data }); return response.json({ updated: address.count === 1 })
+    // clearPin: the customer removed the map pin; the address is then priced by its area.
+    const address = await prisma.address.updateMany({ where: { id: request.params.addressId, userId: request.user.id }, data: { ...result.data, ...(request.body?.clearPin === true ? { latitude: null, longitude: null } : {}) } }); return response.json({ updated: address.count === 1 })
   } catch { return response.status(503).json({ error: 'ADDRESS_SERVICE_UNAVAILABLE' }) }
 })
 app.delete('/api/addresses/:addressId', requireUser, async (request, response) => { try { const result = await prisma.address.deleteMany({ where: { id: request.params.addressId, userId: request.user.id } }); return response.json({ deleted: result.count === 1 }) } catch { return response.status(503).json({ error: 'ADDRESS_SERVICE_UNAVAILABLE' }) } })
@@ -895,22 +898,31 @@ app.get('/api/admin/applications/:type/:applicationId/documents/:documentId', re
 })
 
 app.get('/api/admin/summary', requireUser, requireAdmin, async (_request, response) => {
-  const startOfDay = new Date()
-  startOfDay.setHours(0, 0, 0, 0)
+  // "Today" is the Sapele calendar day (UTC+1), not the server's clock.
+  const startOfDay = new Date(`${localDay(new Date())}T00:00:00+01:00`)
+  const weekStart = new Date(startOfDay.getTime() - 6 * 86_400_000)
+  const PAID_STATUSES = ['PAID', 'RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']
   try {
-    const [customers, restaurants, groceries, riders, ordersToday, activeDeliveries, pendingRestaurants, pendingGroceries, pendingRiders, sales] = await Promise.all([
+    const [customers, restaurants, groceries, riders, ordersToday, activeDeliveries, pendingRestaurants, pendingGroceries, pendingRiders, sales, waitingBusiness, preparing, onTheWay, waitingRider, ridersOnline, weekOrders] = await Promise.all([
       prisma.user.count({ where: { role: 'CUSTOMER' } }),
       prisma.restaurant.count({ where: { status: 'APPROVED', storeType: 'RESTAURANT' } }),
       prisma.restaurant.count({ where: { status: 'APPROVED', storeType: 'GROCERY' } }),
       prisma.rider.count({ where: { status: 'APPROVED' } }),
-      prisma.order.count({ where: { createdAt: { gte: startOfDay } } }),
+      prisma.order.count({ where: { createdAt: { gte: startOfDay }, status: { in: PAID_STATUSES } } }),
       prisma.delivery.count({ where: { status: { in: ['AVAILABLE', 'REQUESTED', 'ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } } }),
       prisma.restaurantApplication.count({ where: { status: 'PENDING_APPROVAL', restaurant: { storeType: 'RESTAURANT' } } }),
       prisma.restaurantApplication.count({ where: { status: 'PENDING_APPROVAL', restaurant: { storeType: 'GROCERY' } } }),
       prisma.riderApplication.count({ where: { status: 'PENDING_APPROVAL' } }),
-      prisma.order.aggregate({ where: { createdAt: { gte: startOfDay } }, _sum: { totalMinor: true } }),
+      prisma.order.aggregate({ where: { createdAt: { gte: startOfDay }, status: { in: PAID_STATUSES } }, _sum: { totalMinor: true } }),
+      prisma.order.count({ where: { status: 'PAID' } }),
+      prisma.order.count({ where: { status: { in: ['RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP'] } } }),
+      prisma.order.count({ where: { status: { in: ['RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY'] } } }),
+      prisma.delivery.count({ where: { riderId: null, orderId: { not: null }, status: { in: ['AVAILABLE', 'REQUESTED'] }, order: { status: { in: ['RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP'] } } } }),
+      prisma.rider.count({ where: { status: 'APPROVED', availability: 'ONLINE' } }),
+      prisma.order.findMany({ where: { createdAt: { gte: weekStart }, status: { in: PAID_STATUSES } }, select: { createdAt: true, totalMinor: true }, take: 5000 }),
     ])
-    return response.json({ customers, restaurants, groceries, riders, ordersToday, activeDeliveries, pendingApprovals: pendingRestaurants + pendingGroceries + pendingRiders, grossSalesMinor: sales._sum.totalMinor || 0 })
+    const week = dailySeries(weekOrders.map((order) => ({ at: order.createdAt, amountMinor: order.totalMinor, count: 1 })))
+    return response.json({ customers, restaurants, groceries, riders, ridersOnline, ordersToday, activeDeliveries, pendingApprovals: pendingRestaurants + pendingGroceries + pendingRiders, grossSalesMinor: sales._sum.totalMinor || 0, live: { waitingBusiness, preparing, waitingRider, onTheWay }, week })
   } catch { return response.status(503).json({ error: 'ADMIN_SUMMARY_SERVICE_UNAVAILABLE' }) }
 })
 
@@ -2228,7 +2240,7 @@ async function priceOrder(input, { strictPromo = false } = {}) {
 }
 
 function isRestaurantOpen(restaurant, now = new Date()) {
-  if (restaurant.temporarilyClosed) return false
+  if (pausedNow(restaurant, now)) return false
   if (!restaurant.openingTime || !restaurant.closingTime) return true
   const timezone = restaurant.city?.serviceAreas?.find((area) => area.enabled)?.timezone || 'Africa/Lagos'
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now)
