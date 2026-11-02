@@ -519,24 +519,28 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
       const riderId = request.user.rider.id
       const since = startOfLagosDay()
       const weekStart = new Date(Date.now() - 8 * 86_400_000)
-      const [rider, completedToday, active, completedTotal, payoutsToday, weekPayouts, weekDeliveries] = await Promise.all([
+      // Take-home pay, straight from the rider's statement: delivery pay minus DOORSTEP's fee, plus tips, for food
+      // and package deliveries. Lines still being priced or cancelled don't count yet.
+      const takeHome = { riderId, party: 'RIDER', type: { in: ['RIDER_EARNING', 'RIDER_SERVICE_FEE', 'TIP'] }, status: { in: ['DUE', 'PAYING', 'PAID'] } }
+      const [rider, completedToday, active, completedTotal, earnedToday, weekEarnings, weekDeliveries] = await Promise.all([
         prisma.rider.findUnique({ where: { id: riderId }, select: { status: true, availability: true, vehicleType: true, ratingAverage: true, ratingCount: true, availabilityLocatedAt: true, availabilityChangedAt: true } }),
         prisma.delivery.count({ where: { riderId, status: 'DELIVERED', deliveredAt: { gte: since } } }),
         prisma.delivery.count({ where: { riderId, status: { in: [...activeLocationStatuses] } } }),
         prisma.delivery.count({ where: { riderId, status: 'DELIVERED' } }),
-        prisma.riderPayout.aggregate({ where: { riderId, order: { deliveredAt: { gte: since } } }, _sum: { amountMinor: true } }),
-        prisma.riderPayout.findMany({ where: { riderId, order: { deliveredAt: { gte: weekStart } } }, select: { amountMinor: true, order: { select: { deliveredAt: true } } }, take: 1000 }),
+        prisma.ledgerEntry.aggregate({ where: { ...takeHome, createdAt: { gte: since } }, _sum: { amountMinor: true } }),
+        prisma.ledgerEntry.findMany({ where: { ...takeHome, createdAt: { gte: weekStart } }, select: { amountMinor: true, createdAt: true }, take: 3000 }),
         prisma.delivery.findMany({ where: { riderId, status: 'DELIVERED', deliveredAt: { gte: weekStart } }, select: { deliveredAt: true }, take: 1000 }),
       ])
-      // Last 7 days for the earnings chart: money from payout records, trips from delivered jobs.
-      const week = dailySeries([...weekPayouts.map((payout) => ({ at: payout.order?.deliveredAt, amountMinor: payout.amountMinor })), ...weekDeliveries.map((delivery) => ({ at: delivery.deliveredAt, count: 1 }))])
+      // Last 7 days for the earnings chart: take-home pay from the statement (written when each delivery is
+      // completed), trips from delivered jobs.
+      const week = dailySeries([...weekEarnings.map((entry) => ({ at: entry.createdAt, amountMinor: entry.amountMinor })), ...weekDeliveries.map((delivery) => ({ at: delivery.deliveredAt, count: 1 }))])
       return response.json({
         availability: rider.availability,
         onlineSince: rider.availability === 'ONLINE' ? rider.availabilityChangedAt : null,
         approval: rider.status,
         vehicleType: rider.vehicleType,
         rating: rider.ratingCount > 0 ? { average: Number(rider.ratingAverage), count: rider.ratingCount } : null,
-        today: { completedDeliveries: completedToday, recordedEarningsMinor: payoutsToday._sum.amountMinor || 0 },
+        today: { completedDeliveries: completedToday, recordedEarningsMinor: earnedToday._sum.amountMinor || 0 },
         activeDeliveries: active,
         completedDeliveries: completedTotal,
         availabilityLocationSharedAt: rider.availabilityLocatedAt,
