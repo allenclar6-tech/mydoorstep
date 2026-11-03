@@ -2,15 +2,15 @@
     "available":  true,
     "platform":  "android",
     "packageId":  "co.com.mydoorstep.admin",
-    "version":  "1.0.0",
-    "versionCode":  1,
-    "releasedAt":  "2026-11-03T14:04:02Z",
+    "version":  "1.0.1",
+    "versionCode":  2,
+    "releasedAt":  "2026-11-03T19:07:34Z",
     "sizeBytes":  1054766,
-    "sha256":  "671ceb62f68d32b4e3abafb6bc28f09f94b6253f48126714075100356e981925",
-    "url":  "/downloads/DOORSTEP-Admin-1.0.0.apk",
+    "sha256":  "dcd0cd1f47da4d8c5d1b79c0042b9c6d10b2f4f002a3a7b35907d63310a8a60c",
+    "url":  "/downloads/DOORSTEP-Admin-1.0.1.apk",
     "hostedOn":  "site",
-    "mirrorUrl":  "https://github.com/allenclar6-tech/mydoorstep/releases/download/admin-android-v1.0.0/DOORSTEP-Admin-1.0.0.apk",
-    "releasePage":  "https://github.com/allenclar6-tech/mydoorstep/releases/tag/admin-android-v1.0.0",
+    "mirrorUrl":  null,
+    "releasePage":  null,
     "minAndroid":  "7.0",
-    "notes":  "First Android release of DOORSTEP Admin."
+    "notes":  "Notifications now show the DOORSTEP icon in the status bar."
 }

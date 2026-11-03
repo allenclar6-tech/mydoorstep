@@ -15,11 +15,12 @@
   "enableNotifications": true,
   "startUrl": "/admin/dashboard?source=android",
   "iconUrl": "https://mydoorstep.com.co/icons/admin-512.png",
+  "monochromeIconUrl": "https://mydoorstep.com.co/icons/monochrome-512.png",
   "maskableIconUrl": "https://mydoorstep.com.co/icons/admin-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": { "path": "./android.keystore", "alias": "doorstep" },
-  "appVersionName": "1.0.0",
-  "appVersionCode": 1,
+  "appVersionName": "1.0.1",
+  "appVersionCode": 2,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://mydoorstep.com.co/admin.webmanifest",
@@ -34,5 +35,5 @@
   "fingerprints": [],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
-  "appVersion": "1.0.0"
+  "appVersion": "1.0.1"
 }
