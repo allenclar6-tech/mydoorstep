@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const allowedTypes = new Map([
@@ -44,6 +44,14 @@ export async function readPrivateDocument(storageKey) {
     if (error?.code === 'ENOENT') throw uploadError('PRIVATE_DOCUMENT_NOT_FOUND', 'The requested document was not found.', 404)
     throw error
   }
+}
+
+/** Size in bytes of a stored private file, or null when it is missing (or the key is not a valid private key). */
+export async function privateDocumentSize(storageKey) {
+  if (typeof storageKey !== 'string' || !storageKey.startsWith('private/')) return null
+  const target = path.resolve(privateRoot, storageKey.slice('private/'.length))
+  if (!target.startsWith(`${privateRoot}${path.sep}`)) return null
+  try { return (await stat(target)).size } catch { return null }
 }
 
 function hasImageSignature(buffer, mimeType) {

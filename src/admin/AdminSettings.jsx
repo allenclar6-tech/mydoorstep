@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Bell, Calculator, ChevronRight, CreditCard, Download, FileText, Globe, LogOut, MapPin, Scale, ShieldCheck, Tag, Wallet } from 'lucide-react'
+import { BarChart3, Bell, Calculator, ChevronRight, CreditCard, Download, FileText, FolderLock, Globe, LogOut, MapPin, Scale, ShieldCheck, Tag, Wallet } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { signOut } from '../services/authService'
 import { COVERAGE_LABEL } from '../../server/coverage.js'
@@ -28,6 +28,7 @@ const GROUPS = [
   { title: 'Records & help', rows: [
     { icon: BarChart3, label: 'Sales report', hint: 'Sales and DOORSTEP’s share over time', href: '/admin/analytics' },
     { icon: FileText, label: 'Activity log', hint: 'Who changed what, and when', href: '/admin/audit-logs' },
+    { icon: FolderLock, label: 'Partner & rider documents', hint: 'Every ID and certificate uploaded, kept for later', href: '/admin/documents' },
     { icon: ShieldCheck, label: 'Privacy Policy', hint: 'What customers agree to', href: '/privacy', external: true },
     { icon: Scale, label: 'Terms and Conditions', hint: 'Rules for customers, partners and riders', href: '/terms', external: true },
   ] },

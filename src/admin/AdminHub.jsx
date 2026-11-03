@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BarChart3, Bell, Bike, Calculator, ChefHat, ChevronDown, ClipboardList, CreditCard, Download, FileText, LayoutDashboard, MapPin, MessageCircle, Package, Settings, Star, Store, Tag, Truck, Users, Wallet } from 'lucide-react'
+import { BarChart3, Bell, Bike, Calculator, ChefHat, ChevronDown, ClipboardList, CreditCard, Download, FileText, FolderLock, LayoutDashboard, MapPin, MessageCircle, Package, Settings, Star, Store, Tag, Truck, Users, Wallet } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { MapPinArt, MoneyBag, Parcel, PercentTag, Scooter, Storefront } from '../shop/Illustrations'
 import { firstNameOf, go, Hello, naira, Shortcuts, usePolling, WeekChart, WorkspaceFrame } from '../workspace/WorkspaceFrame'
@@ -19,6 +19,7 @@ export const ADMIN_MENU = [
   { group: 'Approve new partners', label: 'Restaurants', href: '/admin/restaurants', icon: ChefHat },
   { group: 'Approve new partners', label: 'Shops & groceries', href: '/admin/groceries', icon: Store },
   { group: 'Approve new partners', label: 'Riders', href: '/admin/riders', icon: Bike },
+  { group: 'Approve new partners', label: 'Documents', href: '/admin/documents', icon: FolderLock },
   { group: 'Customers', label: 'Customers', href: '/admin/customers', icon: Users },
   { group: 'Customers', label: 'Help messages', href: '/admin/support', icon: MessageCircle },
   { group: 'Customers', label: 'Reviews', href: '/admin/reviews', icon: Star },
@@ -40,6 +41,7 @@ export const ADMIN_GUIDES = {
   '/admin/restaurants': { what: 'Food businesses asking to sell on DOORSTEP.', steps: ['Open a request and read the business details.', 'Open their documents and check the name, address and phone.', 'Tap Approve to put them live, Reject with a reason, or ask for more information.'] },
   '/admin/groceries': { what: 'Shops, supermarkets and pharmacies asking to sell on DOORSTEP.', steps: ['Open a request and read the shop details.', 'Open their documents and check them.', 'Approve to put them live, Reject with a reason, or ask for more information.'] },
   '/admin/riders': { what: 'People asking to deliver for DOORSTEP.', steps: ['Open a request and check their ID, phone and vehicle.', 'Only approve people you have checked — riders carry customers’ orders.', 'Once approved, they can go online and get jobs.'] },
+  '/admin/documents': { what: 'Every document restaurants, shops and riders have uploaded, kept for later.', steps: ['Pick Restaurants, Shops or Riders, or search a name or phone number.', 'Tap View to look at a file, or Download to save a copy.', 'Files stay after approval or rejection. Every download is recorded in the activity log.'] },
   '/admin/customers': { what: 'Everyone with a customer account.', steps: ['Find a customer by name, email or phone.', 'See when they joined and whether their account is active.', 'Suspend an account only for fraud or abuse — they won’t be able to order.'] },
   '/admin/support': { what: 'Messages from customers, businesses and riders.', steps: ['Open “Needs a reply” first — oldest messages at the top.', 'Reply in simple words. Use the quick replies to save time.', 'Mark it solved when the problem is fixed.'] },
   '/admin/reviews': { what: 'Ratings and comments customers left after orders.', steps: ['Read new reviews.', 'Approve fair reviews, even bad ones — they help customers choose.', 'Reject only reviews that are rude, fake or share private details.'] },

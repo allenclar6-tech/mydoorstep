@@ -47,6 +47,7 @@ import { parsePrepRange } from './customerApp.js'
 import { COVERAGE_BOUNDS, COVERAGE_LABEL, isCoveredPoint } from './coverage.js'
 import { optionGroupsInputSchema, priceSelections } from './menuOptions.js'
 import { createRefundRouter } from './refundRoutes.js'
+import { createDocumentArchiveRouter } from './documentArchive.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
 
@@ -108,6 +109,7 @@ app.use('/api', createPushRouter({ prisma, requireUser }))
 app.use('/api', createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant: (restaurant) => publicRestaurant(restaurant), isOpen: (restaurant) => isRestaurantOpen(restaurant) }))
 app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))
 app.use('/api', createRefundRouter({ prisma, requireUser, requireAdmin }))
+app.use('/api', createDocumentArchiveRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
 
 app.get('/api/health', (_request, response) => {

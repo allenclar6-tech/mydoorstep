@@ -21,6 +21,7 @@ import { ConfirmDeliveredButton, DispatchBoard } from './admin/DispatchBoard'
 import { SessionSignOutButton, SignOutNotice } from './authControls'
 import { apiBase } from './config/apiBase'
 import { AdminSettings } from './admin/AdminSettings'
+import { DocumentArchive } from './admin/DocumentArchive'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 
@@ -90,6 +91,7 @@ export function AdminPortal({ path, onLogout }) {
   if (path === '/admin/restaurants') content = <ApplicationManagement kind="Restaurants" type="restaurant" />
   if (path === '/admin/groceries') content = <ApplicationManagement kind="Groceries" type="grocery" />
   if (path === '/admin/riders') content = <ApplicationManagement kind="Riders" type="rider" />
+  if (path === '/admin/documents') content = <DocumentArchive />
   if (path === '/admin/customers') content = <Customers />
   if (path === '/admin/orders') content = <LiveAdminOrders />
   if (path === '/admin/parcels') content = <AdminParcels />
