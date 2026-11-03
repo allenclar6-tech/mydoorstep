@@ -39,7 +39,8 @@ export default {
     // One download link that never changes: /downloads/doorstep.apk always goes to the newest signed APK listed in
     // /app-release.json (written by the "Android app" workflow). Before the first build it's a plain 404.
     if (url.pathname === '/downloads/doorstep.apk') {
-      const releaseResponse = await env.ASSETS.fetch(new Request(new URL('/app-release.json', url), request))
+      // Always a plain GET: a HEAD request (link checkers, app stores) would otherwise get no JSON body back.
+      const releaseResponse = await env.ASSETS.fetch(new Request(new URL('/app-release.json', url)))
       const release = releaseResponse.ok ? await releaseResponse.json().catch(() => null) : null
       const target = release?.available && typeof release.url === 'string' ? release.url : null
       if (target && (target.startsWith('/downloads/DOORSTEP-') || target.startsWith('https://github.com/'))) {
