@@ -1,14 +1,26 @@
 [
     {
+        "relation":  [
+                         "delegate_permission/common.handle_all_urls"
+                     ],
         "target":  {
                        "namespace":  "android_app",
                        "package_name":  "co.com.mydoorstep.app",
                        "sha256_cert_fingerprints":  [
                                                         "B6:36:31:A0:8A:47:BF:D3:21:6A:34:CF:FE:9B:F9:BD:2B:71:C5:D9:1F:9F:BD:8E:18:31:87:0F:F1:4F:FE:8B"
                                                     ]
-                   },
+                   }
+    },
+    {
         "relation":  [
                          "delegate_permission/common.handle_all_urls"
-                     ]
+                     ],
+        "target":  {
+                       "namespace":  "android_app",
+                       "package_name":  "co.com.mydoorstep.admin",
+                       "sha256_cert_fingerprints":  [
+                                                        "B6:36:31:A0:8A:47:BF:D3:21:6A:34:CF:FE:9B:F9:BD:2B:71:C5:D9:1F:9F:BD:8E:18:31:87:0F:F1:4F:FE:8B"
+                                                    ]
+                   }
     }
 ]

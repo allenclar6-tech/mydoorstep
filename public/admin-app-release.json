@@ -1,6 +1,16 @@
 {
-  "available": false,
-  "platform": "android",
-  "packageId": "co.com.mydoorstep.admin",
-  "message": "The DOORSTEP Admin Android app hasn’t been built yet. You can install it from your browser right now."
+    "available":  true,
+    "platform":  "android",
+    "packageId":  "co.com.mydoorstep.admin",
+    "version":  "1.0.0",
+    "versionCode":  1,
+    "releasedAt":  "2026-11-03T14:04:02Z",
+    "sizeBytes":  1054766,
+    "sha256":  "671ceb62f68d32b4e3abafb6bc28f09f94b6253f48126714075100356e981925",
+    "url":  "/downloads/DOORSTEP-Admin-1.0.0.apk",
+    "hostedOn":  "site",
+    "mirrorUrl":  "https://github.com/allenclar6-tech/mydoorstep/releases/download/admin-android-v1.0.0/DOORSTEP-Admin-1.0.0.apk",
+    "releasePage":  "https://github.com/allenclar6-tech/mydoorstep/releases/tag/admin-android-v1.0.0",
+    "minAndroid":  "7.0",
+    "notes":  "First Android release of DOORSTEP Admin."
 }
