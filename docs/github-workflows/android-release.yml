@@ -105,6 +105,21 @@ jobs:
           jq --arg v "$VERSION" --argjson c "$VERSION_CODE" '.appVersionName = $v | .appVersion = $v | .appVersionCode = $c' twa-manifest.json > twa.tmp && mv twa.tmp twa-manifest.json
           yes | bubblewrap update --skipVersionUpgrade --manifest=./twa-manifest.json
 
+      # Android developer verification: Google gives you a short snippet when you register the package name
+      # (Play Console › Android developer verification › Package names › Upload APK). Save it as the repository
+      # VARIABLE ADI_REGISTRATION (customer app) or ADI_REGISTRATION_ADMIN (admin app); it isn't a secret. The build then
+      # includes it as assets/adi-registration.properties, and you upload the signed APK back to Play Console.
+      - name: Add the Android developer verification file (when set)
+        env:
+          ADI_CUSTOMER: ${{ vars.ADI_REGISTRATION }}
+          ADI_ADMIN: ${{ vars.ADI_REGISTRATION_ADMIN }}
+        run: |
+          if [ "$APP" = "admin" ]; then ADI="$ADI_ADMIN"; else ADI="$ADI_CUSTOMER"; fi
+          if [ -z "$ADI" ]; then echo "No verification snippet set; skipping."; exit 0; fi
+          mkdir -p "$DIR/app/src/main/assets"
+          printf '%s\n' "$ADI" > "$DIR/app/src/main/assets/adi-registration.properties"
+          echo "Added adi-registration.properties to the $APP app."
+
       - name: Build and sign the APK and AAB
         env:
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

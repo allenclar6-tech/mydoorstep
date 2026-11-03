@@ -26,7 +26,7 @@ export const ADMIN_MENU = [
   { group: 'Money', label: 'How customers pay', href: '/admin/payments', icon: CreditCard },
   { group: 'Money', label: 'Promo codes', href: '/admin/promos', icon: Tag },
   { group: 'Delivery setup', label: 'Delivery prices', href: '/admin/pricing', icon: Calculator },
-  { group: 'Delivery setup', label: 'Places in Sapele', href: '/admin/locations', icon: MapPin },
+  { group: 'Delivery setup', label: 'Places & areas', href: '/admin/locations', icon: MapPin },
   { group: 'Reports', label: 'Sales report', href: '/admin/analytics', icon: BarChart3 },
   { group: 'Reports', label: 'Activity log', href: '/admin/audit-logs', icon: FileText },
 ]
@@ -48,10 +48,10 @@ export const ADMIN_GUIDES = {
   '/admin/promos': { what: 'Discounts and promo codes for customers.', steps: ['Tap “New offer” and choose the type, like free delivery or 10% off.', 'Choose who gets it, the minimum order and the end date.', 'Switch it off any time. DOORSTEP pays for the discount, not the business.'] },
   '/admin/pricing': { what: 'What customers pay for delivery and what riders earn per trip.', steps: ['Use “Easy setup” and tap “Use suggested prices”.', 'Check the table to see the price at each distance.', 'Tap “Save and turn on”. New orders use the new prices straight away.'] },
   '/admin/download': { what: 'Put DOORSTEP Admin on your phone or computer, and turn on alerts.', steps: ['Android: tap Download, open the file and allow this one install.', 'iPhone: open this page in Safari, tap Share, then “Add to Home Screen”.', 'On a computer: scan the QR code with your phone to open this page there.'] },
-  '/admin/locations': { what: 'Areas, streets and landmarks in Sapele. Delivery prices use them.', steps: ['Open places that “Need review”.', 'Check the pin is in the right spot on the map — move it if not.', 'Verify places you or a rider have confirmed. Reject wrong ones.'] },
+  '/admin/locations': { what: 'Areas, streets and landmarks in Delta, Edo and Rivers. Delivery prices use them.', steps: ['Open places that “Need review”.', 'Check the pin is in the right spot on the map — move it if not.', 'Verify places you or a rider have confirmed. Reject wrong ones.'] },
   '/admin/analytics': { what: 'Sales and money numbers over time.', steps: ['See total sales and DOORSTEP’s share.', 'Compare with last week to spot busy and quiet days.', 'Nothing here changes money — it’s for reading only.'] },
   '/admin/audit-logs': { what: 'A record of who changed what, and when. It keeps everyone honest.', steps: ['Look here if something changed and you don’t know why.', 'Each line shows the person, the action and the time.', 'You can’t edit this list — that’s on purpose.'] },
-  '/admin/settings': { what: 'Basic rules for the whole app.', steps: ['Read each setting’s note before you change it.', 'Change one thing at a time.', 'Check the customer app afterwards to see the change.'] },
+  '/admin/settings': { what: 'Every setting that controls DOORSTEP, in one list.', steps: ['Tap a row to open the page where that setting is changed.', 'A red “to do” badge means something there needs you.', 'Change one thing at a time, then check the customer app.'] },
 }
 
 const GUIDE_KEY = 'doorstep-admin-guides-closed'
@@ -113,7 +113,7 @@ const ADMIN_SHORTCUTS = [
   { art: MoneyBag, title: 'Money & payouts', hint: 'Transfers, withdrawals, commission', href: '/admin/finance', tone: 'sky' },
   { art: PercentTag, title: 'Make a promo', hint: 'Free delivery or % off', href: '/admin/promos', tone: 'rose' },
   { art: Parcel, title: 'Delivery prices', hint: 'Price by distance, rider pay', href: '/admin/pricing', tone: 'mint' },
-  { art: MapPinArt, title: 'Places in Sapele', hint: 'Check and pin addresses', href: '/admin/locations', tone: 'sun' },
+  { art: MapPinArt, title: 'Places & areas', hint: 'LGAs, streets and pins', href: '/admin/locations', tone: 'sun' },
 ]
 
 /** Admin Home: what’s happening now, what needs you, and today’s numbers. */
