@@ -1395,3 +1395,9 @@ html[data-shop-theme='dark'] .sp-home-skeleton :is(.hs-line, .hs-tiles i, .hs-ti
 .cd-field.is-paystack > button b { background: none; border: 0; color: #b5b5b5; font-size: 1rem; font-weight: 500; letter-spacing: .04em; min-height: 0; padding: 0; width: auto; }
 .cd-field.is-paystack > button svg { color: #9aa59f; flex: 0 0 auto; }
 html[data-shop-theme='dark'] .cd-field.is-paystack > button { background: rgba(255, 255, 255, .05); border-color: var(--sp-line); }
+
+/* Download page: where DOORSTEP works, safety/privacy/updates and the legal links */
+.dl-text { align-items: flex-start; color: var(--sp-soft); display: flex; font-size: .92rem; gap: 8px; line-height: 1.55; margin: 0; }
+.dl-text svg { color: #0a7a4f; flex: 0 0 auto; margin-top: 3px; }
+.dl-links { color: var(--sp-muted); font-size: .88rem; margin: 14px 0 0; }
+.dl-links a { color: var(--sp-ink); font-weight: 700; }

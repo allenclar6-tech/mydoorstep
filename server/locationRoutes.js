@@ -1,5 +1,6 @@
 import express from 'express'
 import { z } from 'zod'
+import { checkImport, IMPORT_COLUMNS, importTemplate, LGA_REGISTRY, matchLga, matchState, placeLabel, rankMatches, seedLgaRegistry, STATES } from './regions.js'
 import { BLOCKER_TEXT, deliveryBlockers, deliveryZones, EXPORT_FIELDS, FLAG_TEXT, isLocationReviewer, LOCALITY_TYPES, materialChangeEffects, pointOf, qualityFlags, reviewersRestricted, seedCandidateLocations, slug, toCsv, validatePolygon, VERIFICATION_METHODS, VERIFICATION_STATUSES, coverageContains } from './locations.js'
 
 const lat = z.number().min(-90).max(90)
@@ -41,8 +42,8 @@ export function createLocationRouter({ prisma, requireUser, requireAdmin }) {
   /* --------------------------- local reviewers (riders) --------------------------- */
   router.get('/locations/review-queue', requireUser, requireRiderOrAdmin, async (_request, response) => {
     try {
-      const rows = await prisma.location.findMany({ where: { isActive: true, mergedIntoId: null, verificationStatus: { in: ['pending', 'needs_review', 'needs_local_verification'] } }, orderBy: [{ verificationStatus: 'asc' }, { name: 'asc' }], take: 500 })
-      return response.json({ locations: rows.map((row) => ({ id: row.id, name: row.name, originalCandidateName: row.originalCandidateName, alternativeNames: row.alternativeNames, type: row.localityType, latitude: num(row.latitude), longitude: num(row.longitude), status: row.verificationStatus, landmark: row.nearestLandmark, question: row.verificationNotes })) })
+      const rows = await prisma.location.findMany({ where: { isActive: true, mergedIntoId: null, verificationStatus: { in: ['pending', 'incomplete', 'needs_review', 'needs_local_verification'] }, localityType: { not: 'LGA' } }, orderBy: [{ verificationStatus: 'asc' }, { name: 'asc' }], take: 500 })
+      return response.json({ locations: rows.map((row) => ({ id: row.id, name: row.name, originalCandidateName: row.originalCandidateName, alternativeNames: row.alternativeNames, type: row.localityType, state: row.state, lga: row.localGovernmentArea, label: placeLabel(row), latitude: num(row.latitude), longitude: num(row.longitude), status: row.verificationStatus, landmark: row.nearestLandmark, question: row.verificationNotes })) })
     } catch (error) { return fail(response, error) }
   })
 
@@ -67,9 +68,20 @@ export function createLocationRouter({ prisma, requireUser, requireAdmin }) {
   })
 
   /* ---------------------------------- admin ---------------------------------- */
+  // ?state=Delta&lga=Uvwie narrows the list. Duplicate checks only compare places in the same state + LGA, so the
+  // filtered list gives the same flags as the full one.
+  const scopeOf = (query) => {
+    const state = query.state ? matchState(query.state) : null
+    const lga = state && query.lga ? matchLga(state, query.lga) : null
+    return { state, lga, where: { ...(state ? { state } : {}), ...(lga ? { localGovernmentArea: lga } : {}) } }
+  }
   router.get('/admin/locations', requireUser, requireAdmin, async (request, response) => {
     try {
-      const rows = await prisma.location.findMany({ orderBy: [{ candidateNumber: 'asc' }, { name: 'asc' }], take: 2000 })
+      const scope = scopeOf(request.query)
+      const [rows, byArea] = await Promise.all([
+        prisma.location.findMany({ where: scope.where, orderBy: [{ candidateNumber: 'asc' }, { name: 'asc' }], take: 5000 }),
+        prisma.location.groupBy({ by: ['state', 'localGovernmentArea', 'verificationStatus'], where: { mergedIntoId: null }, _count: { _all: true } }),
+      ])
       const flags = qualityFlags(rows)
       const pendingReviews = await prisma.locationReview.groupBy({ by: ['locationId'], where: { status: 'SUBMITTED' }, _count: { _all: true } })
       const reviewsBy = Object.fromEntries(pendingReviews.map((row) => [row.locationId, row._count._all]))
@@ -81,10 +93,21 @@ export function createLocationRouter({ prisma, requireUser, requireAdmin }) {
         deliveryZones: rows.filter((row) => deliveryBlockers(row).length === 0).length,
         merged: rows.filter((row) => row.mergedIntoId).length,
         pendingLocalReviews: pendingReviews.reduce((sum, row) => sum + row._count._all, 0),
+        incomplete: rows.filter((row) => row.verificationStatus === 'incomplete').length,
+        inactive: rows.filter((row) => !row.isActive).length,
       }
+      // Coverage per state and LGA (whole directory), for the "how far along is each area" table.
+      const coverage = STATES.map((state) => ({ state, lgas: LGA_REGISTRY[state].map((lga) => {
+        const groups = byArea.filter((row) => row.state === state && row.localGovernmentArea === lga)
+        const count = (status) => groups.filter((row) => !status || row.verificationStatus === status).reduce((sum, row) => sum + row._count._all, 0)
+        return { lga, total: count(), verified: count('verified'), incomplete: count('incomplete') }
+      }) }))
       return response.json({
         locations: rows.map((row) => ({ ...publicView(row), flags: flags[row.id], pendingReviews: reviewsBy[row.id] || 0, blockers: deliveryBlockers(row, { ignoreSwitch: true }) })),
         summary,
+        coverage,
+        scope: { state: scope.state, lga: scope.lga },
+        registry: LGA_REGISTRY,
         reviewer: { canReview: isLocationReviewer(request.user), restricted: reviewersRestricted() },
         labels: { flags: FLAG_TEXT, blockers: BLOCKER_TEXT, methods: VERIFICATION_METHODS, statuses: VERIFICATION_STATUSES, types: LOCALITY_TYPES },
       })
@@ -93,18 +116,25 @@ export function createLocationRouter({ prisma, requireUser, requireAdmin }) {
 
   router.get('/admin/locations/export', requireUser, requireAdmin, async (request, response) => {
     try {
-      const rows = await prisma.location.findMany({ orderBy: [{ candidateNumber: 'asc' }, { name: 'asc' }] })
+      const scope = scopeOf(request.query)
+      const rows = await prisma.location.findMany({ where: scope.where, orderBy: [{ state: 'asc' }, { localGovernmentArea: 'asc' }, { candidateNumber: 'asc' }, { name: 'asc' }] })
       const flags = qualityFlags(rows)
       const enriched = rows.map((row) => ({ ...publicView(row), qualityFlags: flags[row.id], evidenceCount: evidenceOf(row).length }))
-      const stamp = new Date().toISOString().slice(0, 10)
+      const stamp = `${[scope.state, scope.lga].filter(Boolean).map(slug).join('-') || 'all'}-${new Date().toISOString().slice(0, 10)}`
       if (request.query.format === 'csv') {
         response.set('Content-Type', 'text/csv; charset=utf-8')
-        response.set('Content-Disposition', `attachment; filename="doorstep-sapele-locations-${stamp}.csv"`)
+        response.set('Content-Disposition', `attachment; filename="doorstep-locations-${stamp}.csv"`)
         return response.send(`﻿${toCsv(enriched)}`)
       }
-      response.set('Content-Disposition', `attachment; filename="doorstep-sapele-locations-${stamp}.json"`)
+      response.set('Content-Disposition', `attachment; filename="doorstep-locations-${stamp}.json"`)
       return response.json({ exportedAt: new Date().toISOString(), fields: EXPORT_FIELDS, locations: enriched })
     } catch (error) { return fail(response, error) }
+  })
+
+  router.get('/admin/locations/import-template', requireUser, requireAdmin, (_request, response) => {
+    response.set('Content-Type', 'text/csv; charset=utf-8')
+    response.set('Content-Disposition', 'attachment; filename="doorstep-locations-template.csv"')
+    return response.send(`﻿${importTemplate()}`)
   })
 
   router.get('/admin/locations/:id', requireUser, requireAdmin, async (request, response) => {
@@ -113,29 +143,33 @@ export function createLocationRouter({ prisma, requireUser, requireAdmin }) {
       const [reviews, history, all] = await Promise.all([
         prisma.locationReview.findMany({ where: { locationId: row.id }, orderBy: { createdAt: 'desc' }, take: 50 }),
         prisma.auditLog.findMany({ where: { entityType: 'Location', entityId: row.id }, orderBy: { createdAt: 'desc' }, take: 100 }),
-        prisma.location.findMany({ select: { id: true, name: true, alternativeNames: true, latitude: true, longitude: true, mergedIntoId: true, verificationStatus: true, evidence: true, verificationSource: true, deliveryEnabled: true, isActive: true, boundaryVerificationStatus: true, coverageMethod: true, boundaryGeometry: true, coverageRadiusMeters: true, radiusLimitationsAcceptedById: true, closedUntil: true } }),
+        prisma.location.findMany({ where: { state: row.state, localGovernmentArea: row.localGovernmentArea }, select: { id: true, state: true, localGovernmentArea: true, name: true, alternativeNames: true, latitude: true, longitude: true, mergedIntoId: true, verificationStatus: true, evidence: true, verificationSource: true, deliveryEnabled: true, isActive: true, boundaryVerificationStatus: true, coverageMethod: true, boundaryGeometry: true, coverageRadiusMeters: true, radiusLimitationsAcceptedById: true, closedUntil: true } }),
       ])
-      return response.json({ location: { ...publicView(row), flags: qualityFlags(all)[row.id] || [], blockers: deliveryBlockers(row, { ignoreSwitch: true }) }, reviews: reviews.map(publicView), history })
+      return response.json({ location: { ...publicView(row), label: placeLabel(row), flags: qualityFlags(all)[row.id] || [], blockers: deliveryBlockers(row, { ignoreSwitch: true }) }, reviews: reviews.map(publicView), history })
     } catch (error) { return fail(response, error) }
   })
 
-  const createSchema = z.object({ name: text(80).min(2), localityType: z.enum(LOCALITY_TYPES), parentId: z.string().max(40).nullable().optional(), alternativeNames: z.array(text(80)).max(20).default([]), latitude: lat.nullable().optional(), longitude: lng.nullable().optional(), nearestLandmark: text(160).nullable().optional(), notes: text(1000).optional(), source: text(200).optional(), sourceUrl: z.string().url().max(500).optional() })
+  const createSchema = z.object({ name: text(80).min(2), localityType: z.enum(LOCALITY_TYPES), parentId: z.string().max(40).nullable().optional(), alternativeNames: z.array(text(80)).max(20).default([]), latitude: lat.nullable().optional(), longitude: lng.nullable().optional(), nearestLandmark: text(160).nullable().optional(), notes: text(1000).optional(), source: text(200).optional(), sourceUrl: z.string().url().max(500).optional(), state: text(40).optional(), localGovernmentArea: text(60).optional() })
   router.post('/admin/locations', requireUser, requireAdmin, async (request, response) => {
     const parsed = createSchema.safeParse(request.body)
     if (!parsed.success) return response.status(400).json({ error: 'INVALID_LOCATION', message: parsed.error.issues[0]?.message })
     const data = parsed.data
     if ((data.latitude == null) !== (data.longitude == null)) return response.status(400).json({ error: 'INVALID_LOCATION', message: 'Give both latitude and longitude, or neither.' })
+    // State and LGA default to Delta / Sapele (the original directory) and must be an official LGA of that state.
+    const state = matchState(data.state || 'Delta')
+    const lga = state ? matchLga(state, data.localGovernmentArea || (state === 'Delta' ? 'Sapele' : '')) : null
+    if (!state || !lga) return response.status(400).json({ error: 'INVALID_LGA', message: `Choose a state (${STATES.join(', ')}) and one of its official LGAs.` })
     try {
       let base = slug(data.name); let candidate = base; let n = 2
       while (await prisma.location.findUnique({ where: { slug: candidate } })) candidate = `${base}-${n++}`
       const evidence = data.source ? [{ kind: 'NOTE', source: data.source, url: data.sourceUrl || null, checkedAt: new Date().toISOString().slice(0, 10), method: 'DESK_RESEARCH', by: request.user.id }] : []
-      const row = await prisma.location.create({ data: { slug: candidate, name: data.name, localityType: data.localityType, parentId: data.parentId || null, alternativeNames: data.alternativeNames, latitude: data.latitude ?? null, longitude: data.longitude ?? null, nearestLandmark: data.nearestLandmark || null, verificationStatus: 'pending', verificationNotes: data.notes || null, verificationSource: data.source || null, verificationSourceUrl: data.sourceUrl || null, evidence } })
+      const row = await prisma.location.create({ data: { slug: candidate, name: data.name, state, localGovernmentArea: lga, localityType: data.localityType, parentId: data.parentId || null, alternativeNames: data.alternativeNames, latitude: data.latitude ?? null, longitude: data.longitude ?? null, nearestLandmark: data.nearestLandmark || null, verificationStatus: data.latitude == null ? 'incomplete' : 'pending', verificationNotes: data.notes || null, verificationSource: data.source || null, verificationSourceUrl: data.sourceUrl || null, evidence } })
       await audit(prisma, request, 'LOCATION_CREATED', row, { after: data })
       return response.status(201).json({ location: publicView(row) })
     } catch (error) { return fail(response, error) }
   })
 
-  const editSchema = z.object({ name: text(80).min(2).optional(), localityType: z.enum(LOCALITY_TYPES).optional(), parentId: z.string().max(40).nullable().optional(), alternativeNames: z.array(text(80)).max(20).optional(), latitude: lat.nullable().optional(), longitude: lng.nullable().optional(), nearestLandmark: text(160).nullable().optional(), isActive: z.boolean().optional(), customerSurchargeMinor: z.number().int().min(0).max(10_000_000).optional(), riderBonusMinor: z.number().int().min(0).max(10_000_000).optional(), minimumOrderMinor: z.number().int().min(0).max(100_000_000).nullable().optional(), closedUntil: z.string().datetime().nullable().optional(), closedReason: text(200).nullable().optional(), reason: text(500).optional() }).strict()
+  const editSchema = z.object({ name: text(80).min(2).optional(), localityType: z.enum(LOCALITY_TYPES).optional(), parentId: z.string().max(40).nullable().optional(), alternativeNames: z.array(text(80)).max(20).optional(), latitude: lat.nullable().optional(), longitude: lng.nullable().optional(), nearestLandmark: text(160).nullable().optional(), isActive: z.boolean().optional(), customerSurchargeMinor: z.number().int().min(0).max(10_000_000).optional(), riderBonusMinor: z.number().int().min(0).max(10_000_000).optional(), minimumOrderMinor: z.number().int().min(0).max(100_000_000).nullable().optional(), closedUntil: z.string().datetime().nullable().optional(), closedReason: text(200).nullable().optional(), reason: text(500).optional(), state: text(40).optional(), localGovernmentArea: text(60).optional() }).strict()
   router.patch('/admin/locations/:id', requireUser, requireAdmin, async (request, response) => {
     const parsed = editSchema.safeParse(request.body)
     if (!parsed.success) return response.status(400).json({ error: 'INVALID_LOCATION', message: parsed.error.issues[0]?.message })
@@ -145,7 +179,16 @@ export function createLocationRouter({ prisma, requireUser, requireAdmin }) {
       if ((patch.latitude === null) !== (patch.longitude === null) && (patch.latitude === null || patch.longitude === null)) throw problem(400, 'INVALID_LOCATION', 'Clear both latitude and longitude together.')
       if (patch.parentId === before.id) throw problem(400, 'INVALID_PARENT', 'A location cannot be its own parent.')
       if (patch.isActive === false) patch.deliveryEnabled = false
+      if (patch.state !== undefined || patch.localGovernmentArea !== undefined) {
+        const state = matchState(patch.state ?? before.state)
+        const lga = state ? matchLga(state, patch.localGovernmentArea ?? before.localGovernmentArea) : null
+        if (!state || !lga) throw problem(400, 'INVALID_LGA', 'Choose a state and one of its official LGAs.')
+        patch.state = state
+        patch.localGovernmentArea = lga
+      }
       const { reasons, effects } = materialChangeEffects(before, patch)
+      // An "incomplete" place that gets its map pin moves on to "pending" (still needs checking, never auto-verified).
+      if (before.verificationStatus === 'incomplete' && patch.latitude != null && patch.longitude != null && !effects.verificationStatus) effects.verificationStatus = 'pending'
       if (patch.closedUntil !== undefined) patch.closedUntil = patch.closedUntil ? new Date(patch.closedUntil) : null
       const row = await prisma.$transaction(async (transaction) => {
         const updated = await transaction.location.update({ where: { id: before.id }, data: { ...patch, ...effects } })
@@ -374,6 +417,106 @@ export function createLocationRouter({ prisma, requireUser, requireAdmin }) {
       const zones = await deliveryZones(prisma)
       const matches = zones.filter((zone) => coverageContains(zone, parsed.data))
       return response.json({ matches: matches.map((zone) => ({ id: zone.locationId, name: zone.name, closed: zone.closed })), approvedZones: zones.length })
+    } catch (error) { return fail(response, error) }
+  })
+
+  /* ------------------------------ search (customers) ------------------------------ */
+  // Directory search / autocomplete across Delta, Edo and Rivers. Results carry "Name · LGA, State" labels so
+  // places with the same name are easy to tell apart. Map pins are only shared for verified places.
+  const searchSchema = z.object({ q: text(80).min(2), state: text(40).optional(), lga: text(60).optional(), limit: z.coerce.number().int().min(1).max(30).default(12) })
+  router.get('/locations/search', async (request, response) => {
+    const parsed = searchSchema.safeParse(request.query)
+    if (!parsed.success) return response.status(400).json({ error: 'INVALID_SEARCH', message: 'Type at least 2 letters.' })
+    try {
+      const { q, limit } = parsed.data
+      const scope = scopeOf(parsed.data)
+      const variants = [...new Set([q, q.toLowerCase(), q.replace(/\b\w/g, (letter) => letter.toUpperCase())])]
+      const candidates = await prisma.location.findMany({
+        where: { ...scope.where, isActive: true, mergedIntoId: null, NOT: { verificationStatus: 'rejected' }, OR: [{ name: { contains: q, mode: 'insensitive' } }, { alternativeNames: { hasSome: variants } }] },
+        select: { id: true, slug: true, name: true, alternativeNames: true, state: true, localGovernmentArea: true, localityType: true, latitude: true, longitude: true, verificationStatus: true, nearestLandmark: true, parent: { select: { name: true, localityType: true } } },
+        take: 300,
+      })
+      const ranked = rankMatches(candidates, q, { limit })
+      const sameName = new Map()
+      for (const row of ranked) sameName.set(row.name.toLowerCase(), (sameName.get(row.name.toLowerCase()) || 0) + 1)
+      response.set('Cache-Control', 'public, max-age=60')
+      return response.json({ results: ranked.map((row) => {
+        const verified = row.verificationStatus === 'verified'
+        const point = verified ? pointOf(row) : null
+        return { id: row.id, slug: row.slug, name: row.name, type: row.localityType, state: row.state, lga: row.localGovernmentArea, label: placeLabel(row), within: row.parent && row.parent.localityType !== 'LGA' ? row.parent.name : null, landmark: row.nearestLandmark, verified, point, sameNameElsewhere: sameName.get(row.name.toLowerCase()) > 1 }
+      }) })
+    } catch (error) { return fail(response, error) }
+  })
+
+  /* --------------------------------- CSV import --------------------------------- */
+  // Step 1 (dryRun: true): check the file and show what would happen. Step 2 (dryRun: false): save the good rows.
+  // Imported places are never verified and never switched on for delivery; they join the review queue.
+  const importSchema = z.object({ csv: z.string().min(1).max(950_000), dryRun: z.boolean().default(true), fileName: text(120).optional() })
+  router.post('/admin/locations/import', requireUser, requireAdmin, async (request, response) => {
+    const parsed = importSchema.safeParse(request.body)
+    if (!parsed.success) return response.status(400).json({ error: 'INVALID_IMPORT', message: 'Upload a CSV file under 1 MB (split bigger files into parts).' })
+    try {
+      const existingRows = await prisma.location.findMany({ where: { mergedIntoId: null }, select: { id: true, slug: true, name: true, alternativeNames: true, state: true, localGovernmentArea: true, localityType: true, parent: { select: { name: true } } } })
+      const existing = existingRows.map((row) => ({ ...row, parentName: row.parent?.name || null }))
+      const report = checkImport(parsed.data.csv, existing)
+      const preview = report.rows.map(({ record, ...row }) => ({ ...row, name: record?.name || null, label: record ? placeLabel(record) : null, verificationStatus: record?.verificationStatus || null }))
+      if (parsed.data.dryRun || report.headerProblems.length) return response.json({ dryRun: true, columns: IMPORT_COLUMNS, ...report, rows: preview })
+
+      const good = report.rows.filter((row) => row.status === 'ok')
+      const slugs = new Set(existingRows.map((row) => row.slug))
+      const uniqueSlug = (record) => {
+        const base = slug(`${record.name}-${record.localGovernmentArea}`)
+        let candidate = base; let k = 2
+        while (slugs.has(candidate)) candidate = `${base}-${k++}`
+        slugs.add(candidate)
+        return candidate
+      }
+      // Parents: an existing place (or one earlier in this file) with that name in the same state + LGA;
+      // otherwise the LGA record itself, so every place sits under State › LGA.
+      const keyOf = (state, lga, name) => `${state}|${lga}|${String(name || '').toLowerCase()}`
+      const parents = new Map()
+      for (const row of existingRows) parents.set(row.localityType === 'LGA' ? `${row.state}|${row.localGovernmentArea}|#lga` : keyOf(row.state, row.localGovernmentArea, row.name), row.id)
+      const today = new Date().toISOString().slice(0, 10)
+      const createdIds = []
+      for (const { record } of good) {
+        const parentId = (record.parentName && parents.get(keyOf(record.state, record.localGovernmentArea, record.parentName))) || parents.get(`${record.state}|${record.localGovernmentArea}|#lga`) || null
+        const created = await prisma.location.create({ data: {
+          slug: uniqueSlug(record),
+          name: record.name,
+          originalCandidateName: record.name,
+          alternativeNames: record.alternativeNames,
+          state: record.state,
+          localGovernmentArea: record.localGovernmentArea,
+          localityType: record.localityType,
+          parentId,
+          latitude: record.latitude,
+          longitude: record.longitude,
+          nearestLandmark: record.nearestLandmark,
+          verificationStatus: record.verificationStatus,
+          verificationMethod: 'IMPORT_REFERENCE',
+          verificationSource: record.source,
+          verificationSourceUrl: record.sourceUrl,
+          verificationNotes: [record.notes, `Imported from ${parsed.data.fileName || 'a CSV file'} on ${today}. Not verified.`].filter(Boolean).join(' '),
+          evidence: [{ kind: 'IMPORT', source: record.source, url: record.sourceUrl, latitude: record.latitude, longitude: record.longitude, checkedAt: today, method: 'IMPORT_REFERENCE', by: request.user.id, note: 'Imported data — a reference to check, not a confirmation.' }],
+          boundaryVerificationStatus: 'none',
+          isActive: true,
+          deliveryEnabled: false,
+        } })
+        parents.set(keyOf(created.state, created.localGovernmentArea, created.name), created.id)
+        createdIds.push(created.id)
+      }
+      await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'LOCATIONS_IMPORTED', entityType: 'Location', entityId: 'import', metadata: { fileName: parsed.data.fileName || null, ...report.summary, created: createdIds.length, firstIds: createdIds.slice(0, 50) } } })
+      return response.status(201).json({ dryRun: false, created: createdIds.length, ...report, rows: preview })
+    } catch (error) { return fail(response, error) }
+  })
+
+  // Adds the official LGA names of Delta, Edo and Rivers (pending, no pins, deliveries off). Also runs on every
+  // deploy (server/migrate.js); this button is for running it now. Never changes existing records.
+  router.post('/admin/locations/lgas/seed', requireUser, requireAdmin, async (request, response) => {
+    try {
+      const result = await seedLgaRegistry(prisma)
+      await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'LGA_REGISTRY_SEEDED', entityType: 'Location', entityId: 'lgas', metadata: result } })
+      return response.json(result)
     } catch (error) { return fail(response, error) }
   })
 

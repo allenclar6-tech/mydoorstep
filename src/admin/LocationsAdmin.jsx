@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, Download, FileJson, MapPin, Plus, Search, ShieldCheck } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { LocationsMap, STATUS_COLORS } from './LocationsMap'
+import { CoverageTable, ImportPanel } from './RegionsAdmin'
 
-// Admin › Locations: the auditable Sapele location directory. Pins, verification evidence, local confirmations,
+// Admin › Locations: the auditable location directory for Delta, Edo and Rivers (Sapele first). Pins, verification evidence, local confirmations,
 // separately-approved delivery coverage, and the switch that turns an approved area into a delivery zone.
 
 const token = () => { try { return localStorage.getItem('doorstep-admin-token') } catch { return null } }
@@ -13,16 +14,16 @@ async function call(path, { method = 'GET', body } = {}) {
   if (!response.ok) throw new Error(data.message || 'Something went wrong. Try again.')
   return data
 }
-async function download(format) {
-  const response = await fetch(`${apiBase}/api/admin/locations/export?format=${format}`, { headers: { Authorization: `Bearer ${token()}` } })
+async function download(format, scope = '') {
+  const response = await fetch(`${apiBase}/api/admin/locations/export?format=${format}${scope ? `&${scope}` : ''}`, { headers: { Authorization: `Bearer ${token()}` } })
   if (!response.ok) throw new Error('Export failed.')
   const blob = await response.blob()
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
-  link.href = url; link.download = `doorstep-sapele-locations.${format}`; link.click()
+  link.href = url; link.download = `doorstep-locations.${format}`; link.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
-const STATUS_LABEL = { pending: 'Pending', needs_review: 'Needs review', needs_local_verification: 'Needs local check', verified: 'Verified', rejected: 'Rejected' }
+const STATUS_LABEL = { pending: 'Pending', incomplete: 'Incomplete', needs_review: 'Needs review', needs_local_verification: 'Needs local check', verified: 'Verified', rejected: 'Rejected' }
 const BOUNDARY_LABEL = { none: 'No coverage', draft: 'Coverage draft', needs_review: 'Coverage awaiting review', approved: 'Coverage approved', rejected: 'Coverage rejected' }
 const money = (minor) => `₦${((minor || 0) / 100).toLocaleString('en-NG')}`
 const fmtDate = (value) => value ? new Date(value).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
@@ -33,7 +34,7 @@ function Section({ title, children, defaultOpen = false }) {
   return <details className="la-section" open={defaultOpen}><summary>{title}</summary><div className="la-section-body">{children}</div></details>
 }
 
-function Detail({ id, labels, reviewer, all, onChanged, mapMode, setMapMode, draftPin, setDraftPin, ring, setRing }) {
+function Detail({ id, labels, registry, reviewer, all, onChanged, mapMode, setMapMode, draftPin, setDraftPin, ring, setRing }) {
   const [data, setData] = useState(null)
   const [message, setMessage] = useState({ tone: '', text: '' })
   const [form, setForm] = useState({})
@@ -49,7 +50,7 @@ function Detail({ id, labels, reviewer, all, onChanged, mapMode, setMapMode, dra
       const body = await call(`/api/admin/locations/${id}`)
       setData(body)
       const row = body.location
-      setForm({ name: row.name, localityType: row.localityType, alternativeNames: (row.alternativeNames || []).join(', '), nearestLandmark: row.nearestLandmark || '', latitude: row.latitude ?? '', longitude: row.longitude ?? '', customerSurchargeMinor: row.customerSurchargeMinor / 100, riderBonusMinor: row.riderBonusMinor / 100, minimumOrderMinor: row.minimumOrderMinor != null ? row.minimumOrderMinor / 100 : '', closedUntil: row.closedUntil ? row.closedUntil.slice(0, 16) : '', closedReason: row.closedReason || '', isActive: row.isActive, reason: '' })
+      setForm({ name: row.name, localityType: row.localityType, state: row.state || 'Delta', localGovernmentArea: row.localGovernmentArea || 'Sapele', alternativeNames: (row.alternativeNames || []).join(', '), nearestLandmark: row.nearestLandmark || '', latitude: row.latitude ?? '', longitude: row.longitude ?? '', customerSurchargeMinor: row.customerSurchargeMinor / 100, riderBonusMinor: row.riderBonusMinor / 100, minimumOrderMinor: row.minimumOrderMinor != null ? row.minimumOrderMinor / 100 : '', closedUntil: row.closedUntil ? row.closedUntil.slice(0, 16) : '', closedReason: row.closedReason || '', isActive: row.isActive, reason: '' })
       setRadius(row.coverageRadiusMeters || '')
     } catch (error) { setMessage({ tone: 'error', text: error.message }) }
   }, [id])
@@ -61,7 +62,7 @@ function Detail({ id, labels, reviewer, all, onChanged, mapMode, setMapMode, dra
   const saveEdits = () => act(() => {
     const lat = form.latitude === '' ? null : Number(form.latitude)
     const lng = form.longitude === '' ? null : Number(form.longitude)
-    return call(`/api/admin/locations/${id}`, { method: 'PATCH', body: { name: form.name, localityType: form.localityType, alternativeNames: form.alternativeNames.split(',').map((value) => value.trim()).filter(Boolean), nearestLandmark: form.nearestLandmark || null, latitude: lat, longitude: lng, isActive: form.isActive, customerSurchargeMinor: Math.round(Number(form.customerSurchargeMinor || 0) * 100), riderBonusMinor: Math.round(Number(form.riderBonusMinor || 0) * 100), minimumOrderMinor: form.minimumOrderMinor === '' ? null : Math.round(Number(form.minimumOrderMinor) * 100), closedUntil: form.closedUntil ? new Date(form.closedUntil).toISOString() : null, closedReason: form.closedReason || null, ...(form.reason ? { reason: form.reason } : {}) } })
+    return call(`/api/admin/locations/${id}`, { method: 'PATCH', body: { name: form.name, localityType: form.localityType, ...(registry && (form.state !== row.state || form.localGovernmentArea !== row.localGovernmentArea) ? { state: form.state, localGovernmentArea: form.localGovernmentArea } : {}), alternativeNames: form.alternativeNames.split(',').map((value) => value.trim()).filter(Boolean), nearestLandmark: form.nearestLandmark || null, latitude: lat, longitude: lng, isActive: form.isActive, customerSurchargeMinor: Math.round(Number(form.customerSurchargeMinor || 0) * 100), riderBonusMinor: Math.round(Number(form.riderBonusMinor || 0) * 100), minimumOrderMinor: form.minimumOrderMinor === '' ? null : Math.round(Number(form.minimumOrderMinor) * 100), closedUntil: form.closedUntil ? new Date(form.closedUntil).toISOString() : null, closedReason: form.closedReason || null, ...(form.reason ? { reason: form.reason } : {}) } })
   }, (result) => { setMapMode('view'); setDraftPin(null); return result.requiresReverification?.length ? 'Saved. Because the pin or coverage changed, it must be verified (and coverage approved) again before use.' : 'Saved.' })
   const blockers = row.blockers || []
   const evidenceList = Array.isArray(row.evidence) ? row.evidence : []
@@ -71,7 +72,8 @@ function Detail({ id, labels, reviewer, all, onChanged, mapMode, setMapMode, dra
     <header className="la-detail-head">
       <div><span className="la-kicker">{row.candidateNumber ? `CANDIDATE ${row.candidateNumber}` : row.localityType}</span><h2>{row.name}</h2>
         {row.originalCandidateName && row.originalCandidateName !== row.name && <small>Original candidate name: {row.originalCandidateName}</small>}
-        {row.alternativeNames?.length > 0 && <small>Also: {row.alternativeNames.join(', ')}</small>}</div>
+        {row.alternativeNames?.length > 0 && <small>Also: {row.alternativeNames.join(', ')}</small>}
+        {row.label && <small>{row.label}</small>}</div>
       <div className="la-head-pills"><StatusPill status={row.verificationStatus} /><span className="la-pill is-plain">{BOUNDARY_LABEL[row.boundaryVerificationStatus]}</span>{row.deliveryEnabled ? <span className="la-pill" style={{ '--c': '#007c63' }}>Delivering</span> : <span className="la-pill is-plain">Not a delivery zone</span>}{row.mergedIntoId && <span className="la-pill" style={{ '--c': '#b3261e' }}>Merged</span>}</div>
     </header>
     {message.text && <p className={message.tone === 'error' ? 'la-error' : 'la-ok'} role="status">{message.text}</p>}
@@ -90,6 +92,8 @@ function Detail({ id, labels, reviewer, all, onChanged, mapMode, setMapMode, dra
       <div className="la-grid">
         <label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
         <label>Type<select value={form.localityType} onChange={(event) => setForm({ ...form, localityType: event.target.value })}>{labels.types.map((type) => <option key={type}>{type}</option>)}</select></label>
+        {registry && <><label>State<select value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value, localGovernmentArea: registry[event.target.value][0] })}>{Object.keys(registry).map((state) => <option key={state}>{state}</option>)}</select></label>
+        <label>LGA<select value={form.localGovernmentArea} onChange={(event) => setForm({ ...form, localGovernmentArea: event.target.value })}>{(registry[form.state] || []).map((lga) => <option key={lga}>{lga}</option>)}</select></label></>}
         <label className="la-wide">Other names / spellings (comma separated)<input value={form.alternativeNames} onChange={(event) => setForm({ ...form, alternativeNames: event.target.value })} /></label>
         <label className="la-wide">Nearest landmark<input value={form.nearestLandmark} onChange={(event) => setForm({ ...form, nearestLandmark: event.target.value })} /></label>
         <label>Latitude<input inputMode="decimal" value={form.latitude} onChange={(event) => setForm({ ...form, latitude: event.target.value })} /></label>
@@ -245,10 +249,13 @@ export function LocationsAdmin() {
   const [draftPin, setDraftPin] = useState(null)
   const [ring, setRing] = useState([])
   const [adding, setAdding] = useState(false)
-  const [newLocation, setNewLocation] = useState({ name: '', localityType: 'VILLAGE', source: '' })
+  const [newLocation, setNewLocation] = useState({ name: '', localityType: 'VILLAGE', source: '', state: 'Delta', localGovernmentArea: 'Sapele' })
   const [note, setNote] = useState('')
-  const load = useCallback(async () => { try { setData(await call('/api/admin/locations')); setError('') } catch (loadError) { setError(loadError.message) } }, [])
+  const [area, setArea] = useState({ state: '', lga: '' })
+  const scope = new URLSearchParams(Object.entries(area).filter(([, value]) => value)).toString()
+  const load = useCallback(async () => { try { setData(await call(`/api/admin/locations${scope ? `?${scope}` : ''}`)); setError('') } catch (loadError) { setError(loadError.message) } }, [scope])
   useEffect(() => { load() }, [load])
+  const pickArea = (state, lga = '') => { setArea({ state, lga }); setSelectedId(null); window.scrollTo?.({ top: 0, behavior: 'smooth' }) }
   const detailSlot = useRef(null)
   useEffect(() => {
     setMapMode('view'); setDraftPin(null); setRing([])
@@ -257,7 +264,7 @@ export function LocationsAdmin() {
   }, [selectedId])
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return (data?.locations || []).filter((row) => (status === 'all' || row.verificationStatus === status || (status === 'zones' && row.deliveryEnabled)) && (!issuesOnly || row.flags.length) && (!q || [row.name, row.originalCandidateName, ...(row.alternativeNames || [])].some((value) => String(value || '').toLowerCase().includes(q))))
+    return (data?.locations || []).filter((row) => (status === 'all' || row.verificationStatus === status || (status === 'zones' && row.deliveryEnabled) || (status === 'inactive' && !row.isActive)) && (!issuesOnly || row.flags.length) && (!q || [row.name, row.originalCandidateName, ...(row.alternativeNames || [])].some((value) => String(value || '').toLowerCase().includes(q))))
   }, [data, query, status, issuesOnly])
   if (error && !data) return <section className="la"><div className="la-card la-error">{error}</div></section>
   if (!data) return <section className="la"><div className="la-card">Loading the location directory…</div></section>
@@ -265,13 +272,14 @@ export function LocationsAdmin() {
   const selected = data.locations.find((row) => row.id === selectedId)
   return <section className="la">
     <header className="la-hero">
-      <span className="la-kicker is-gold">SAPELE LOCATION DIRECTORY</span>
+      <span className="la-kicker is-gold">LOCATION DIRECTORY · DELTA · EDO · RIVERS</span>
       <h1>Locations & delivery zones</h1>
-      <p>{s.total} records · {s.byStatus.verified} verified · {s.byStatus.needs_local_verification} need a local check · {s.byStatus.needs_review} need review · {s.coverageApproved} coverage approved · {s.deliveryZones} delivering</p>
+      <p>{area.lga ? `${area.lga} LGA, ${area.state}: ` : area.state ? `${area.state} State: ` : ''}{s.total} records · {s.byStatus.verified} verified · {s.incomplete} without a pin · {s.byStatus.needs_local_verification} need a local check · {s.byStatus.needs_review} need review · {s.coverageApproved} coverage approved · {s.deliveryZones} delivering</p>
       <div className="la-hero-actions">
-        <button type="button" onClick={() => download('csv').catch((exportError) => setNote(exportError.message))}><Download size={14} />CSV</button>
-        <button type="button" onClick={() => download('json').catch((exportError) => setNote(exportError.message))}><FileJson size={14} />JSON</button>
-        <button type="button" onClick={() => call('/api/admin/locations/seed', { method: 'POST' }).then((result) => { setNote(`Candidate import: ${result.created} added, ${result.alreadyPresent} already present (existing records untouched).`); load() }).catch((seedError) => setNote(seedError.message))}>Import candidate list</button>
+        <button type="button" onClick={() => download('csv', scope).catch((exportError) => setNote(exportError.message))}><Download size={14} />CSV</button>
+        <button type="button" onClick={() => download('json', scope).catch((exportError) => setNote(exportError.message))}><FileJson size={14} />JSON</button>
+        <button type="button" onClick={() => call('/api/admin/locations/seed', { method: 'POST' }).then((result) => { setNote(`Candidate import: ${result.created} added, ${result.alreadyPresent} already present (existing records untouched).`); load() }).catch((seedError) => setNote(seedError.message))}>Import Sapele candidates</button>
+        <button type="button" onClick={() => call('/api/admin/locations/lgas/seed', { method: 'POST' }).then((result) => { setNote(`LGAs: ${result.created} added, ${result.alreadyPresent} already there (Delta 25, Edo 18, Rivers 23 — names only, pending, no pins).`); load() }).catch((seedError) => setNote(seedError.message))}>Add Delta, Edo & Rivers LGAs</button>
         <button type="button" onClick={() => setAdding(!adding)}><Plus size={14} />Add location</button>
       </div>
     </header>
@@ -282,22 +290,32 @@ export function LocationsAdmin() {
     {adding && <div className="la-card la-grid">
       <label>Name<input value={newLocation.name} onChange={(event) => setNewLocation({ ...newLocation, name: event.target.value })} /></label>
       <label>Type<select value={newLocation.localityType} onChange={(event) => setNewLocation({ ...newLocation, localityType: event.target.value })}>{data.labels.types.map((type) => <option key={type}>{type}</option>)}</select></label>
+      <label>State<select value={newLocation.state} onChange={(event) => setNewLocation({ ...newLocation, state: event.target.value, localGovernmentArea: data.registry[event.target.value][0] })}>{Object.keys(data.registry).map((state) => <option key={state}>{state}</option>)}</select></label>
+      <label>LGA<select value={newLocation.localGovernmentArea} onChange={(event) => setNewLocation({ ...newLocation, localGovernmentArea: event.target.value })}>{data.registry[newLocation.state].map((lga) => <option key={lga}>{lga}</option>)}</select></label>
       <label className="la-wide">Where the name comes from<input value={newLocation.source} onChange={(event) => setNewLocation({ ...newLocation, source: event.target.value })} placeholder="e.g. rider Efe, INEC polling unit list" /></label>
-      <button type="button" className="la-primary" onClick={() => call('/api/admin/locations', { method: 'POST', body: { name: newLocation.name, localityType: newLocation.localityType, ...(newLocation.source ? { source: newLocation.source } : {}) } }).then((result) => { setAdding(false); setNewLocation({ name: '', localityType: 'VILLAGE', source: '' }); load(); setSelectedId(result.location.id) }).catch((addError) => setNote(addError.message))}>Add (status: pending)</button>
+      <button type="button" className="la-primary" onClick={() => call('/api/admin/locations', { method: 'POST', body: { name: newLocation.name, localityType: newLocation.localityType, state: newLocation.state, localGovernmentArea: newLocation.localGovernmentArea, ...(newLocation.source ? { source: newLocation.source } : {}) } }).then((result) => { setAdding(false); setNewLocation({ name: '', localityType: 'VILLAGE', source: '', state: newLocation.state, localGovernmentArea: newLocation.localGovernmentArea }); load(); setSelectedId(result.location.id) }).catch((addError) => setNote(addError.message))}>Add (status: pending)</button>
     </div>}
+    <div className="la-card la-regional">
+      <Section title="Import places from a spreadsheet (CSV)"><ImportPanel onImported={load} /></Section>
+      <Section title="Progress by LGA"><CoverageTable coverage={data.coverage} onPick={pickArea} /></Section>
+    </div>
+    <div className="la-area">
+      <label>State<select value={area.state} onChange={(event) => pickArea(event.target.value)}><option value="">All states</option>{Object.keys(data.registry).map((state) => <option key={state}>{state}</option>)}</select></label>
+      <label>LGA<select value={area.lga} disabled={!area.state} onChange={(event) => pickArea(area.state, event.target.value)}><option value="">{area.state ? 'All LGAs' : 'Choose a state first'}</option>{(data.registry[area.state] || []).map((lga) => <option key={lga}>{lga}</option>)}</select></label>
+    </div>
     <LocationsMap locations={data.locations.filter((row) => !row.mergedIntoId)} selectedId={selectedId} onSelect={setSelectedId} mode={selectedId ? mapMode : 'view'} draftPin={draftPin} onPin={setDraftPin} draftRing={ring} onRingPoint={(point) => setRing((current) => [...current, point])} coverage={selected} />
     <div className="la-legend">{Object.entries(STATUS_COLORS).map(([key, color]) => <span key={key}><i style={{ background: color }} />{STATUS_LABEL[key]}</span>)}</div>
     <div className="la-filters">
       <label className="la-search"><Search size={15} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or spelling" /></label>
-      <div className="la-chips">{[['all', 'All'], ['needs_local_verification', 'Local check'], ['needs_review', 'Review'], ['pending', 'Pending'], ['verified', 'Verified'], ['rejected', 'Rejected'], ['zones', 'Delivering']].map(([key, label]) => <button type="button" key={key} className={status === key ? 'is-on' : ''} onClick={() => setStatus(key)}>{label}</button>)}<button type="button" className={issuesOnly ? 'is-on' : ''} onClick={() => setIssuesOnly(!issuesOnly)}><AlertTriangle size={13} />Has issues</button></div>
+      <div className="la-chips">{[['all', 'All'], ['needs_local_verification', 'Local check'], ['needs_review', 'Review'], ['pending', 'Pending'], ['incomplete', 'No pin'], ['verified', 'Verified'], ['rejected', 'Rejected'], ['inactive', 'Inactive'], ['zones', 'Delivering']].map(([key, label]) => <button type="button" key={key} className={status === key ? 'is-on' : ''} onClick={() => setStatus(key)}>{label}</button>)}<button type="button" className={issuesOnly ? 'is-on' : ''} onClick={() => setIssuesOnly(!issuesOnly)}><AlertTriangle size={13} />Has issues</button></div>
     </div>
     <div className="la-layout">
-      <ul className="la-list">{rows.map((row) => <li key={row.id}><button type="button" className={row.id === selectedId ? 'is-on' : ''} onClick={() => setSelectedId(row.id)}>
+      <ul className="la-list">{rows.slice(0, 400).map((row) => <li key={row.id}><button type="button" className={row.id === selectedId ? 'is-on' : ''} onClick={() => setSelectedId(row.id)}>
         <span className="la-dot" style={{ background: STATUS_COLORS[row.verificationStatus] }} />
-        <span className="la-list-main"><b>{row.candidateNumber ? `${row.candidateNumber}. ` : ''}{row.name}</b><small>{STATUS_LABEL[row.verificationStatus]}{row.latitude == null ? ' · no pin' : ''}{row.flags.length ? ` · ${row.flags.length} issue${row.flags.length > 1 ? 's' : ''}` : ''}{row.pendingReviews ? ` · ${row.pendingReviews} local check${row.pendingReviews > 1 ? 's' : ''}` : ''}{row.mergedIntoId ? ' · merged' : ''}</small></span>
+        <span className="la-list-main"><b>{row.candidateNumber ? `${row.candidateNumber}. ` : ''}{row.name}</b><small>{!area.lga && row.localGovernmentArea ? `${row.localGovernmentArea}${area.state ? '' : `, ${row.state}`} · ` : ''}{STATUS_LABEL[row.verificationStatus]}{row.isActive === false ? ' · inactive' : ''}{row.latitude == null ? ' · no pin' : ''}{row.flags.length ? ` · ${row.flags.length} issue${row.flags.length > 1 ? 's' : ''}` : ''}{row.pendingReviews ? ` · ${row.pendingReviews} local check${row.pendingReviews > 1 ? 's' : ''}` : ''}{row.mergedIntoId ? ' · merged' : ''}</small></span>
         {row.deliveryEnabled ? <Check size={16} aria-label="Delivering" /> : null}
-      </button></li>)}{rows.length === 0 && <li className="la-muted">No locations match.</li>}</ul>
-      {selectedId ? <div className="la-detail-slot" ref={detailSlot}><Detail id={selectedId} labels={data.labels} reviewer={data.reviewer} all={data.locations} onChanged={load} mapMode={mapMode} setMapMode={setMapMode} draftPin={draftPin} setDraftPin={setDraftPin} ring={ring} setRing={setRing} /></div> : <div className="la-card la-muted la-placeholder">Choose a location from the list or the map.</div>}
+      </button></li>)}{rows.length === 0 && <li className="la-muted">No locations match.</li>}{rows.length > 400 && <li className="la-muted">Showing 400 of {rows.length}. Choose a state and LGA, or search, to narrow it down.</li>}</ul>
+      {selectedId ? <div className="la-detail-slot" ref={detailSlot}><Detail id={selectedId} labels={data.labels} registry={data.registry} reviewer={data.reviewer} all={data.locations} onChanged={load} mapMode={mapMode} setMapMode={setMapMode} draftPin={draftPin} setDraftPin={setDraftPin} ring={ring} setRing={setRing} /></div> : <div className="la-card la-muted la-placeholder">Choose a location from the list or the map.</div>}
     </div>
   </section>
 }

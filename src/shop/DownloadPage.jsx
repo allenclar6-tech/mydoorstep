@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ArrowLeft, Bike, Check, ChevronDown, Copy, Download, ShieldCheck, Smartphone, Store } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Bike, Check, ChevronDown, Copy, Download, MapPin, ShieldCheck, Smartphone, Store } from 'lucide-react'
 import { InstallApp } from '../app/InstallApp'
 import { isIos } from '../notifications/push'
 import { navigate } from './shopData'
+import { LEGAL_ENTITY } from '../legal/legalContent'
 
 // /download — "Get the DOORSTEP app". The Android APK details come from /app-release.json, which the
 // "Android app" GitHub workflow writes after it has built, signed and published a real APK. Until then this page
 // says the APK isn't ready and offers the browser install (PWA) instead — never a broken or made-up link.
 
+// One link that never changes: the website sends it to the newest signed APK (see worker.js).
+const STABLE_APK = '/downloads/doorstep.apk'
 const sizeText = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 const dateText = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
@@ -35,7 +38,7 @@ function useRelease() {
 function useSeo(release, ready) {
   useEffect(() => {
     const previous = document.title
-    document.title = 'Download the DOORSTEP app — food & delivery in Nigeria'
+    document.title = 'Download the DOORSTEP app — food & delivery in Delta, Edo and Port Harcourt'
     const meta = document.querySelector('meta[name="description"]')
     const previousDescription = meta?.content
     if (meta) meta.content = 'Get DOORSTEP on your phone: order food, groceries and more, send packages, and track your rider live across Delta, Edo and Rivers. Free Android app and browser install.'
@@ -82,7 +85,7 @@ export function DownloadPage() {
         <div className="dl-card-head"><span className="dl-badge" aria-hidden="true"><Smartphone size={20} /></span><div><h2 id="dl-android-title">Android</h2><p>Direct download (APK) · free</p></div></div>
         {loading ? <div className="sp-skeleton dl-skeleton" role="status" aria-label="Checking the latest version" />
           : ready ? <>
-            <a className="dl-button" href={release.url} download={release.url.startsWith('/') ? `DOORSTEP-${release.version}.apk` : undefined} rel="noopener"><Download size={20} aria-hidden="true" />Download for Android</a>
+            <a className="dl-button" href={STABLE_APK} rel="noopener"><Download size={20} aria-hidden="true" />Download for Android</a>
             <dl className="dl-facts">
               <div><dt>Version</dt><dd>{release.version}</dd></div>
               <div><dt>Size</dt><dd>{sizeText(release.sizeBytes)}</dd></div>
@@ -129,6 +132,22 @@ export function DownloadPage() {
           <li><Store size={20} aria-hidden="true" /><span><b>Restaurants and shops</b><small>Sign in to take orders, pause your store and see your sales.</small></span></li>
           <li><Bike size={20} aria-hidden="true" /><span><b>Riders</b><small>Go online, accept jobs and track your earnings.</small></span></li>
         </ul>
+      </section>
+
+      <section className="dl-card" aria-labelledby="dl-where-title">
+        <h2 id="dl-where-title" className="dl-h2">Where DOORSTEP works</h2>
+        <p className="dl-text"><MapPin size={16} aria-hidden="true" /> Delta State (Sapele, Warri, Asaba, Ughelli and more), Edo State (Benin City and more) and Rivers State (Port Harcourt and more), Nigeria. Open the app and set your address to see the stores that deliver to you.</p>
+      </section>
+
+      <section className="dl-card" aria-labelledby="dl-safe-title">
+        <h2 id="dl-safe-title" className="dl-h2">Safety, privacy and updates</h2>
+        <ul className="dl-who">
+          <li><ShieldCheck size={20} aria-hidden="true" /><span><b>Signed by DOORSTEP</b><small>Every Android version is signed with DOORSTEP’s own key and listed here with its SHA-256 checksum. Only download DOORSTEP from this page or official app stores.</small></span></li>
+          <li><ShieldCheck size={20} aria-hidden="true" /><span><b>Payments by Paystack</b><small>Card details are typed on Paystack’s secure form. DOORSTEP never sees or stores your card number.</small></span></li>
+          <li><ShieldCheck size={20} aria-hidden="true" /><span><b>Few permissions</b><small>Notifications (for order updates) and location (only when you choose to use it for your address or deliveries). You can switch either off in your phone’s settings.</small></span></li>
+          <li><Download size={20} aria-hidden="true" /><span><b>Updates</b><small>The app opens the live DOORSTEP service, so most improvements reach you without reinstalling. When a new Android version is published, it appears on this page with its version number and date.</small></span></li>
+        </ul>
+        <p className="dl-links"><a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms and Conditions</a> · <a href={`mailto:${LEGAL_ENTITY.email}`}>{LEGAL_ENTITY.email}</a></p>
       </section>
 
       <section className="dl-faq" aria-labelledby="dl-faq-title">

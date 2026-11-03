@@ -3,6 +3,10 @@
 How people get DOORSTEP today, and a ready-made kit for listing it on free app stores and getting found on Google.
 Uploading to each store needs **your own account** on that store; nobody can do it for you without your sign-in.
 
+**Full release and submission checklists (APKPure, Uptodown, Google Play data safety, Google Search Console, Android
+developer verification): see `docs/STORE_SUBMISSION.md`.** The permanent download link is
+https://mydoorstep.com.co/downloads/doorstep.apk (always the newest signed APK once the first one is built).
+
 ## Ways to install (live now)
 
 | Who | How | Cost |

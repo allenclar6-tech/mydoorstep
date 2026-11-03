@@ -1,8 +1,10 @@
 // Sapele location directory rules: verification statuses, delivery coverage, eligibility, quality checks and
 // the safe seed of the 36 candidate locations. Pure functions are exported for tests; database helpers take `db`.
 import { CANDIDATES, CHECKED_ON, SOURCES } from './locationCandidates.js'
+import { isCoveredPoint } from './coverage.js'
 
-export const VERIFICATION_STATUSES = ['pending', 'needs_review', 'needs_local_verification', 'verified', 'rejected']
+// 'incomplete' = a record still missing basics (usually its map pin). "Inactive" is shown for isActive = false.
+export const VERIFICATION_STATUSES = ['pending', 'incomplete', 'needs_review', 'needs_local_verification', 'verified', 'rejected']
 export const VERIFICATION_METHODS = {
   IMPORT_REFERENCE: 'Imported reference data (not a check)',
   DESK_RESEARCH: 'Desk research in published sources',
@@ -126,12 +128,14 @@ export function materialChangeEffects(before, patch) {
 }
 
 /* -------------------------------- quality checks -------------------------------- */
+// Same-name checks are per state + LGA, so "Ekpan" in Uvwie and an "Ekpan" elsewhere aren't flagged as duplicates.
+const placeKey = (location, value) => `${normName(location.state || 'Delta')}|${normName(location.localGovernmentArea || 'Sapele')}|${normName(value)}`
 export function qualityFlags(locations, { now = new Date() } = {}) {
   const live = locations.filter((location) => !location.mergedIntoId && location.verificationStatus !== 'rejected')
   const names = new Map()
   for (const location of live) for (const value of [location.name, ...(location.alternativeNames || [])]) {
-    const key = normName(value)
-    if (!key) continue
+    if (!normName(value)) continue
+    const key = placeKey(location, value)
     names.set(key, [...(names.get(key) || []), location.id])
   }
   return Object.fromEntries(locations.map((location) => {
@@ -141,12 +145,12 @@ export function qualityFlags(locations, { now = new Date() } = {}) {
     const lng = num(location.longitude)
     if (lat == null || lng == null) flags.push('MISSING_COORDINATES')
     else if (!validCoordinates(lat, lng)) flags.push('INVALID_COORDINATES')
-    if (point && haversineMeters(point, SAPELE_CENTRE) > SERVICE_AREA_KM * 1000) flags.push('OUTSIDE_SERVICE_AREA')
+    if (point && !isCoveredPoint(point)) flags.push('OUTSIDE_SERVICE_AREA')
     if (point && Math.abs(lat * 60 - Math.round(lat * 60)) < 5e-4 && Math.abs(lng * 60 - Math.round(lng * 60)) < 5e-4) flags.push('LOW_PRECISION_COORDINATES')
     const evidence = Array.isArray(location.evidence) ? location.evidence : []
     if (!evidence.length && !location.verificationSource) flags.push('MISSING_SOURCE')
     if (!location.mergedIntoId && location.verificationStatus !== 'rejected') {
-      const dupes = new Set([location.name, ...(location.alternativeNames || [])].flatMap((value) => (names.get(normName(value)) || [])).filter((id) => id !== location.id))
+      const dupes = new Set([location.name, ...(location.alternativeNames || [])].flatMap((value) => (names.get(placeKey(location, value)) || [])).filter((id) => id !== location.id))
       if (dupes.size) flags.push('POSSIBLE_DUPLICATE')
       if (point && live.some((other) => other.id !== location.id && pointOf(other) && haversineMeters(point, pointOf(other)) < 25)) flags.push('SAME_COORDINATES_AS_ANOTHER')
     }
@@ -158,10 +162,10 @@ export function qualityFlags(locations, { now = new Date() } = {}) {
 export const FLAG_TEXT = {
   MISSING_COORDINATES: 'No map pin',
   INVALID_COORDINATES: 'Invalid coordinates',
-  OUTSIDE_SERVICE_AREA: `More than ${SERVICE_AREA_KM} km from Sapele town`,
+  OUTSIDE_SERVICE_AREA: 'Pin is outside Delta, Edo and Rivers States',
   LOW_PRECISION_COORDINATES: 'Coordinates rounded to whole minutes (±1–2 km)',
   MISSING_SOURCE: 'No source recorded',
-  POSSIBLE_DUPLICATE: 'Shares a name or spelling with another record',
+  POSSIBLE_DUPLICATE: 'Shares a name or spelling with another record in the same LGA',
   SAME_COORDINATES_AS_ANOTHER: 'Pin within 25 m of another record',
   BOUNDARY_UNVERIFIED: 'Verified, but coverage not approved',
   ACTIVE_WITHOUT_APPROVAL: 'Delivery on without full approval',

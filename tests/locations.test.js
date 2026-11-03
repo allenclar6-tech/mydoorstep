@@ -111,7 +111,7 @@ test('quality checks flag duplicates, shared coordinates, low precision, missing
     { id: 'b', name: 'Aruowon', alternativeNames: [], latitude: null, longitude: null, verificationStatus: 'needs_review', evidence: [] },
     { id: 'c', name: 'Atakolo', alternativeNames: [], latitude: 5.83333, longitude: 5.7, verificationStatus: 'needs_review', evidence: [{}] },
     { id: 'd', name: 'Copy', alternativeNames: [], latitude: 5.83334, longitude: 5.70001, verificationStatus: 'needs_review', evidence: [{}] },
-    { id: 'e', name: 'Far', alternativeNames: [], latitude: 6.5, longitude: 5.68, verificationStatus: 'needs_review', evidence: [{}] },
+    { id: 'e', name: 'Far', alternativeNames: [], latitude: 6.45, longitude: 3.39, verificationStatus: 'needs_review', evidence: [{}] },
     { ...approved({ id: 'f', name: 'Live', boundaryVerificationStatus: 'draft' }) },
   ]
   const flags = qualityFlags(rows)

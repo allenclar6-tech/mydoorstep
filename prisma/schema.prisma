@@ -1136,6 +1136,7 @@ model Location {
   reviews                LocationReview[]
 
   @@index([verificationStatus])
+  @@index([state, localGovernmentArea])
   @@index([isActive, deliveryEnabled])
   @@index([parentId])
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createDoorstepMap, emptyCollection, featureOf, loadMapToken } from '../map/mapCore'
 import { LayersControl } from '../map/LayersControl'
 
-export const STATUS_COLORS = { verified: '#007c63', needs_review: '#d97706', needs_local_verification: '#7c3aed', pending: '#6b7280', rejected: '#b3261e' }
+export const STATUS_COLORS = { verified: '#007c63', needs_review: '#d97706', needs_local_verification: '#7c3aed', pending: '#6b7280', incomplete: '#a8a29e', rejected: '#b3261e' }
 
 /**
  * Directory map: every location pin coloured by verification status, the selected location's coverage, and

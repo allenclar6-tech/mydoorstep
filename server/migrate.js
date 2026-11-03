@@ -50,6 +50,12 @@ try {
     const { ensureCoverage } = await import('./coverage.js')
     console.info('[database] coverage', JSON.stringify(await ensureCoverage(prisma)))
   } catch (error) { console.warn('[database] coverage_skipped', error?.message) }
+  // Official LGA names of Delta (25), Edo (18) and Rivers (23) for the location directory: names only, pending,
+  // no pins, deliveries off. Only adds what's missing; never edits existing records.
+  try {
+    const { seedLgaRegistry } = await import('./regions.js')
+    console.info('[database] lga_registry', JSON.stringify(await seedLgaRegistry(prisma)))
+  } catch (error) { console.warn('[database] lga_registry_skipped', error?.message) }
 } finally {
   await prisma.$disconnect()
 }
