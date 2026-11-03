@@ -27,6 +27,8 @@ export default {
     if (headers.get('Content-Type')?.includes('text/html')) headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate')
     // The notification service worker must always be fresh so updates reach phones quickly.
     if (url.pathname === '/sw.js') { headers.set('Cache-Control', 'no-cache'); headers.set('Service-Worker-Allowed', '/') }
+    // The two app manifests (DOORSTEP and DOORSTEP Admin): always fresh so icon, name and shortcut changes reach phones.
+    if (url.pathname === '/manifest.webmanifest' || url.pathname === '/admin.webmanifest') { headers.set('Cache-Control', 'no-cache'); headers.set('Content-Type', 'application/manifest+json') }
     return new Response(webResponse.body, { status: webResponse.status, statusText: webResponse.statusText, headers })
   },
 }

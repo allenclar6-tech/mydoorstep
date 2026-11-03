@@ -3,6 +3,7 @@ import { Bell, BellRing, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCar
 import { apiBase } from '../config/apiBase'
 import { useProfilePhoto } from '../account/profilePhoto'
 import { PushPrompt } from '../notifications/PushPrompt'
+import { InstallApp } from '../app/InstallApp'
 import { permission as pushPermission, turnOnPush, watchPermission } from '../notifications/push'
 import { signOut } from '../services/authService'
 import { Band, EmptyState, Sheet, ShopHeader, SkeletonList, TabBar } from './ShopKit'
@@ -98,6 +99,7 @@ export function ProfileHub() {
     </header>
     <main className="sp-body">
       <h1 className="sp-profile-title">Profile</h1>
+      <InstallApp who="customer" always />
       {signedIn && pushState !== 'granted' && pushState !== 'denied' && <PushPrompt who="customer" />}
       <div className="sp-plus-card"><Crown size={22} aria-hidden="true" /><div><b>DOORSTEP Plus</b><small>Free deliveries and member prices — coming soon.</small></div></div>
 

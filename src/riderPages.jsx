@@ -8,6 +8,7 @@ import { HelpPage } from './support/HelpChat'
 import { Wallet } from './finance/Wallet'
 import { WithdrawBanner } from './finance/WithdrawButton'
 import { PushPrompt } from './notifications/PushPrompt'
+import { InstallApp } from './app/InstallApp'
 import { SignInMethodsPage } from './auth/AltSignIn'
 import { AvailabilityLocationToggle, RiderParcelJobs } from './rider/RiderParcelJobs'
 import { LocationReviews } from './rider/LocationReviews'
@@ -171,6 +172,7 @@ function RiderDashboard() {
       <ProfileCompletenessCard className="ws-pc" />
       <AvailabilityLocationToggle online={online} />
       <AlertSoundControl />
+      <InstallApp who="rider" />
       <PushPrompt who="rider" />
       <WithdrawBanner earningsHref="/rider/earnings" title="Your earnings balance" />
     </div>

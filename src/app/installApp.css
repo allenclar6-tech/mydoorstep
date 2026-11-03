@@ -1,0 +1,14 @@
+/* "Install the app" card — sits beside the notifications card and matches its shape. */
+.install-card { align-items: center; background: #fff; border: 1.5px solid #ffc244; border-radius: 18px; color: #14231d; display: grid; gap: 12px; grid-template-columns: auto 1fr auto; margin: 0 0 16px; padding: 14px 40px 14px 14px; position: relative; }
+.install-card > div { display: grid; gap: 3px; min-width: 0; }
+.install-card b { font-size: 1rem; }
+.install-card small { color: #3e4f47; font-size: .82rem; line-height: 1.4; }
+.install-icon img { border-radius: 12px; display: block; }
+.install-btn { align-items: center; background: #14231d; border: 0; border-radius: 12px; color: #fff; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; gap: 6px; min-height: 42px; padding: 0 16px; white-space: nowrap; }
+.install-close { background: transparent; border: 0; color: #5b6b63; cursor: pointer; padding: 4px; position: absolute; right: 8px; top: 8px; }
+.install-steps { color: #14231d; display: grid; font-size: .84rem; gap: 6px; margin: 6px 0 0; padding-left: 18px; }
+.install-steps svg { vertical-align: -2px; }
+.install-hint { color: #8a5a00 !important; }
+.install-on { background: #e2f2e8; border-radius: 12px; color: #123d2d; font-weight: 700; margin: 0 0 12px; padding: 10px 12px; }
+.install-note { background: #fff7e0; border-radius: 12px; margin: 0 0 12px; padding: 10px 12px; }
+@media (max-width: 480px) { .install-card { grid-template-columns: auto 1fr; } .install-btn { grid-column: 1 / -1; justify-content: center; } }

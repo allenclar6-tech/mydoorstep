@@ -14,6 +14,7 @@ import { PaymentSettingsAdmin } from './admin/PaymentSettings'
 import { LocationsAdmin } from './admin/LocationsAdmin'
 import { PromosAdmin } from './admin/PromosAdmin'
 import { PushPrompt } from './notifications/PushPrompt'
+import { InstallApp } from './app/InstallApp'
 import { ConfirmDeliveredButton, DispatchBoard } from './admin/DispatchBoard'
 import { SessionSignOutButton, SignOutNotice } from './authControls'
 import { apiBase } from './config/apiBase'
@@ -82,7 +83,7 @@ function ActiveDeliveries() {
 }
 
 export function AdminPortal({ path, onLogout }) {
-  let content = <AdminHome extras={<PushPrompt who="admin" admin />} />
+  let content = <AdminHome extras={<><InstallApp who="admin" /><PushPrompt who="admin" admin /></>} />
   if (path === '/admin/deliveries') content = <ActiveDeliveries />
   if (path === '/admin/restaurants') content = <ApplicationManagement kind="Restaurants" type="restaurant" />
   if (path === '/admin/groceries') content = <ApplicationManagement kind="Groceries" type="grocery" />

@@ -7,9 +7,21 @@
     <meta name="description" content="DOORSTEP brings Sapele's best food to your door." />
     <link rel="icon" type="image/svg+xml" href="/doorstep-icon.svg?v=3" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=3" />
-    <link rel="manifest" href="/manifest.webmanifest?v=3" />
+    <link rel="manifest" href="/manifest.webmanifest?v=4" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="DOORSTEP" />
+    <script>
+      // Two installable apps from one site: /admin pages install as "DOORSTEP Admin", everything else as DOORSTEP.
+      if (location.pathname === '/admin' || location.pathname.indexOf('/admin/') === 0) {
+        document.querySelector('link[rel="manifest"]').href = '/admin.webmanifest?v=1'
+        document.querySelector('link[rel="apple-touch-icon"]').href = '/icons/admin-apple-touch-icon.png?v=1'
+        document.querySelector('meta[name="apple-mobile-web-app-title"]').content = 'DS Admin'
+        document.querySelector('meta[name="theme-color"]').content = '#0e4f3c'
+        document.title = 'DOORSTEP Admin'
+      }
+    </script>
     <title>DOORSTEP — Good food, closer to home</title>
   </head>
   <body>

@@ -27,6 +27,19 @@ const readToken = (key) => { try { return localStorage.getItem(key) } catch { re
  * ------------------------------------------------------------------------------------- */
 const stores = new Map()
 
+/**
+ * Unread count on the installed app's icon (Android, Windows, macOS, iOS 16.4+). The admin app shows the admin
+ * inbox; the public app shows the signed-in customer's, business's or rider's.
+ */
+function showAppBadge(tokenKey, count) {
+  try {
+    if (typeof navigator === 'undefined' || !('setAppBadge' in navigator)) return
+    const adminApp = window.location.pathname.startsWith('/admin')
+    if (adminApp !== (tokenKey === 'doorstep-admin-token')) return
+    ;(count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => undefined)
+  } catch { /* badges are a nicety */ }
+}
+
 function createStore(tokenKey) {
   let state = { items: [], unreadCount: 0, loaded: false, loading: false, nextCursor: null, error: '', toast: null }
   let subscribers = new Set()
@@ -36,7 +49,11 @@ function createStore(tokenKey) {
   let stopped = false
   const listeners = []
 
-  const set = (patch) => { state = { ...state, ...patch }; subscribers.forEach((notify) => notify()) }
+  const set = (patch) => {
+    state = { ...state, ...patch }
+    if ('unreadCount' in patch) showAppBadge(tokenKey, state.unreadCount)
+    subscribers.forEach((notify) => notify())
+  }
   const request = async (path, options = {}) => {
     const token = readToken(tokenKey)
     if (!token) throw Object.assign(new Error('signed out'), { status: 401 })

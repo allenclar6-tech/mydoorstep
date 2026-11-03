@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#faf8f2" />
+  <title>You’re offline — DOORSTEP</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { align-items: center; background: #faf8f2; color: #14231d; display: flex; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; justify-content: center; margin: 0; min-height: 100vh; padding: 24px 16px; }
+    main { max-width: 360px; text-align: center; }
+    .mark { align-items: center; background: #ffc244; border-radius: 28px; display: inline-flex; height: 88px; justify-content: center; margin-bottom: 20px; width: 88px; }
+    h1 { font-size: 1.5rem; margin: 0 0 8px; }
+    p { color: #3e4f47; line-height: 1.5; margin: 0 0 20px; }
+    button { background: #0e4f3c; border: 0; border-radius: 999px; color: #fff; cursor: pointer; font: inherit; font-weight: 700; min-height: 48px; padding: 0 28px; }
+    small { color: #5b6b63; display: block; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#14231d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M8.5 16.4a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 14 0"/><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M3 3l18 18"/></svg>
+    </div>
+    <h1>You’re offline</h1>
+    <p>DOORSTEP needs the internet to show stores, orders and deliveries. Check your data or Wi‑Fi, then try again.</p>
+    <button type="button" onclick="location.reload()">Try again</button>
+    <small>Orders you already placed are safe and keep going.</small>
+  </main>
+  <script>window.addEventListener('online', function () { location.reload() })</script>
+</body>
+</html>

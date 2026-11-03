@@ -2,6 +2,7 @@ import { RestaurantOrderBoard } from './live/RestaurantOrderBoard'
 import { PickupToggle } from './live/PickupToggle'
 import { SetupChecklist } from './partner/SetupChecklist'
 import { PushPrompt } from './notifications/PushPrompt'
+import { InstallApp } from './app/InstallApp'
 import './partnerAccount.css'
 import { WorkspaceInbox } from './notifications/NotificationCenter'
 import { ProfileCompletenessCard } from './account/ProfileCompleteness'
@@ -22,6 +23,7 @@ function Earnings() { return <Wallet kind="RESTAURANT" /> }
 function Today() {
   const grocery = usePartner().today?.store?.storeType === 'GROCERY'
   return <PartnerToday extras={<>
+    <InstallApp who="business" />
     <PushPrompt who="business" />
     <SetupChecklist grocery={grocery} />
     <WithdrawBanner earningsHref="/restaurant/earnings" title={grocery ? 'Store balance' : 'Your DOORSTEP balance'} />

@@ -1,0 +1,27 @@
+{
+  "id": "/admin/",
+  "name": "DOORSTEP Admin",
+  "short_name": "DS Admin",
+  "description": "Run DOORSTEP: orders, riders, partners, payouts and support.",
+  "lang": "en-NG",
+  "dir": "ltr",
+  "start_url": "/admin/dashboard?source=app",
+  "scope": "/admin/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0e4f3c",
+  "theme_color": "#0e4f3c",
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icons/admin-192.png?v=1", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/admin-512.png?v=1", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Live deliveries", "short_name": "Deliveries", "url": "/admin/deliveries?source=shortcut", "icons": [{ "src": "/icons/admin-192.png?v=1", "sizes": "192x192" }] },
+    { "name": "Orders", "short_name": "Orders", "url": "/admin/orders?source=shortcut", "icons": [{ "src": "/icons/admin-192.png?v=1", "sizes": "192x192" }] },
+    { "name": "Money and payouts", "short_name": "Money", "url": "/admin/finance?source=shortcut", "icons": [{ "src": "/icons/admin-192.png?v=1", "sizes": "192x192" }] },
+    { "name": "Help messages", "short_name": "Support", "url": "/admin/support?source=shortcut", "icons": [{ "src": "/icons/admin-192.png?v=1", "sizes": "192x192" }] }
+  ]
+}
