@@ -4,7 +4,7 @@ import { apiBase } from '../config/apiBase'
 import { SavedCardChoices, useSavedCards } from '../account/SavedCards'
 import { AddressSheet, EmptyState, ShopHeader } from './ShopKit'
 import { FeesInfo, readOrderType, writeOrderType } from './StorePage'
-import { authHeaders, buildOrderRequest, changeItem, currentAddress, etaText, naira, navigate, nairaWhole, placeOrder, saveTip, savedTip, token, useAddress, useCart, useCheckoutQuote, useDeliveryCheck, useHome } from './shopData'
+import { authHeaders, buildOrderRequest, changeItem, choicesText, lineKey, currentAddress, etaText, naira, navigate, nairaWhole, placeOrder, saveTip, savedTip, token, useAddress, useCart, useCheckoutQuote, useDeliveryCheck, useHome } from './shopData'
 
 const TIP_CHOICES = [0, 20_000, 30_000, 50_000]
 const hash = (text) => { let value = 0; for (let index = 0; index < text.length; index += 1) value = (value * 31 + text.charCodeAt(index)) | 0; return (value >>> 0).toString(36) }
@@ -128,9 +128,9 @@ export function CheckoutPage() {
 
       <section className="sp-card">
         <div className="sp-card-head"><h2>{cart[0].restaurantName}</h2>{cart[0].restaurantSlug && <button type="button" className="sp-link" onClick={() => navigate(`/store/${cart[0].restaurantSlug}`)}>Add more</button>}</div>
-        <ul className="sp-basket-items">{cart.map((item) => <li key={item.id}>
-          <div className="sp-stepper is-small"><button type="button" onClick={() => changeItem(item.id, -1)} aria-label={item.quantity === 1 ? `Remove ${item.name}` : `One less ${item.name}`}>{item.quantity === 1 ? <Trash2 size={14} /> : <Minus size={14} />}</button><span>{item.quantity}</span><button type="button" onClick={() => changeItem(item.id, 1)} aria-label={`One more ${item.name}`}><Plus size={14} /></button></div>
-          <span className="sp-basket-name"><b>{item.name}</b>{item.instructions && <small>“{item.instructions}”</small>}</span>
+        <ul className="sp-basket-items">{cart.map((item) => <li key={lineKey(item)}>
+          <div className="sp-stepper is-small"><button type="button" onClick={() => changeItem(lineKey(item), -1)} aria-label={item.quantity === 1 ? `Remove ${item.name}` : `One less ${item.name}`}>{item.quantity === 1 ? <Trash2 size={14} /> : <Minus size={14} />}</button><span>{item.quantity}</span><button type="button" onClick={() => changeItem(lineKey(item), 1)} aria-label={`One more ${item.name}`}><Plus size={14} /></button></div>
+          <span className="sp-basket-name"><b>{item.name}</b>{item.options?.length > 0 && <small className="sp-basket-choices">{choicesText(item.options)}</small>}{item.instructions && <small>“{item.instructions}”</small>}</span>
           <strong>{nairaWhole(item.price * item.quantity)}</strong>
         </li>)}</ul>
       </section>

@@ -45,6 +45,7 @@ import { createPushRouter } from './pushRoutes.js'
 import { remindUnpaidOrders, sendPendingPushes } from './push.js'
 import { parsePrepRange } from './customerApp.js'
 import { COVERAGE_BOUNDS, COVERAGE_LABEL, isCoveredPoint } from './coverage.js'
+import { optionGroupsInputSchema, priceSelections } from './menuOptions.js'
 import { createRefundRouter } from './refundRoutes.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -446,7 +447,7 @@ const customerRegistrationSchema = credentialsSchema.extend({
   termsAccepted: z.literal(true),
   password: z.string().min(10).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/),
 })
-export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional() })).min(1), paymentMethod: z.enum(['PAYSTACK', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']).default('PAYSTACK'), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), orderType: z.enum(['DELIVERY', 'PICKUP']).default('DELIVERY'), scheduledFor: z.string().max(40).optional().nullable(), tipMinor: z.number().int().min(0).max(500_000).optional(), promoCode: z.string().trim().max(40).optional().nullable() }).superRefine((value, context) => {
+export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional(), options: z.array(z.string().min(1).max(60)).max(40).optional() })).min(1).max(60), paymentMethod: z.enum(['PAYSTACK', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']).default('PAYSTACK'), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), orderType: z.enum(['DELIVERY', 'PICKUP']).default('DELIVERY'), scheduledFor: z.string().max(40).optional().nullable(), tipMinor: z.number().int().min(0).max(500_000).optional(), promoCode: z.string().trim().max(40).optional().nullable() }).superRefine((value, context) => {
   if ((value.latitude == null) !== (value.longitude == null)) context.addIssue({ code: 'custom', path: [value.latitude == null ? 'latitude' : 'longitude'], message: 'Both destination coordinates are required.' })
 })
 export const addressSchema = z.object({ label: z.string().min(1).max(40), addressLine: z.string().min(5).max(240), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), cityId: z.string().min(1).optional() }).superRefine((value, context) => {
@@ -1216,7 +1217,7 @@ app.post('/api/orders', requireUser, async (request, response) => {
       const address = quote.address || (pickup ? { addressLine: `Pickup at ${quote.storeAddress}`, landmark: null, latitude: null, longitude: null } : null) || await transaction.address.create({ data: { userId: request.user.id, cityId: quote.serviceAreaCityId, label: 'Checkout address', addressLine: result.data.addressLine, landmark: result.data.landmark, latitude: result.data.latitude, longitude: result.data.longitude } })
       const transferExpiry = result.data.paymentMethod === 'BANK_TRANSFER' && paymentSettings.bankTransfer.expiryMinutes ? new Date(Date.now() + paymentSettings.bankTransfer.expiryMinutes * 60_000) : null
       const transferInstructions = result.data.paymentMethod === 'BANK_TRANSFER' ? { bankName: paymentSettings.bankTransfer.bankName, accountName: paymentSettings.bankTransfer.accountName, accountNumber: paymentSettings.bankTransfer.accountNumber, message: paymentSettings.bankTransfer.instructions } : null
-      const created = await transaction.order.create({ data: { ...finance, orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, tipMinor: quote.tipMinor, discountMinor: quote.discountMinor, promotionId: quote.promotion?.id || null, promoCode: quote.promotion?.code || null, orderType: quote.orderType, scheduledFor: quote.scheduledFor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
+      const created = await transaction.order.create({ data: { ...finance, orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, tipMinor: quote.tipMinor, discountMinor: quote.discountMinor, promotionId: quote.promotion?.id || null, promoCode: quote.promotion?.code || null, orderType: quote.orderType, scheduledFor: quote.scheduledFor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions, ...(item.options?.length ? { optionsSnapshot: item.options } : {}) })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
       if (created.payment.method === 'BANK_TRANSFER') await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Bank transfer to confirm', body: `Order ${created.orderNumber} (${'₦'}${(created.totalMinor / 100).toLocaleString('en-NG')}) will be paid by bank transfer, reference ${created.payment.reference}. Confirm it once the money arrives.`, link: '/admin/payments' })
       return created
     })
@@ -1782,6 +1783,46 @@ app.patch('/api/restaurant/menu/:itemId', requireUser, async (request, response)
   try { const updated = await prisma.menuItem.updateMany({ where: { id: request.params.itemId, restaurantId: membership.restaurantId }, data: result.data }); return response.json({ updated: updated.count === 1 }) } catch { return response.status(503).json({ error: 'RESTAURANT_MENU_SERVICE_UNAVAILABLE' }) }
 })
 
+// Choices on one dish (size, protein, extras), Glovo-style. GET reads them; PUT replaces the whole set. Orders keep
+// their own copy of what was chosen, so editing choices never changes past orders.
+async function ownMenuItem(request) {
+  if (request.user.role !== 'RESTAURANT') return { status: 403, error: 'RESTAURANT_ROLE_REQUIRED' }
+  const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
+  if (!membership) return { status: 403, error: 'RESTAURANT_ACCESS_REQUIRED' }
+  const item = await prisma.menuItem.findFirst({ where: { id: request.params.itemId, restaurantId: membership.restaurantId }, select: { id: true, name: true } })
+  return item ? { item } : { status: 404, error: 'MENU_ITEM_NOT_FOUND' }
+}
+const optionGroupsOut = (groups) => groups.sort((a, b) => a.sortOrder - b.sortOrder).map((group) => ({ id: group.id, name: group.name, required: group.required, maxSelect: group.maxSelect, options: group.options.sort((a, b) => a.sortOrder - b.sortOrder).map((option) => ({ id: option.id, name: option.name, priceMinor: option.priceMinor, active: option.active })) }))
+
+app.get('/api/restaurant/menu/:itemId/options', requireUser, async (request, response) => {
+  try {
+    const own = await ownMenuItem(request)
+    if (!own.item) return response.status(own.status).json({ error: own.error })
+    const groups = await prisma.menuOptionGroup.findMany({ where: { menuItemId: own.item.id }, include: { options: true } })
+    return response.json({ item: own.item, groups: optionGroupsOut(groups) })
+  } catch { return response.status(503).json({ error: 'RESTAURANT_MENU_SERVICE_UNAVAILABLE' }) }
+})
+
+app.put('/api/restaurant/menu/:itemId/options', requireUser, async (request, response) => {
+  const result = optionGroupsInputSchema.safeParse(request.body)
+  if (!result.success) return response.status(400).json({ error: 'INVALID_MENU_OPTIONS', message: result.error.issues[0]?.message || 'Check the choices and try again.' })
+  try {
+    const own = await ownMenuItem(request)
+    if (!own.item) return response.status(own.status).json({ error: own.error })
+    const groups = await prisma.$transaction(async (transaction) => {
+      await transaction.menuOptionGroup.deleteMany({ where: { menuItemId: own.item.id } })
+      for (const [index, group] of result.data.groups.entries()) {
+        await transaction.menuOptionGroup.create({ data: {
+          menuItemId: own.item.id, name: group.name, required: group.required, minSelect: group.required ? 1 : 0, maxSelect: group.maxSelect, sortOrder: index,
+          options: { create: group.options.map((option, position) => ({ menuItemId: own.item.id, name: option.name, priceMinor: option.priceMinor, active: option.active, sortOrder: position })) },
+        } })
+      }
+      return transaction.menuOptionGroup.findMany({ where: { menuItemId: own.item.id }, include: { options: true } })
+    })
+    return response.json({ item: own.item, groups: optionGroupsOut(groups) })
+  } catch { return response.status(503).json({ error: 'RESTAURANT_MENU_SERVICE_UNAVAILABLE' }) }
+})
+
 app.get('/api/restaurant/summary', requireUser, async (request, response) => {
   if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
   const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
@@ -2191,7 +2232,7 @@ async function quoteOrder(input) {
   const [restaurant, address, menuItems, activeServiceArea] = await Promise.all([
     prisma.restaurant.findUnique({ where: { id: input.restaurantId }, include: { city: { include: { serviceAreas: true } }, application: { select: { deliveryPreference: true } } } }),
     prisma.address.findFirst({ where: { id: input.addressId, userId: input.customerId } }),
-    prisma.menuItem.findMany({ where: { id: { in: input.items.map((item) => item.menuItemId) }, restaurantId: input.restaurantId, available: true } }),
+    prisma.menuItem.findMany({ where: { id: { in: input.items.map((item) => item.menuItemId) }, restaurantId: input.restaurantId, available: true }, include: { optionGroups: { include: { options: true } } } }),
     prisma.serviceArea.findFirst({ where: { enabled: true }, orderBy: { createdAt: 'asc' } }),
   ])
   if (!restaurant || restaurant.status !== 'APPROVED') throw Object.assign(new Error('Restaurant is not available.'), { status: 409, code: 'RESTAURANT_UNAVAILABLE' })
@@ -2208,8 +2249,13 @@ async function quoteOrder(input) {
   if (!pickup && !address && !input.addressLine) throw Object.assign(new Error('Delivery address is required.'), { status: 400, code: 'ADDRESS_REQUIRED' })
   const schedule = checkSchedule(input.scheduledFor)
   if (schedule.problem) throw Object.assign(new Error(schedule.problem), { status: 400, code: 'INVALID_SCHEDULE' })
-  if (menuItems.length !== input.items.length) throw Object.assign(new Error('One or more menu items are unavailable.'), { status: 409, code: 'MENU_ITEM_UNAVAILABLE' })
-  const items = input.items.map((inputItem) => { const menuItem = menuItems.find((item) => item.id === inputItem.menuItemId); return { menuItemId: menuItem.id, name: menuItem.name, unitPriceMinor: menuItem.priceMinor, quantity: inputItem.quantity, instructions: inputItem.instructions } })
+  if (menuItems.length !== new Set(input.items.map((item) => item.menuItemId)).size) throw Object.assign(new Error('One or more menu items are unavailable.'), { status: 409, code: 'MENU_ITEM_UNAVAILABLE' })
+  // Options are priced from the database (the customer only says which ones), and a required choice can't be skipped.
+  const items = input.items.map((inputItem) => {
+    const menuItem = menuItems.find((item) => item.id === inputItem.menuItemId)
+    const { extraMinor, snapshot } = priceSelections(menuItem, inputItem.options || [])
+    return { menuItemId: menuItem.id, name: menuItem.name, unitPriceMinor: menuItem.priceMinor + extraMinor, quantity: inputItem.quantity, instructions: inputItem.instructions, options: snapshot }
+  })
   const subtotalMinor = items.reduce((sum, item) => sum + item.unitPriceMinor * item.quantity, 0)
   if (subtotalMinor < restaurant.minimumOrderMinor) throw Object.assign(new Error('Order total is below this business’s minimum order.'), { status: 409, code: 'MINIMUM_ORDER_NOT_MET' })
   // Distance-based Sapele pricing once DOORSTEP has published it (Admin › Delivery pricing); until then the

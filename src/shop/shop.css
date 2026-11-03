@@ -1401,3 +1401,15 @@ html[data-shop-theme='dark'] .cd-field.is-paystack > button { background: rgba(2
 .dl-text svg { color: #0a7a4f; flex: 0 0 auto; margin-top: 3px; }
 .dl-links { color: var(--sp-muted); font-size: .88rem; margin: 14px 0 0; }
 .dl-links a { color: var(--sp-ink); font-weight: 700; }
+
+/* Item choices (sizes, proteins, extras) in the item sheet */
+.sp-choice-group { border: 0; display: grid; gap: 6px; margin: 14px 0 0; padding: 0; }
+.sp-choice-group legend { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; margin-bottom: 4px; padding: 0; width: 100%; }
+.sp-choice-group legend small { color: var(--sp-soft); font-size: .76rem; font-weight: 700; }
+.sp-choice-group legend small.is-needed { color: var(--sp-accent, #d9480f); }
+.sp-choice { align-items: center; border: 1px solid var(--sp-line, rgba(0,0,0,.12)); border-radius: 12px; cursor: pointer; display: grid; gap: 10px; grid-template-columns: auto 1fr auto; padding: 10px 12px; }
+.sp-choice.is-on { border-color: currentColor; font-weight: 700; }
+.sp-choice.is-off { cursor: not-allowed; opacity: .5; }
+.sp-choice input { accent-color: currentColor; height: 18px; margin: 0; width: 18px; }
+.sp-choice em { color: var(--sp-soft); font-size: .85rem; font-style: normal; }
+.sp-basket-choices { color: var(--sp-soft); display: block; font-size: .78rem; }

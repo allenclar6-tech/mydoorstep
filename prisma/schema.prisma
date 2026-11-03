@@ -505,6 +505,7 @@ model MenuItem {
   available    Boolean       @default(true)
   prepMinutes  Int?
   options      MenuOption[]
+  optionGroups MenuOptionGroup[]
   orderItems   OrderItem[]
   favorites    Favorite[]
 
@@ -515,9 +516,30 @@ model MenuOption {
   id         String   @id @default(cuid())
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  /// The choice group this option belongs to (e.g. "Choose your protein").
+  groupId    String?
+  group      MenuOptionGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
   name       String
   priceMinor Int      @default(0)
   active     Boolean  @default(true)
+  sortOrder  Int      @default(0)
+
+  @@index([groupId])
+}
+
+/// A set of choices on a dish, like Glovo: "Choose your protein" (required, pick 1) or "Extras" (optional, up to 3).
+model MenuOptionGroup {
+  id         String       @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem     @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name       String
+  required   Boolean      @default(false)
+  minSelect  Int          @default(0)
+  maxSelect  Int          @default(1)
+  sortOrder  Int          @default(0)
+  options    MenuOption[]
+
+  @@index([menuItemId])
 }
 
 model Order {

@@ -124,18 +124,34 @@ export function useCart() {
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   return { cart, count, subtotal }
 }
-/** Adds one item. Returns 'OTHER_STORE' (and changes nothing) when the basket is from another store, unless `replace`. */
-export function addItem(store, item, { replace = false } = {}) {
+/** A basket line: the dish plus the choices made ("Jollof · Chicken" and "Jollof · Beef" are separate lines). */
+export const lineKey = (entry) => entry.key || entry.id
+export const hasChoices = (item) => Boolean(item?.optionGroups?.length)
+/** "Chicken, Extra plantain (+₦300)" for the basket and checkout. */
+export const choicesText = (options) => (options || []).map((option) => option.price ? `${option.name} (+₦${Number(option.price).toLocaleString('en-NG')})` : option.name).join(', ')
+
+/**
+ * Adds a dish (with any choices made in the item sheet). Returns 'OTHER_STORE' (and changes nothing) when the basket
+ * is from another store, unless `replace`. The price shown includes the choices; the server re-prices everything.
+ */
+export function addItem(store, item, { replace = false, options = [], quantity = 1, note = '' } = {}) {
   const cart = loadCart()
   if (cart.length && cart[0].restaurantId !== store.id && !replace) return 'OTHER_STORE'
   const start = cart.length && cart[0].restaurantId !== store.id ? [] : cart
-  const existing = start.find((entry) => entry.id === item.id)
-  const next = existing ? start.map((entry) => entry.id === item.id ? { ...entry, quantity: entry.quantity + 1 } : entry) : [...start, { id: item.id, name: item.name, price: item.price, image: item.image, description: item.description, quantity: 1, restaurantId: store.id, restaurantName: store.name, restaurantSlug: store.slug }]
+  const picked = options.map((option) => ({ id: option.id, name: option.name, price: Number(option.price) || 0, group: option.group }))
+  const ids = picked.map((option) => option.id).sort()
+  const key = ids.length ? `${item.id}|${ids.join(',')}` : item.id
+  const price = item.price + picked.reduce((sum, option) => sum + option.price, 0)
+  const instructions = String(note || '').slice(0, 200)
+  const existing = start.find((entry) => lineKey(entry) === key)
+  const next = existing
+    ? start.map((entry) => lineKey(entry) === key ? { ...entry, quantity: Math.min(50, entry.quantity + quantity), ...(instructions ? { instructions } : {}) } : entry)
+    : [...start, { key, id: item.id, name: item.name, price, options: picked, image: item.image, description: item.description, quantity: Math.min(50, quantity), ...(instructions ? { instructions } : {}), restaurantId: store.id, restaurantName: store.name, restaurantSlug: store.slug }]
   saveCart(next)
   return 'ADDED'
 }
-export function changeItem(id, delta) { saveCart(loadCart().map((entry) => entry.id === id ? { ...entry, quantity: entry.quantity + delta } : entry).filter((entry) => entry.quantity > 0)) }
-export function setItemNote(id, instructions) { saveCart(loadCart().map((entry) => entry.id === id ? { ...entry, instructions: instructions.slice(0, 200) } : entry)) }
+export function changeItem(key, delta) { saveCart(loadCart().map((entry) => lineKey(entry) === key ? { ...entry, quantity: Math.min(50, entry.quantity + delta) } : entry).filter((entry) => entry.quantity > 0)) }
+export function setItemNote(key, instructions) { saveCart(loadCart().map((entry) => lineKey(entry) === key ? { ...entry, instructions: instructions.slice(0, 200) } : entry)) }
 export function clearCart() { saveCart([]) }
 
 // Address --------------------------------------------------------------------------------------------------------
@@ -212,7 +228,7 @@ export const saveTip = (minor) => write('doorstep-saved-tip', minor ? String(min
 // Checkout quote -----------------------------------------------------------------------------------------------------
 export function buildOrderRequest(cart, { orderType, address, scheduledFor, tipMinor, promoCode, landmark, phone, paymentMethod = 'PAYSTACK' }) {
   if (!cart.length) return null
-  const base = { restaurantId: String(cart[0].restaurantId), items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity, ...(item.instructions ? { instructions: item.instructions } : {}) })), paymentMethod, orderType, tipMinor: orderType === 'PICKUP' ? 0 : tipMinor || 0, ...(scheduledFor ? { scheduledFor } : {}), ...(promoCode ? { promoCode } : {}), ...(phone ? { phone } : {}), ...(landmark ? { landmark } : {}) }
+  const base = { restaurantId: String(cart[0].restaurantId), items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity, ...(item.instructions ? { instructions: item.instructions } : {}), ...(item.options?.length ? { options: item.options.map((option) => option.id) } : {}) })), paymentMethod, orderType, tipMinor: orderType === 'PICKUP' ? 0 : tipMinor || 0, ...(scheduledFor ? { scheduledFor } : {}), ...(promoCode ? { promoCode } : {}), ...(phone ? { phone } : {}), ...(landmark ? { landmark } : {}) }
   if (orderType === 'PICKUP') return base
   const line = String(address.label || '').trim()
   if (!address.point && line.length < 5) return null

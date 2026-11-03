@@ -312,7 +312,7 @@ export function DesktopBasket() {
     <h2>Your basket</h2>
     {count === 0 ? <p className="sp-note">Add items from the menu and they’ll appear here.</p> : <>
       <small className="sp-dbasket-store">{cart[0].restaurantName}</small>
-      <ul>{cart.map((item) => <li key={item.id}><span className="sp-dbasket-qty">{item.quantity}×</span><span>{item.name}</span><b>₦{Math.round(item.price * item.quantity).toLocaleString('en-NG')}</b></li>)}</ul>
+      <ul>{cart.map((item) => <li key={item.key || item.id}><span className="sp-dbasket-qty">{item.quantity}×</span><span>{item.name}{item.options?.length > 0 && <small className="sp-basket-choices">{item.options.map((option) => option.name).join(', ')}</small>}</span><b>₦{Math.round(item.price * item.quantity).toLocaleString('en-NG')}</b></li>)}</ul>
       <div className="sp-dbasket-total"><span>Products</span><b>₦{Math.round(subtotal).toLocaleString('en-NG')}</b></div>
       <a className="sp-primary is-wide" href="/checkout" onClick={link('/checkout')}>Go to checkout</a>
       <small className="sp-note">Delivery and service fees are shown at checkout.</small>

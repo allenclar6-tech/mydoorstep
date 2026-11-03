@@ -6,7 +6,7 @@ import { toast } from './Toaster'
 import { CATEGORY_ART } from './Illustrations'
 import { freeDeliveryFor } from './ShopHome'
 import { itemRating, RateSheet, ReviewCard, ReviewsSection, ReviewsSheet, StoreFactsRow, useReviewable, useStoreDeliveryFee } from './StoreReviews'
-import { addItem, authHeaders, changeItem, etaText, navigate, nairaWhole, ratingPercent, setItemNote, token, useCart, useHome, useStorePage } from './shopData'
+import { addItem, authHeaders, changeItem, etaText, hasChoices, lineKey, navigate, nairaWhole, ratingPercent, token, useCart, useHome, useStorePage } from './shopData'
 
 export const ORDER_TYPE_KEY = 'doorstep-order-type'
 export const readOrderType = () => { try { return localStorage.getItem(ORDER_TYPE_KEY) === 'PICKUP' ? 'PICKUP' : 'DELIVERY' } catch { return 'DELIVERY' } }
@@ -25,9 +25,37 @@ export function FeesInfo({ onClose }) {
 }
 
 
+/** One group of choices in the item sheet: a radio list when only one can be picked, tick boxes otherwise. */
+function ChoiceGroup({ group, picked, onToggle }) {
+  const single = group.max === 1
+  const count = picked.length
+  const hint = group.required ? (single ? 'Required · choose 1' : `Required · choose up to ${group.max}`) : (single ? 'Optional · choose 1' : `Optional · up to ${group.max}`)
+  return <fieldset className="sp-choice-group">
+    <legend><b>{group.name}</b><small className={group.required && count === 0 ? 'is-needed' : ''}>{hint}</small></legend>
+    {group.options.map((option) => {
+      const on = picked.includes(option.id)
+      const full = !single && !on && count >= group.max
+      return <label key={option.id} className={`sp-choice${on ? ' is-on' : ''}${full ? ' is-off' : ''}`}>
+        <input type={single ? 'radio' : 'checkbox'} name={`group-${group.id}`} checked={on} disabled={full} onChange={() => onToggle(group, option.id)} />
+        <span>{option.name}</span>{option.price > 0 && <em>+{nairaWhole(option.price)}</em>}
+      </label>
+    })}
+  </fieldset>
+}
+
 function ItemSheet({ item, store, onClose, onAdd, rating, reviews = [], onReviews }) {
   const [quantity, setQuantity] = useState(1)
   const [note, setNote] = useState('')
+  const groups = item.optionGroups || []
+  const [chosen, setChosen] = useState({})
+  const toggle = (group, id) => setChosen((current) => {
+    const list = current[group.id] || []
+    if (group.max === 1) return { ...current, [group.id]: list.includes(id) && !group.required ? [] : [id] }
+    return { ...current, [group.id]: list.includes(id) ? list.filter((entry) => entry !== id) : list.length < group.max ? [...list, id] : list }
+  })
+  const options = groups.flatMap((group) => group.options.filter((option) => (chosen[group.id] || []).includes(option.id)).map((option) => ({ ...option, group: group.name })))
+  const missing = groups.find((group) => group.required && !(chosen[group.id] || []).length)
+  const unit = item.price + options.reduce((sum, option) => sum + option.price, 0)
   return <Sheet title={item.name} onClose={onClose} className="sp-item-sheet">
     {item.image && <img className="sp-item-hero" src={item.image} alt="" />}
     {item.description && <p className="sp-item-desc">{item.description}</p>}
@@ -35,10 +63,11 @@ function ItemSheet({ item, store, onClose, onAdd, rating, reviews = [], onReview
       <div className="rv-section-head"><h3>{rating ? <><ThumbsUp size={16} aria-hidden="true" /> {rating.percent}% ({rating.total})</> : 'What people say'}</h3><button type="button" className="rv-link" onClick={onReviews}>Read reviews</button></div>
       {reviews.slice(0, 2).map((review) => <ReviewCard key={review.id} review={review} compact />)}
     </section>}
+    {groups.map((group) => <ChoiceGroup key={group.id} group={group} picked={chosen[group.id] || []} onToggle={toggle} />)}
     <label className="sp-field">Note for {store.name} (optional)<textarea rows={2} maxLength={200} value={note} onChange={(event) => setNote(event.target.value)} placeholder="e.g. no pepper, extra sauce" /></label>
     <div className="sp-item-actions">
       <div className="sp-stepper is-big"><button type="button" onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Fewer"><Minus size={17} /></button><span>{quantity}</span><button type="button" onClick={() => setQuantity(Math.min(50, quantity + 1))} aria-label="More"><Plus size={17} /></button></div>
-      <button type="button" className="sp-primary is-wide" onClick={() => onAdd(item, quantity, note)}>Add {quantity} · {nairaWhole(item.price * quantity)}</button>
+      <button type="button" className="sp-primary is-wide" disabled={Boolean(missing)} onClick={() => onAdd(item, { quantity, note, options })}>{missing ? `Choose ${missing.name.toLowerCase()}` : `Add ${quantity} · ${nairaWhole(unit * quantity)}`}</button>
     </div>
   </Sheet>
 }
@@ -123,17 +152,21 @@ export function StorePage({ slug }) {
   if (page.status === 'loading') return <div className="sp-screen"><div className="sp-store-hero is-loading" /><main className="sp-main"><SkeletonList rows={5} /></main></div>
   if (page.status === 'error') return <div className="sp-screen"><header className="sp-header"><button type="button" className="sp-icon-btn" onClick={() => navigate('/')} aria-label="Back"><ArrowLeft size={20} /></button><h1 className="sp-header-title">Store</h1><span className="sp-header-spacer" /></header><main className="sp-main"><EmptyState icon={Store} title="Store unavailable" body={page.error} action={<button type="button" className="sp-primary" onClick={() => navigate('/discover')}>Find another store</button>} /></main></div>
 
-  const quantityOf = (id) => cart.find((entry) => entry.id === id && entry.restaurantId === store.id)?.quantity || 0
+  // A dish with choices can sit on several basket lines; the badge shows them all together.
+  const quantityOf = (id) => cart.filter((entry) => entry.id === id && entry.restaurantId === store.id).reduce((sum, entry) => sum + entry.quantity, 0)
+  const lastLine = (id) => [...cart].reverse().find((entry) => entry.id === id && entry.restaurantId === store.id)
   const free = home.data ? freeDeliveryFor(store, home.data) : false
   const percent = ratingPercent(store)
-  const add = (item, quantity = 1, note = '', replace = false) => {
-    const result = addItem(store, item, { replace })
-    if (result === 'OTHER_STORE') { setPending({ item, quantity, note }); return }
-    for (let index = 1; index < quantity; index += 1) changeItem(item.id, 1)
-    if (note) setItemNote(item.id, note)
+  const add = (item, { quantity = 1, note = '', options = [] } = {}, replace = false) => {
+    const result = addItem(store, item, { replace, quantity, note, options })
+    if (result === 'OTHER_STORE') { setPending({ item, choice: { quantity, note, options } }); return }
     toast(`${quantity > 1 ? `${quantity} × ` : ''}${item.name} added`)
     setSheet(null)
   }
+  // Dishes with choices open the sheet so the customer picks them (no blind adds).
+  const quickAdd = (item) => (hasChoices(item) ? setSheet({ kind: 'item', item }) : add(item))
+  const plusOne = (item) => (hasChoices(item) ? setSheet({ kind: 'item', item }) : quantityOf(item.id) ? changeItem(lineKey(lastLine(item.id)), 1) : add(item))
+  const minusOne = (item) => { const line = lastLine(item.id); if (line) changeItem(lineKey(line), -1) }
   const chooseType = (value) => { setOrderType(value); writeOrderType(value) }
   const scrollTo = (name) => { setActiveTab(name); sectionRefs.current[name]?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
   const share = () => { const url = window.location.href.split('#')[0]; if (navigator.share) navigator.share({ title: store.name, url }).catch(() => undefined); else navigator.clipboard?.writeText(url).catch(() => undefined) }
@@ -187,12 +220,12 @@ export function StorePage({ slug }) {
           <h2>Top sellers</h2>
           <ul className="sp-top-sellers">{topSellers.map((item) => <li key={item.id}>
             <button type="button" className="sp-top-card" onClick={() => setSheet({ kind: 'item', item })}>{item.image ? <img src={item.image} alt="" loading="lazy" /> : <span className="sp-item-noimg" aria-hidden="true" />}<b>{item.name}</b><strong>{nairaWhole(item.price)}</strong></button>
-            <button type="button" className="sp-add is-floating" onClick={() => add(item)} aria-label={`Add ${item.name}`}>{quantityOf(item.id) ? quantityOf(item.id) : <Plus size={17} />}</button>
+            <button type="button" className="sp-add is-floating" onClick={() => quickAdd(item)} aria-label={`Add ${item.name}`}>{quantityOf(item.id) ? quantityOf(item.id) : <Plus size={17} />}</button>
           </li>)}</ul>
         </section>}
         {sections.map(([name, items]) => <section key={name} className="sp-menu-section" ref={(node) => { sectionRefs.current[name] = node }}>
           <h2>{name}</h2>
-          <ul className="sp-items">{items.map((item) => <ItemRow key={item.id} item={item} rating={itemRating(page.itemStats, item.id)} quantity={quantityOf(item.id)} onOpen={() => setSheet({ kind: 'item', item })} onPlus={() => (quantityOf(item.id) ? changeItem(item.id, 1) : add(item))} onMinus={() => changeItem(item.id, -1)} />)}</ul>
+          <ul className="sp-items">{items.map((item) => <ItemRow key={item.id} item={item} rating={itemRating(page.itemStats, item.id)} quantity={quantityOf(item.id)} onOpen={() => setSheet({ kind: 'item', item })} onPlus={() => plusOne(item)} onMinus={() => minusOne(item)} />)}</ul>
         </section>)}
         {query && sections.length === 0 && <EmptyState icon={Search} title="No items match" body={`Nothing called “${query}” here.`} />}
       </>}
@@ -202,6 +235,6 @@ export function StorePage({ slug }) {
     {sheet?.kind === 'reviews' && <ReviewsSheet store={store} item={sheet.item} onClose={() => setSheet(null)} canRate={!sheet.item && reviewable.length > 0} onRate={() => setSheet({ kind: 'rate', order: reviewable[0] })} />}
     {sheet?.kind === 'rate' && <RateSheet store={store} order={sheet.order} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reloadReviewable() }} />}
     {sheet?.kind === 'item' && <ItemSheet item={sheet.item} store={store} onClose={() => setSheet(null)} onAdd={add} rating={itemRating(page.itemStats, sheet.item.id)} reviews={page.reviews.filter((review) => review.items.some((entry) => entry.menuItemId === sheet.item.id))} onReviews={() => setSheet({ kind: 'reviews', item: sheet.item })} />}
-    {pending && <ReplaceSheet current={cart[0]?.restaurantName} store={store} onCancel={() => setPending(null)} onReplace={() => { const next = pending; setPending(null); add(next.item, next.quantity, next.note, true) }} />}
+    {pending && <ReplaceSheet current={cart[0]?.restaurantName} store={store} onCancel={() => setPending(null)} onReplace={() => { const next = pending; setPending(null); add(next.item, next.choice, true) }} />}
   </div>
 }

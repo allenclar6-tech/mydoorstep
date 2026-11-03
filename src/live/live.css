@@ -186,3 +186,5 @@ html body .ro-card h2 { color: #fff; font-size: 1.35rem; letter-spacing: -.01em;
 .rb-switch span { background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.2); display: block; height: 22px; transition: transform .15s; width: 22px; }
 .rb-switch.is-on { background: var(--t-green-600, #007c63); }
 .rb-switch.is-on span { transform: translateX(20px); }
+
+.rb-choices { display: block; font-size: .82rem; font-weight: 700; margin-left: 1.6em; opacity: .8; }

@@ -75,7 +75,7 @@ function OrderCard({ order, onChanged }) {
       {order.scheduledFor && <span className="rb-tag is-scheduled"><CalendarClock size={13} aria-hidden="true" />{order.orderType === 'PICKUP' ? 'Collect' : 'Deliver'} {scheduledText(order.scheduledFor)}</span>}
       {order.tipMinor > 0 && order.orderType !== 'PICKUP' && <span className="rb-tag is-tip"><HandHeart size={13} aria-hidden="true" />Rider tip {formatNaira(order.tipMinor / 100)}</span>}
     </div>}
-    <ul className="rb-items">{items.map((item) => <li key={item.id}><b>{item.quantity}×</b> {item.nameSnapshot}{item.instructions && <em> — {item.instructions}</em>}</li>)}</ul>
+    <ul className="rb-items">{items.map((item) => <li key={item.id}><b>{item.quantity}×</b> {item.nameSnapshot}{Array.isArray(item.optionsSnapshot) && item.optionsSnapshot.length > 0 && <small className="rb-choices">{item.optionsSnapshot.map((option) => option.name).join(', ')}</small>}{item.instructions && <em> — {item.instructions}</em>}</li>)}</ul>
     {order.landmarkSnapshot && <p className="rb-note">Landmark: {order.landmarkSnapshot}</p>}
     {finished && <div className="rb-done-row">
       <span className={`rb-done-status is-${order.status.toLowerCase()}`}>{order.status === 'DELIVERED' && order.orderType === 'PICKUP' ? 'Collected' : FINISHED_LABEL[order.status]}</span>

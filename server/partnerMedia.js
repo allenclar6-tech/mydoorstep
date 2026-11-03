@@ -1,6 +1,7 @@
 import multer from 'multer'
 import sharp from 'sharp'
 import { isOwnPrivateKey, readPrivateDocument, removePrivateDocument, storePrivateDocument } from './uploadService.js'
+import { publicOptionGroups } from './menuOptions.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } }).single('image')
 const menuPrefix = 'private/restaurant-media/'
@@ -19,6 +20,8 @@ export function publicMenuItems(restaurant) {
     price: Math.round(item.priceMinor / 100),
     image: menuMediaUrl(item) || null,
     category: item.categoryName,
+    // Choice groups (size, protein, extras) when the query loaded them; the item sheet shows these before adding.
+    ...(item.optionGroups ? { optionGroups: publicOptionGroups(item) } : {}),
   }))
 }
 

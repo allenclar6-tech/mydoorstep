@@ -27,3 +27,16 @@
 .menu-photo-pick > span:nth-child(2) { display: grid; gap: 2px; }
 .menu-photo-pick small { color: #5b6b63; font-weight: 500; }
 .menu-photo-pick input { inset: 0; opacity: 0; position: absolute; cursor: pointer; }
+
+/* Choices & extras editor on each menu item */
+.menu-choices { border: 1px solid rgba(0,0,0,.12); border-radius: 14px; display: grid; gap: 10px; margin: 10px 0; padding: 12px; }
+.menu-choices-head { align-items: center; display: flex; justify-content: space-between; }
+.menu-choices-hint { font-size: .85rem; margin: 0; opacity: .75; }
+.menu-choice-group { border: 1px dashed rgba(0,0,0,.18); border-radius: 12px; display: grid; gap: 8px; margin: 0; padding: 10px; }
+.menu-choice-group label { display: grid; font-size: .85rem; font-weight: 700; gap: 4px; }
+.menu-choice-rules { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
+.menu-choice-rules input[type="number"] { width: 70px; }
+.menu-choice-row { align-items: center; display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) 90px auto auto; }
+.menu-choice-row input { min-width: 0; }
+.menu-choice-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+@media (max-width: 480px) { .menu-choice-row { grid-template-columns: minmax(0, 1fr) 80px; } }

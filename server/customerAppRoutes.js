@@ -87,7 +87,7 @@ export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, pub
   // One store page: menu, best sellers (from real orders), recent reviews and the fee facts.
   router.get('/app/stores/:slug', async (request, response) => {
     try {
-      const restaurant = await prisma.restaurant.findFirst({ where: { slug: request.params.slug, status: 'APPROVED' }, include: { city: { include: { serviceAreas: true } }, users: { where: { role: 'OWNER' }, orderBy: { createdAt: 'asc' }, select: { userId: true, user: { select: { profileImageKey: true } } } }, menuItems: { where: { categoryId: null, available: true } }, categories: { include: { items: { where: { available: true } } } } } })
+      const restaurant = await prisma.restaurant.findFirst({ where: { slug: request.params.slug, status: 'APPROVED' }, include: { city: { include: { serviceAreas: true } }, users: { where: { role: 'OWNER' }, orderBy: { createdAt: 'asc' }, select: { userId: true, user: { select: { profileImageKey: true } } } }, menuItems: { where: { categoryId: null, available: true }, include: { optionGroups: { include: { options: { where: { active: true } } } } } }, categories: { include: { items: { where: { available: true }, include: { optionGroups: { include: { options: { where: { active: true } } } } } } } } } })
       if (!restaurant) return response.status(404).json({ error: 'STORE_NOT_FOUND' })
       const since = new Date(Date.now() - 60 * DAY)
       const [sellers, reviews, orders30] = await Promise.all([
