@@ -338,6 +338,13 @@ export function NotificationBell({ tokenKey = 'doorstep-token', className = 'nc-
   </>
 }
 
+/** Just the drop-down toast, for screens without a bell (the customer shop): new order updates pop in from the top. */
+export function LiveNotificationToast({ tokenKey = 'doorstep-token' }) {
+  const signedIn = Boolean(readToken(tokenKey))
+  const { toast, dismissToast } = useNotifications(tokenKey, signedIn)
+  return signedIn ? <NotificationToast toast={toast} onClose={dismissToast} /> : null
+}
+
 /** Full-page inbox for /account/notifications and the workspace notification screens. */
 export function NotificationsScreen({ tokenKey = 'doorstep-token', title = 'Notifications', subtitle = 'Orders, deliveries, payments and account updates in one place.', children = null }) {
   return <main className="route-page account-app nc-screen">

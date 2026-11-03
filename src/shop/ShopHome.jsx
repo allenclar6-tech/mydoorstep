@@ -3,7 +3,6 @@ import { Bike, ChefHat, ChevronRight, PackageCheck, Store as StoreIcon } from 'l
 import { ORDER_STATUS_LABELS } from '../orders/OrderActions'
 import { AddressSheet, Band, BandSearch, BellButton, Bubble, CartButton, Logo, CATEGORY_TILES, categoryArt, EmptyState, OutOfArea, Rail, SectionHead, SkeletonList, StoreTile, TabBar, AddressPill } from './ShopKit'
 import { Parcel, PercentTag, ShoppingBag as BagArt, Burger, Basket } from './Illustrations'
-import { PushPrompt } from '../notifications/PushPrompt'
 import { InstallApp } from '../app/InstallApp'
 import { ACTIVE_ORDER_STATUSES, greeting, navigate, storeHref, token, useAddress, useDeliveryCheck, useHome, useMe, useMyOrders } from './shopData'
 
@@ -194,7 +193,6 @@ export function ShopHome() {
               <TilePages label="Order again">{again.map((store) => <SquareTile key={store.id} href={storeHref(store)} label={store.name} image={store.logo || store.image} art={categoryArt(store.vertical)} />)}</TilePages>
             </section>}
             <InstallApp who="customer" />
-            {signedIn && <PushPrompt who="customer" />}
           </div>
 
           {/* Desktop layout */}

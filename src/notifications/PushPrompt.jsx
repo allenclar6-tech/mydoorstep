@@ -5,19 +5,23 @@ import './pushPrompt.css'
 
 // “Turn on notifications” card. Shown to signed-in people whose device hasn’t been asked yet.
 // iPhone: notifications only work after “Add to Home Screen”, so it explains that first.
-export function PushPrompt({ who = 'customer', admin = false, always = false }) {
+// With `popup`, the same card opens as a centred popup a few seconds after the page loads (once a week at most).
+export function PushPrompt({ who = 'customer', admin = false, always = false, popup = false }) {
   const [state, setState] = useState(() => permission())
   const [hidden, setHidden] = useState(() => !always && dismissedRecently())
   const [busy, setBusy] = useState(false)
   const [step, setStep] = useState('')
   const [failed, setFailed] = useState(false)
   const [note, setNote] = useState('')
+  const [ready, setReady] = useState(!popup)
+  useEffect(() => { if (!popup) return undefined; const timer = window.setTimeout(() => setReady(true), 3500); return () => window.clearTimeout(timer) }, [popup])
   useEffect(() => { if (state === 'granted') refreshPushSubscription({ admin }) }, [state, admin])
   // If the person answers in the browser’s own bar or settings, update straight away.
   useEffect(() => watchPermission((next) => { if (!busy && next !== 'default') setState(next) }), [busy])
   const iosNeedsInstall = isIos() && !isStandalone()
   if (hidden || state === 'granted' || state === 'denied') return always && state === 'granted' ? <p className="push-on">🔔 Phone notifications are on for this device.</p> : always && state === 'denied' ? <p className="push-note">Notifications are blocked for this site. Allow them in your browser settings, then reload.</p> : null
   if (!pushSupported() && !iosNeedsInstall) return null
+  if (!ready) return null
   const copy = { customer: 'Know the moment your order is accepted, picked up and at your door.', business: 'Get a loud alert on your phone the second a new order arrives — even when DOORSTEP is closed.', rider: 'Get new delivery jobs on your phone straight away, even with the screen off.', admin: 'Get alerts for bank transfers, withdrawals and orders waiting for a rider.' }[who]
   const turnOn = async () => {
     setBusy(true); setNote(''); setFailed(false)
@@ -30,7 +34,8 @@ export function PushPrompt({ who = 'customer', admin = false, always = false }) 
     else { setFailed(true); setNote(pushErrorHelp(result)) }
   }
   const label = !busy ? (failed ? 'Try again' : 'Turn on') : step === 'asking' ? 'Tap “Allow” above…' : 'Turning on…'
-  return <section className="push-card" aria-label="Turn on notifications">
+  const close = () => { dismissPrompt(); setHidden(true) }
+  const card = <section className="push-card" aria-label="Turn on notifications">
     <span className="push-icon" aria-hidden="true"><BellRing size={22} /></span>
     <div>
       <b>Turn on notifications</b>
@@ -38,6 +43,11 @@ export function PushPrompt({ who = 'customer', admin = false, always = false }) 
       {note && <small className="push-error">{note}</small>}
     </div>
     {!iosNeedsInstall && <button type="button" className="push-btn" disabled={busy} onClick={turnOn}>{label}</button>}
-    {!always && <button type="button" className="push-close" onClick={() => { dismissPrompt(); setHidden(true) }} aria-label="Not now"><X size={16} /></button>}
+    {!always && <button type="button" className="push-close" onClick={close} aria-label="Not now"><X size={16} /></button>}
   </section>
+  if (!popup) return card
+  return <div className="push-popup" role="dialog" aria-modal="true" aria-label="Turn on notifications" onClick={(event) => { if (event.target === event.currentTarget) close() }}>
+    {card}
+    <button type="button" className="push-later" onClick={close}>Not now</button>
+  </div>
 }

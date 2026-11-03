@@ -9,6 +9,8 @@ import { Toaster } from './Toaster'
 import { AddressBookPage, AddressEditorPage, PinPickerPage } from './AddressEditor'
 import { AddCardPage, PaymentMethodsPage } from './CardsPages'
 import { DownloadPage } from './DownloadPage'
+import { LiveNotificationToast } from '../notifications/NotificationCenter'
+import { PushPrompt } from '../notifications/PushPrompt'
 
 // The package screens carry the map code, so they load only when someone opens “Send a package”.
 const ParcelRoutes = lazy(() => import('../parcel/ParcelRoutes'))
@@ -59,5 +61,8 @@ export function ShopApp() {
   else if (path === '/send') page = <Suspense fallback={<div className="sp-screen"><div className="sp-skeletons" role="status" aria-label="Loading"><div className="sp-skeleton" /></div></div>}><ParcelRoutes path="/send" /></Suspense>
   else { const slug = decodeURIComponent(path.split('/')[2] || ''); page = <StorePage key={slug} slug={slug} /> }
   if (path === '/location') return <div className="sp-app is-fullmap">{page}<Toaster /></div>
-  return <div className="sp-app"><DesktopNav />{page}<DesktopFooter /><Toaster /></div>
+  // Signed-in customers: order updates pop down from the top, and (once) a popup offers phone notifications.
+  const signedIn = (() => { try { return Boolean(localStorage.getItem('doorstep-token')) } catch { return false } })()
+  const alerts = signedIn && <><LiveNotificationToast />{!['/profile', '/checkout', '/cart', '/send'].includes(path) && <PushPrompt who="customer" popup />}</>
+  return <div className="sp-app"><DesktopNav />{page}<DesktopFooter /><Toaster />{alerts}</div>
 }

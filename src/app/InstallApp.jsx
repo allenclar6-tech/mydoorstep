@@ -21,7 +21,8 @@ export function InstallApp({ who = 'customer', always = false }) {
   useEffect(() => onInstallChange(() => refresh((value) => value + 1)), [])
   const admin = appKind() === 'admin'
   const name = admin ? 'DOORSTEP Admin' : 'DOORSTEP'
-  if (isInstalledNow()) return always ? <p className="install-on">✓ You’re using the {name} app.</p> : null
+  // Already installed (opened from the home screen or the Android app): show nothing.
+  if (isInstalledNow()) return null
   const ios = isIos()
   if (hidden || (!ios && !canPromptInstall())) return always && !ios ? <p className="install-note">To install {name}, open your browser menu and choose “Install app” or “Add to Home screen”.</p> : null
 
