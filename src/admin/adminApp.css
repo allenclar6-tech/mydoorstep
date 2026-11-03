@@ -1,0 +1,24 @@
+/* Admin › Download the app — uses the admin Money cards (.fa-card); only what those don't cover is here. */
+.aa { padding-top: 4px; }
+.aa .fa-card h3 { align-items: center; display: flex; gap: 8px; }
+.aa-hero { align-items: center; flex-direction: row; gap: 14px; }
+.aa-hero img { border-radius: 16px; flex: 0 0 auto; }
+.aa-download { align-items: center; align-self: flex-start; display: inline-flex; gap: 8px; text-decoration: none; }
+.aa-facts { display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.aa-facts div { background: #f3f6f4; border-radius: 12px; padding: 8px 10px; }
+.aa-facts dt { color: #5b6b63; font-size: .7rem; font-weight: 800; text-transform: uppercase; }
+.aa-facts dd { font-weight: 800; margin: 2px 0 0; }
+.aa-checksum summary { align-items: center; color: #0e4f3c; cursor: pointer; display: inline-flex; font-size: .86rem; font-weight: 700; gap: 6px; }
+.aa-checksum code { background: #f3f6f4; border-radius: 10px; display: block; font-size: .78rem; margin: 8px 0; overflow-wrap: anywhere; padding: 8px 10px; }
+.aa-steps { display: grid; font-size: .88rem; gap: 6px; line-height: 1.45; margin: 0; padding-left: 20px; }
+.aa-soon { background: #fff8e6; border: 1px solid #f3dfa7; border-radius: 14px; padding: 12px 14px; }
+.aa-soon b { color: #6b4a00; }
+.aa-soon p { color: #5c3d00; font-size: .86rem; line-height: 1.45; margin: 4px 0 0; }
+.aa .install-card, .aa .push-card { margin: 0; }
+.aa-qr { align-items: center; flex-direction: row; gap: 16px; }
+.aa-qr img { border: 1px solid #e3e8e2; border-radius: 12px; flex: 0 0 auto; }
+.aa-qr button, .aa-inline { align-self: flex-start; display: inline-flex; gap: 6px; }
+@media (max-width: 600px) {
+  .aa-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aa-qr { align-items: flex-start; flex-direction: column; }
+}

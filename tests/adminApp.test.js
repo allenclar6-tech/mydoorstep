@@ -35,17 +35,14 @@ test('one workflow builds either app without breaking the other', () => {
   assert.doesNotMatch(workflow, /run:[^\n]*\$\{\{\s*(secrets|inputs)\./, 'secrets and typed inputs reach commands only through env')
 })
 
-test('the admin has its own download page, reachable before signing in and linked from the admin', () => {
-  const app = readFileSync(file('src/App.jsx'), 'utf8')
-  const adminGate = app.indexOf("path.startsWith('/admin/') && !localStorage.getItem('doorstep-admin-token')")
-  const route = app.indexOf("path === '/admin/download'")
-  assert.ok(route > 0 && route < adminGate, '/admin/download is matched before the admin sign-in gate')
-  const page = readFileSync(file('src/shop/DownloadPage.jsx'), 'utf8')
-  assert.match(page, /release: '\/admin-app-release\.json'/)
-  assert.match(page, /qr: '\/admin-download-qr\.svg'/)
+test('the admin app download lives inside the admin (signed in), separate from the public download page', () => {
+  const admin = readFileSync(file('src/adminPages.jsx'), 'utf8')
+  assert.ok(admin.includes("path === '/admin/download') content = <AdminAppPage />"), 'an admin page')
+  assert.ok(!readFileSync(file('src/App.jsx'), 'utf8').includes('/admin/download'), 'no route outside the admin sign-in')
+  assert.doesNotMatch(readFileSync(file('src/shop/DownloadPage.jsx'), 'utf8'), /admin/i, 'the public page is only for the customer app')
+  assert.ok(readFileSync(file('src/admin/AdminAppPage.jsx'), 'utf8').includes("'/admin-app-release.json'"))
   assert.match(readFileSync(file('public/admin-download-qr.svg'), 'utf8'), /^<svg[^>]+viewBox/)
-  assert.match(readFileSync(file('src/admin/AdminHub.jsx'), 'utf8'), /href: '\/admin\/download'/, 'in the admin menu')
-  assert.match(readFileSync(file('src/adminPages.jsx'), 'utf8'), /href="\/admin\/download"/, 'on the admin sign-in page')
+  assert.ok(readFileSync(file('src/admin/AdminHub.jsx'), 'utf8').includes("href: '/admin/download'"), 'in the admin menu')
 })
 
 test('admin release details are always fresh', async () => {

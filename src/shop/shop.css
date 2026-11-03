@@ -1395,13 +1395,3 @@ html[data-shop-theme='dark'] .sp-home-skeleton :is(.hs-line, .hs-tiles i, .hs-ti
 .cd-field.is-paystack > button b { background: none; border: 0; color: #b5b5b5; font-size: 1rem; font-weight: 500; letter-spacing: .04em; min-height: 0; padding: 0; width: auto; }
 .cd-field.is-paystack > button svg { color: #9aa59f; flex: 0 0 auto; }
 html[data-shop-theme='dark'] .cd-field.is-paystack > button { background: rgba(255, 255, 255, .05); border-color: var(--sp-line); }
-
-/* /admin/download — the DOORSTEP Admin app: same page as /download, in admin green. Rendered outside the customer app,
-   so it sets the colours the shared download styles use. */
-.dl-page.is-admin { --sp-bg: #f2f6f3; --sp-card: #fff; --sp-ink: #14231d; --sp-soft: #3d4f47; --sp-muted: #5b6b63; --sp-line: #e3e8e2; --sp-sun: #0e4f3c; color: #14231d; }
-.dl-page.is-admin .dl-band { color: #fff; }
-.dl-page.is-admin .dl-hero h1 { color: #fff; }
-.dl-page.is-admin .dl-hero p { color: #d8ebe1; }
-.dl-page.is-admin .dl-back { background: rgba(255, 255, 255, .16); color: #fff; }
-.dl-page.is-admin .dl-steps li > span { background: #0e4f3c; color: #fff; }
-.admin-app-link { display: block; margin-top: 14px; text-align: center; text-decoration: none; }

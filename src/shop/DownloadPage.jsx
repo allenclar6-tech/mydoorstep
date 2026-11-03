@@ -1,42 +1,22 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ArrowLeft, Bell, Bike, Check, ChevronDown, Copy, Download, LayoutDashboard, ShieldCheck, Smartphone, Store, Wallet } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Bike, Check, ChevronDown, Copy, Download, ShieldCheck, Smartphone, Store } from 'lucide-react'
 import { InstallApp } from '../app/InstallApp'
 import { isIos } from '../notifications/push'
 import { navigate } from './shopData'
 
-// /download — "Get the DOORSTEP app", and /admin/download — "Get the DOORSTEP Admin app". The Android APK details
-// come from /app-release.json or /admin-app-release.json, which the "Android app" GitHub workflow writes after it
-// has built, signed and published a real APK. Until then the page says the APK isn't ready and offers the browser
-// install (PWA) instead — never a broken or made-up link.
-
-const APPS = {
-  doorstep: {
-    release: '/app-release.json', file: 'DOORSTEP', icon: '/icons/icon-192.png?v=3', back: '/', installWho: 'customer', qr: '/download-qr.svg', page: 'mydoorstep.com.co/download',
-    title: 'Get the DOORSTEP app', intro: 'Food, groceries, shops and packages — delivered across Delta, Edo and Rivers. Order in one tap and track your rider live.',
-    soon: 'The first Android version hasn’t been published yet. Until then, install DOORSTEP straight from your browser below — it works the same way.',
-    signIn: 'Sign in with your DOORSTEP account — customer, business or rider.',
-    whoTitle: 'One app for everyone',
-    who: [[Smartphone, 'Customers', 'Order food, groceries and more, or send a package.'], [Store, 'Restaurants and shops', 'Sign in to take orders, pause your store and see your sales.'], [Bike, 'Riders', 'Go online, accept jobs and track your earnings.']],
-  },
-  admin: {
-    release: '/admin-app-release.json', file: 'DOORSTEP-Admin', icon: '/icons/admin-192.png?v=1', back: '/admin/dashboard', installWho: 'admin', qr: '/admin-download-qr.svg', page: 'mydoorstep.com.co/admin/download',
-    title: 'Get the DOORSTEP Admin app', intro: 'Run DOORSTEP from your phone: live orders and deliveries, payments, payouts, approvals and alerts — in its own app with the ADMIN icon.',
-    soon: 'The first Admin Android version hasn’t been published yet. Until then, install DOORSTEP Admin straight from your browser below — it works the same way.',
-    signIn: 'Sign in with your DOORSTEP admin account. The app holds no passwords; without an admin login it shows nothing.',
-    whoTitle: 'What you can do in the Admin app',
-    who: [[LayoutDashboard, 'Today at a glance', 'Live orders, riders online, sales and everything waiting for you.'], [Wallet, 'Money', 'Confirm bank transfers, pay partners, send refunds and approve withdrawals.'], [Bell, 'Alerts', 'Notifications for new orders, stuck deliveries, payments and help messages.']],
-  },
-}
+// /download — "Get the DOORSTEP app". The Android APK details come from /app-release.json, which the
+// "Android app" GitHub workflow writes after it has built, signed and published a real APK. Until then this page
+// says the APK isn't ready and offers the browser install (PWA) instead — never a broken or made-up link.
 
 const sizeText = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 const dateText = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
 /** Loads the release details, and checks a link on this website really serves an APK before showing the button. */
-function useRelease(path) {
+function useRelease() {
   const [state, setState] = useState({ loading: true, release: null, linkOk: false })
   useEffect(() => {
     let active = true
-    fetch(path, { cache: 'no-cache' }).then((response) => response.ok ? response.json() : null).then(async (release) => {
+    fetch('/app-release.json', { cache: 'no-cache' }).then((response) => response.ok ? response.json() : null).then(async (release) => {
       if (!release?.available || !release.url) { if (active) setState({ loading: false, release, linkOk: false }); return }
       let linkOk = true
       // Same-site links are checked here; GitHub links were already checked by the workflow before publishing.
@@ -47,14 +27,13 @@ function useRelease(path) {
       if (active) setState({ loading: false, release, linkOk })
     }).catch(() => { if (active) setState({ loading: false, release: null, linkOk: false }) })
     return () => { active = false }
-  }, [path])
+  }, [])
   return state
 }
 
 /** Search engines: describe the app only once a real APK exists (no ratings, nothing invented). */
-function useSeo(release, ready, enabled) {
+function useSeo(release, ready) {
   useEffect(() => {
-    if (!enabled) return undefined
     const previous = document.title
     document.title = 'Download the DOORSTEP app — food & delivery in Nigeria'
     const meta = document.querySelector('meta[name="description"]')
@@ -68,34 +47,19 @@ function useSeo(release, ready, enabled) {
       document.head.appendChild(script)
     }
     return () => { document.title = previous; if (meta && previousDescription != null) meta.content = previousDescription; script?.remove() }
-  }, [ready, enabled])
+  }, [ready])
 }
 
-export function DownloadPage({ app = 'doorstep' }) {
-  const config = APPS[app]
-  const admin = app === 'admin'
-  const { loading, release, linkOk } = useRelease(config.release)
+export function DownloadPage() {
+  const { loading, release, linkOk } = useRelease()
   const ready = Boolean(release?.available && linkOk)
   const [copied, setCopied] = useState(false)
   const [openFaq, setOpenFaq] = useState(null)
-  useSeo(release, ready, !admin)
-  // The admin download page stays out of search results.
-  useEffect(() => {
-    if (!admin) return undefined
-    const previous = document.title
-    document.title = 'Download DOORSTEP Admin'
-    const robots = document.createElement('meta'); robots.name = 'robots'; robots.content = 'noindex'; document.head.appendChild(robots)
-    return () => { document.title = previous; robots.remove() }
-  }, [admin])
+  useSeo(release, ready)
   const ios = isIos()
   const copy = async () => { try { await navigator.clipboard.writeText(release.sha256); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* clipboard blocked */ } }
 
-  const faqs = admin ? [
-    ['Is the Admin app safe?', 'Yes, when you download it from this page or DOORSTEP’s official GitHub page. Each version is signed with DOORSTEP’s own key and listed with its SHA-256 checksum. It contains no passwords or keys — it opens mydoorstep.com.co/admin, so it shows nothing without an admin login.'],
-    ['Can I have both apps on one phone?', 'Yes. DOORSTEP Admin installs next to the customer DOORSTEP app, with its own green ADMIN icon.'],
-    ['How do I get updates?', 'The app opens the live admin, so new features arrive automatically. When a new app version is needed, it appears on this page and on your dashboard.'],
-    ['I have an iPhone', 'Open mydoorstep.com.co/admin in Safari, tap Share, then “Add to Home Screen”. DOORSTEP Admin then opens like an app, with notifications on iOS 16.4 and newer.'],
-  ] : [
+  const faqs = [
     ['Is the Android app safe?', 'Yes, when you download it from mydoorstep.com.co/download or DOORSTEP’s official GitHub page. Each version is signed with DOORSTEP’s own key and listed with its SHA-256 checksum, so you can confirm the file wasn’t changed. Don’t install DOORSTEP files sent to you by other people.'],
     ['Why isn’t it on the Play Store yet?', 'DOORSTEP is starting with a free direct download. The app is ready for the Play Store, and it will be listed there later.'],
     ['How do I get updates?', 'The app opens the live DOORSTEP service, so new features arrive automatically. When a new app version is needed, it appears on this page.'],
@@ -103,13 +67,13 @@ export function DownloadPage({ app = 'doorstep' }) {
     ['What still needs the internet?', 'Everything live: stores and prices, ordering, payments, rider tracking and notifications. Without internet the app shows a friendly “You’re offline” screen.'],
   ]
 
-  return <div className={`sp-screen dl-page${admin ? ' is-admin' : ''}`}>
+  return <div className="sp-screen dl-page">
     <header className="dl-band">
-      <button type="button" className="dl-back" onClick={() => (admin ? window.location.assign(config.back) : navigate(config.back))} aria-label="Back"><ArrowLeft size={20} /></button>
+      <button type="button" className="dl-back" onClick={() => navigate('/')} aria-label="Back"><ArrowLeft size={20} /></button>
       <div className="dl-hero">
-        <img src={config.icon} alt="" width="88" height="88" className="dl-icon" />
-        <h1>{config.title}</h1>
-        <p>{config.intro}</p>
+        <img src="/icons/icon-192.png?v=3" alt="" width="88" height="88" className="dl-icon" />
+        <h1>Get the DOORSTEP app</h1>
+        <p>Food, groceries, shops and packages — delivered across Delta, Edo and Rivers. Order in one tap and track your rider live.</p>
       </div>
     </header>
 
@@ -118,7 +82,7 @@ export function DownloadPage({ app = 'doorstep' }) {
         <div className="dl-card-head"><span className="dl-badge" aria-hidden="true"><Smartphone size={20} /></span><div><h2 id="dl-android-title">Android</h2><p>Direct download (APK) · free</p></div></div>
         {loading ? <div className="sp-skeleton dl-skeleton" role="status" aria-label="Checking the latest version" />
           : ready ? <>
-            <a className="dl-button" href={release.url} download={release.url.startsWith('/') ? `${config.file}-${release.version}.apk` : undefined} rel="noopener"><Download size={20} aria-hidden="true" />Download for Android</a>
+            <a className="dl-button" href={release.url} download={release.url.startsWith('/') ? `DOORSTEP-${release.version}.apk` : undefined} rel="noopener"><Download size={20} aria-hidden="true" />Download for Android</a>
             <dl className="dl-facts">
               <div><dt>Version</dt><dd>{release.version}</dd></div>
               <div><dt>Size</dt><dd>{sizeText(release.sizeBytes)}</dd></div>
@@ -133,35 +97,37 @@ export function DownloadPage({ app = 'doorstep' }) {
             </details>
           </> : <div className="dl-soon">
             <b>The Android app is on its way</b>
-            <p>{release?.available && !linkOk ? 'The download isn’t reachable right now. Please try again in a little while.' : config.soon}</p>
+            <p>{release?.available && !linkOk ? 'The download isn’t reachable right now. Please try again in a little while.' : 'The first Android version hasn’t been published yet. Until then, install DOORSTEP straight from your browser below — it works the same way.'}</p>
           </div>}
       </section>
 
       <section className="dl-card" aria-labelledby="dl-web-title">
         <div className="dl-card-head"><span className="dl-badge is-mint" aria-hidden="true"><Download size={20} /></span><div><h2 id="dl-web-title">Install from your browser</h2><p>{ios ? 'iPhone and iPad (Safari)' : 'Android, iPhone and computers'} · no download needed</p></div></div>
-        <InstallApp who={config.installWho} always />
+        <InstallApp who="customer" always />
       </section>
 
       <section className="dl-card dl-qr" aria-labelledby="dl-qr-title">
-        <img src={config.qr} alt={`QR code for ${config.page}`} width="164" height="164" />
-        <div><h2 id="dl-qr-title">On a computer?</h2><p>Scan this code with your phone’s camera to open this page there.</p><small>{config.page}</small></div>
+        <img src="/download-qr.svg" alt="QR code for mydoorstep.com.co/download" width="164" height="164" />
+        <div><h2 id="dl-qr-title">On a computer?</h2><p>Scan this code with your phone’s camera to open this page there.</p><small>mydoorstep.com.co/download</small></div>
       </section>
 
       {ready && <section className="dl-card" aria-labelledby="dl-steps-title">
         <h2 id="dl-steps-title" className="dl-h2">How to install on Android</h2>
         <ol className="dl-steps">
-          <li><span>1</span><div><b>Tap “Download for Android”</b><small>Your browser saves the {admin ? 'DOORSTEP Admin' : 'DOORSTEP'} file. It may say this type of file can be harmful — tap Download anyway only if you’re on mydoorstep.com.co.</small></div></li>
+          <li><span>1</span><div><b>Tap “Download for Android”</b><small>Your browser saves the DOORSTEP file. It may say this type of file can be harmful — tap Download anyway only if you’re on mydoorstep.com.co.</small></div></li>
           <li><span>2</span><div><b>Open the downloaded file</b><small>Tap the notification, or find it in Downloads / Files.</small></div></li>
           <li><span>3</span><div><b>Allow this one install</b><small>Android may say it isn’t allowed to install unknown apps from your browser. Tap Settings, switch on “Allow from this source” for that browser only, then go back.</small></div></li>
-          <li><span>4</span><div><b>Tap Install, then Open</b><small>{config.signIn}</small></div></li>
+          <li><span>4</span><div><b>Tap Install, then Open</b><small>Sign in with your DOORSTEP account — customer, business or rider.</small></div></li>
         </ol>
         <p className="dl-warning"><AlertTriangle size={18} aria-hidden="true" /><span>After installing, you can switch “Install unknown apps” off again for your browser. Keep Google Play Protect on — DOORSTEP never asks you to turn off your phone’s security.</span></p>
       </section>}
 
       <section className="dl-card" aria-labelledby="dl-who-title">
-        <h2 id="dl-who-title" className="dl-h2">{config.whoTitle}</h2>
+        <h2 id="dl-who-title" className="dl-h2">One app for everyone</h2>
         <ul className="dl-who">
-          {config.who.map(([Icon, title, text]) => <li key={title}><Icon size={20} aria-hidden="true" /><span><b>{title}</b><small>{text}</small></span></li>)}
+          <li><Smartphone size={20} aria-hidden="true" /><span><b>Customers</b><small>Order food, groceries and more, or send a package.</small></span></li>
+          <li><Store size={20} aria-hidden="true" /><span><b>Restaurants and shops</b><small>Sign in to take orders, pause your store and see your sales.</small></span></li>
+          <li><Bike size={20} aria-hidden="true" /><span><b>Riders</b><small>Go online, accept jobs and track your earnings.</small></span></li>
         </ul>
       </section>
 
@@ -174,9 +140,4 @@ export function DownloadPage({ app = 'doorstep' }) {
       </section>
     </main>
   </div>
-}
-
-/** /admin/download — the DOORSTEP Admin app. Open without signing in, so it can be set up on a new phone. */
-export function AdminDownloadPage() {
-  return <DownloadPage app="admin" />
 }

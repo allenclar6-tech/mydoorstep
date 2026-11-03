@@ -16,6 +16,7 @@ import { PromosAdmin } from './admin/PromosAdmin'
 import { PushPrompt } from './notifications/PushPrompt'
 import { InstallApp } from './app/InstallApp'
 import { AdminAppDownload } from './admin/AdminAppDownload'
+import { AdminAppPage } from './admin/AdminAppPage'
 import { ConfirmDeliveredButton, DispatchBoard } from './admin/DispatchBoard'
 import { SessionSignOutButton, SignOutNotice } from './authControls'
 import { apiBase } from './config/apiBase'
@@ -40,7 +41,7 @@ export function AdminLogin({ onLogin }) {
 			onLogin()
 		} catch (loginError) { setError(loginError.name === 'TimeoutError' ? 'The sign-in service did not respond. Please try again.' : loginError.message || 'Unable to sign in. Please try again.') } finally { setBusy(false) }
 	}
-	return <main className="admin-login-page"><div className="admin-login-card"><div className="admin-brand"><span className="brand-mark">✦</span><span>doorstep<small>control center</small></span></div><span className="section-kicker">OWNER ACCESS</span><h1>Admin control center</h1><p>Sign in with the business owner account. Normal customer, partner, and rider accounts cannot enter this workspace.</p><SignOutNotice /><form onSubmit={submit} {...manual.formProps}><label>Email address<input required type="email" name="email" autoComplete="username" {...lockedUntilTouched} /></label><PasswordField required label="Password" name="password" autoComplete="current-password" {...lockedUntilTouched} />{error && <div className="admin-login-error" role="alert">{error}</div>}<button className="admin-primary" disabled={busy} type="submit">{busy ? 'Signing in...' : 'Sign in to admin'} <ArrowRight size={16} /></button><button className="forgot-password-link" type="button" onClick={() => navigate('/admin/forgot-password')}>Forgot password?</button></form><a className="forgot-password-link admin-app-link" href="/admin/download" onClick={(event) => { event.preventDefault(); navigate('/admin/download') }}>📱 Get the DOORSTEP Admin app</a></div></main>
+	return <main className="admin-login-page"><div className="admin-login-card"><div className="admin-brand"><span className="brand-mark">✦</span><span>doorstep<small>control center</small></span></div><span className="section-kicker">OWNER ACCESS</span><h1>Admin control center</h1><p>Sign in with the business owner account. Normal customer, partner, and rider accounts cannot enter this workspace.</p><SignOutNotice /><form onSubmit={submit} {...manual.formProps}><label>Email address<input required type="email" name="email" autoComplete="username" {...lockedUntilTouched} /></label><PasswordField required label="Password" name="password" autoComplete="current-password" {...lockedUntilTouched} />{error && <div className="admin-login-error" role="alert">{error}</div>}<button className="admin-primary" disabled={busy} type="submit">{busy ? 'Signing in...' : 'Sign in to admin'} <ArrowRight size={16} /></button><button className="forgot-password-link" type="button" onClick={() => navigate('/admin/forgot-password')}>Forgot password?</button></form></div></main>
 }
 
 // Page titles now live in the top bar and the “How this page works” guide (admin/AdminHub.jsx).
@@ -102,6 +103,7 @@ export function AdminPortal({ path, onLogout }) {
   if (path === '/admin/audit-logs') content = <AuditLogs />
   if (path === '/admin/settings') content = <SettingsPage />
   if (path === '/admin/support') content = <SupportDesk />
-  if (path === '/admin/notifications') content = <WorkspaceInbox title="Notifications" subtitle="Bank transfers, withdrawals, new partners and orders waiting for a rider." tokenKey="doorstep-admin-token" />
+  if (path === '/admin/download') content = <AdminAppPage />
+  if (path === '/admin/notifications') content =<WorkspaceInbox title="Notifications" subtitle="Bank transfers, withdrawals, new partners and orders waiting for a rider." tokenKey="doorstep-admin-token" />
   return <AdminShell path={path}>{content}</AdminShell>
 }
