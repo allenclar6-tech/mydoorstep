@@ -4,7 +4,9 @@
 .install-card b { font-size: 1rem; }
 .install-card small { color: #3e4f47; font-size: .82rem; line-height: 1.4; }
 .install-icon img { border-radius: 12px; display: block; }
-.install-btn { align-items: center; background: #14231d; border: 0; border-radius: 12px; color: #fff; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; gap: 6px; min-height: 42px; padding: 0 16px; white-space: nowrap; }
+/* `.install-card .install-btn` (not just `.install-btn`): the customer app's `.sp-app button { color: inherit }` would
+   otherwise win and turn the label as dark as the button. */
+.install-card .install-btn { align-items: center; background: #14231d; border: 0; border-radius: 12px; color: #fff; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; gap: 6px; min-height: 42px; padding: 0 16px; white-space: nowrap; }
 .install-close { background: transparent; border: 0; color: #5b6b63; cursor: pointer; padding: 4px; position: absolute; right: 8px; top: 8px; }
 .install-steps { color: #14231d; display: grid; font-size: .84rem; gap: 6px; margin: 6px 0 0; padding-left: 18px; }
 .install-steps svg { vertical-align: -2px; }
