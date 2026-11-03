@@ -18,6 +18,9 @@ export function ApplicationManagement({ kind, type }) {
   const [filters, setFilters] = useState({ search: '', city: '', from: '', to: '', status: 'OPEN' })
   const [notes, setNotes] = useState({})
   const [revision, setRevision] = useState(0)
+  // Per-application result of Approve / Reject / Ask for more info, shown right next to the buttons.
+  const [outcome, setOutcome] = useState({})
+  const [busy, setBusy] = useState(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -44,25 +47,39 @@ export function ApplicationManagement({ kind, type }) {
     setFilters((current) => ({ ...current, [name]: value }))
   }
 
-  const review = async (applicationId, status) => {
+  const WORDS = { APPROVED: 'approved', REJECTED: 'rejected', NEEDS_INFORMATION: 'asked for more information' }
+  const ERRORS = {
+    INVALID_APPLICATION_REVIEW: 'Write a short note first — the applicant sees it.',
+    APPLICATION_NOT_FOUND: 'This application no longer exists. Refresh the list.',
+    APPLICATION_SERVICE_UNAVAILABLE: 'DOORSTEP couldn’t save this right now. Try again in a minute.',
+  }
+  const review = async (application, status) => {
+    const applicationId = application.id
     const note = notes[applicationId]?.trim() || undefined
-    if (['NEEDS_INFORMATION', 'REJECTED'].includes(status) && !note) {
-      setMessage('Add a review note before requesting information or rejecting an application.')
-      return
-    }
-    setMessage('')
+    const show = (tone, text) => setOutcome((current) => ({ ...current, [applicationId]: { tone, text } }))
+    if (['NEEDS_INFORMATION', 'REJECTED'].includes(status) && !note) { show('error', status === 'REJECTED' ? 'Write why you’re saying no in the review note first. The applicant will see it.' : 'Write what’s missing in the review note first. The applicant will see it.'); return }
+    const who = nameFor(application)
+    if (status === 'APPROVED' && !window.confirm(`Approve ${who}? ${isBusiness ? 'Their store goes live for customers.' : 'They can go online and take deliveries.'}`)) return
+    if (status === 'REJECTED' && !window.confirm(`Reject ${who}? They’ll get your note.`)) return
+    setBusy(`${applicationId}:${status}`)
+    show('', '')
     try {
       const response = await fetch(`${apiBase}/api/admin/applications/${type}/${applicationId}/review`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, note }),
       })
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.message || body.error || 'Could not update application.')
-      setMessage(`Application updated: ${status.replaceAll('_', ' ').toLowerCase()}.`)
-      setRevision((current) => current + 1)
+      const body = await response.json().catch(() => ({}))
+      if (response.status === 401) throw new Error('You’ve been signed out. Sign in again, then retry.')
+      if (!response.ok) throw new Error(body.message && body.error !== 'APPLICATION_SERVICE_UNAVAILABLE' ? body.message : ERRORS[body.error] || 'Couldn’t save this decision. Try again.')
+      show('ok', `Done — ${who} was ${WORDS[status]}. ${status === 'APPROVED' ? 'They’ve been notified.' : 'They’ll see your note.'}`)
+      setMessage(`${who} was ${WORDS[status]}.`)
+      setNotes((current) => ({ ...current, [applicationId]: '' }))
+      window.setTimeout(() => setRevision((current) => current + 1), 1800)
     } catch (error) {
-      setMessage(error.message || 'Could not update application.')
+      show('error', error instanceof TypeError ? 'We can’t reach DOORSTEP. Check your internet and try again.' : error.message)
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -130,11 +147,13 @@ export function ApplicationManagement({ kind, type }) {
           <div className="admin-application-documents"><strong>Private documents</strong>{documents.length ? documents.map((document) => <button type="button" key={document.id} onClick={() => downloadDocument(application, document)}><FileText size={14} /> {document.type.replaceAll('_', ' ').toLowerCase()}</button>) : <small>No files supplied</small>}</div>
           <VerificationPanel type={type} application={application} token={token} onChanged={() => setRevision((current) => current + 1)} />
           <label className="admin-review-note">Review note<textarea value={notes[application.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [application.id]: event.target.value }))} maxLength="1000" rows="2" placeholder="Say what’s missing, or why you’re saying no. They will see this." /></label>
+          {!isBusiness && documents.length === 0 && <p className="admin-application-hint">To approve, this rider needs an ID document or a matching ID check. Use “Ask for more info” to request their ID.</p>}
           <div className="admin-application-actions">
-            <button className="row-more" onClick={() => review(application.id, 'NEEDS_INFORMATION')}>Ask for more info</button>
-            <button className="admin-review" onClick={() => review(application.id, 'REJECTED')}>Reject</button>
-            <button className="admin-primary" onClick={() => review(application.id, 'APPROVED')}><Check size={14} /> Approve</button>
+            <button type="button" className="row-more" disabled={Boolean(busy)} onClick={() => review(application, 'NEEDS_INFORMATION')}>{busy === `${application.id}:NEEDS_INFORMATION` ? 'Sending…' : 'Ask for more info'}</button>
+            <button type="button" className="admin-review" disabled={Boolean(busy)} onClick={() => review(application, 'REJECTED')}>{busy === `${application.id}:REJECTED` ? 'Rejecting…' : 'Reject'}</button>
+            <button type="button" className="admin-primary" disabled={Boolean(busy)} onClick={() => review(application, 'APPROVED')}><Check size={14} /> {busy === `${application.id}:APPROVED` ? 'Approving…' : 'Approve'}</button>
           </div>
+          {outcome[application.id]?.text && <p className={`admin-application-result is-${outcome[application.id].tone}`} role={outcome[application.id].tone === 'error' ? 'alert' : 'status'}>{outcome[application.id].text}</p>}
         </article>
       })}
     </section>
