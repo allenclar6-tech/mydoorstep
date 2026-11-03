@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BarChart3, Bell, Bike, Calculator, ChefHat, ChevronDown, ClipboardList, CreditCard, FileText, LayoutDashboard, MapPin, MessageCircle, Package, Settings, Star, Store, Tag, Truck, Users, Wallet } from 'lucide-react'
+import { BarChart3, Bell, Bike, Calculator, ChefHat, ChevronDown, ClipboardList, CreditCard, Download, FileText, LayoutDashboard, MapPin, MessageCircle, Package, Settings, Star, Store, Tag, Truck, Users, Wallet } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { MapPinArt, MoneyBag, Parcel, PercentTag, Scooter, Storefront } from '../shop/Illustrations'
 import { firstNameOf, go, Hello, naira, Shortcuts, usePolling, WeekChart, WorkspaceFrame } from '../workspace/WorkspaceFrame'
@@ -30,7 +30,7 @@ export const ADMIN_MENU = [
   { group: 'Reports', label: 'Sales report', href: '/admin/analytics', icon: BarChart3 },
   { group: 'Reports', label: 'Activity log', href: '/admin/audit-logs', icon: FileText },
 ]
-const ADMIN_EXTRA = [{ label: 'Notifications', href: '/admin/notifications', icon: Bell }, { label: 'Settings', href: '/admin/settings', icon: Settings }]
+const ADMIN_EXTRA = [{ label: 'Notifications', href: '/admin/notifications', icon: Bell }, { label: 'Download the app', href: '/admin/download', icon: Download }, { label: 'Settings', href: '/admin/settings', icon: Settings }]
 
 /** What each page is for, in one plain sentence, and how to use it in three steps. */
 export const ADMIN_GUIDES = {

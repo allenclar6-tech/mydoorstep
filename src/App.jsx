@@ -8,6 +8,7 @@ import { ProfileAvatar } from './ProfileAvatar'
 import { CookieConsent } from './CookieConsent'
 import { MobileHome } from './home/MobileHome'
 import { isShopPath, ShopApp } from './shop/ShopApp'
+import { AdminDownloadPage } from './shop/DownloadPage'
 import { NotificationBell } from './notifications/NotificationCenter'
 import { HelpChat as ChatWidget } from './support/HelpChat'
 import { readConfirmedLocation } from './location'
@@ -369,6 +370,8 @@ function App() {
   if (path.startsWith('/rider/') && !isPublicRiderRoute && !localStorage.getItem('doorstep-token')) return <div className="app-shell"><RoutePage path="/rider/login" /></div>
   if (path.startsWith('/restaurant/')) return <PortalAccessGate role="RESTAURANT"><Suspense fallback={workspaceFallback}><RestaurantPortal path={path} /></Suspense></PortalAccessGate>
   if (path.startsWith('/rider/') && !isPublicRiderRoute) return <PortalAccessGate role="RIDER"><Suspense fallback={workspaceFallback}><RiderPortal path={path} /></Suspense></PortalAccessGate>
+  // Admin app download page: open without signing in, so the app can be installed on a new phone first.
+  if (path === '/admin/download' || path === '/admin/app') return <AdminDownloadPage />
   if (path === '/admin/login') return <Suspense fallback={workspaceFallback}><AdminLogin onLogin={() => { window.history.pushState({}, '', '/admin/dashboard'); setPath('/admin/dashboard') }} /></Suspense>
   if (path === '/forgot-password' || path === '/reset-password') return <ForgotPasswordPage />
   if (path === '/admin/forgot-password') return <ForgotPasswordPage loginPath="/admin/login" />

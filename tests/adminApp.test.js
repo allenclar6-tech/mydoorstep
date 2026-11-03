@@ -35,6 +35,19 @@ test('one workflow builds either app without breaking the other', () => {
   assert.doesNotMatch(workflow, /run:[^\n]*\$\{\{\s*(secrets|inputs)\./, 'secrets and typed inputs reach commands only through env')
 })
 
+test('the admin has its own download page, reachable before signing in and linked from the admin', () => {
+  const app = readFileSync(file('src/App.jsx'), 'utf8')
+  const adminGate = app.indexOf("path.startsWith('/admin/') && !localStorage.getItem('doorstep-admin-token')")
+  const route = app.indexOf("path === '/admin/download'")
+  assert.ok(route > 0 && route < adminGate, '/admin/download is matched before the admin sign-in gate')
+  const page = readFileSync(file('src/shop/DownloadPage.jsx'), 'utf8')
+  assert.match(page, /release: '\/admin-app-release\.json'/)
+  assert.match(page, /qr: '\/admin-download-qr\.svg'/)
+  assert.match(readFileSync(file('public/admin-download-qr.svg'), 'utf8'), /^<svg[^>]+viewBox/)
+  assert.match(readFileSync(file('src/admin/AdminHub.jsx'), 'utf8'), /href: '\/admin\/download'/, 'in the admin menu')
+  assert.match(readFileSync(file('src/adminPages.jsx'), 'utf8'), /href="\/admin\/download"/, 'on the admin sign-in page')
+})
+
 test('admin release details are always fresh', async () => {
   const env = { ASSETS: { fetch: async () => new Response('{}', { headers: { 'Content-Type': 'application/json' } }) } }
   const response = await worker.fetch(new Request('https://mydoorstep.com.co/admin-app-release.json'), env)
