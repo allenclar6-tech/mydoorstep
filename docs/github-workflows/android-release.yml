@@ -1,33 +1,41 @@
-# Builds the DOORSTEP Android app (a Trusted Web Activity: your live website as a real Android app), signs it with
-# YOUR key, and publishes it — free. Run it from GitHub → Actions → "Android app" → Run workflow.
+# Builds a DOORSTEP Android app (a Trusted Web Activity: your live website as a real Android app), signs it with
+# YOUR key, and publishes it — free. Run it from GitHub → Actions → "Android app" → Run workflow, and choose which app:
+#   doorstep → DOORSTEP (customers, businesses, riders)  package co.com.mydoorstep.app    config android/
+#   admin    → DOORSTEP Admin (your control panel)        package co.com.mydoorstep.admin  config android-admin/
 #
 # One-time setup (see android/README.md): add these repository secrets in GitHub → Settings → Secrets → Actions:
 #   ANDROID_KEYSTORE_BASE64   your android.keystore file, base64-encoded
 #   ANDROID_KEYSTORE_PASSWORD the keystore password
 #   ANDROID_KEY_PASSWORD      the key password (often the same)
-# The signing key never goes into the repository and is never printed in the logs.
+# Both apps are signed with the same key. The key never goes into the repository and is never printed in the logs.
 #
 # Where the APK is published:
 #   public repository  → GitHub Releases (free HTTPS download from github.com)
 #   private repository → GitHub Releases (your private archive) AND public/downloads/ on mydoorstep.com.co,
 #                        because files on a private repo's releases can't be downloaded by the public.
-# Either way it writes public/app-release.json (version, date, size, SHA-256, link) for the /download page and
-# public/assetlinks.json (proves to Android that the app and the website belong together), then commits them.
-# Deploy the website afterwards so the download page shows the new version.
+# Either way it writes the app's release details (public/app-release.json or public/admin-app-release.json) and
+# adds the app to public/assetlinks.json (proves to Android that the app and the website belong together, keeping
+# the other app's entry), then commits them. Deploy the website afterwards.
 
 name: Android app
 
 on:
   workflow_dispatch:
     inputs:
+      app:
+        description: 'Which app to build'
+        required: true
+        default: 'doorstep'
+        type: choice
+        options: ['doorstep', 'admin']
       version:
-        description: 'Version people see, e.g. 1.0.0 (must be new each time)'
+        description: 'Version people see, e.g. 1.0.0 (must be new each time for that app)'
         required: true
         default: '1.0.0'
       notes:
         description: 'What changed in this version (shown on the download page)'
         required: false
-        default: 'First Android release of DOORSTEP.'
+        default: 'First Android release.'
 
 permissions:
   contents: write
@@ -41,15 +49,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      APP: ${{ inputs.app }}
       VERSION: ${{ inputs.version }}
       NOTES: ${{ inputs.notes }}
       VERSION_CODE: ${{ github.run_number }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Choose the app
+        run: |
+          case "$APP" in
+            doorstep) { echo "DIR=android"; echo "PKG=co.com.mydoorstep.app"; echo "FILE=DOORSTEP"; echo "TAG=android-v$VERSION"; echo "TITLE=DOORSTEP for Android"; echo "RELEASE_JSON=public/app-release.json"; } >> "$GITHUB_ENV" ;;
+            admin) { echo "DIR=android-admin"; echo "PKG=co.com.mydoorstep.admin"; echo "FILE=DOORSTEP-Admin"; echo "TAG=admin-android-v$VERSION"; echo "TITLE=DOORSTEP Admin for Android"; echo "RELEASE_JSON=public/admin-app-release.json"; } >> "$GITHUB_ENV" ;;
+            *) echo "::error::Choose doorstep or admin"; exit 1 ;;
+          esac
+
       - name: Check the version looks right
         run: |
           if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then echo "::error::Version must look like 1.0.0"; exit 1; fi
-          if gh release view "android-v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "::error::android-v$VERSION already exists. Use a new version number."; exit 1; fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "::error::$TAG already exists. Use a new version number."; exit 1; fi
 
       - name: Check the signing secrets are set
         env:
@@ -78,10 +95,10 @@ jobs:
         run: npm install --global @bubblewrap/cli@1
 
       - name: Prepare the Android project
-        working-directory: android
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
+          cd "$DIR"
           printf '%s' "$KS" | base64 --decode > android.keystore
           mkdir -p ~/.bubblewrap
           printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
@@ -89,62 +106,63 @@ jobs:
           yes | bubblewrap update --skipVersionUpgrade --manifest=./twa-manifest.json
 
       - name: Build and sign the APK and AAB
-        working-directory: android
         env:
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          cd "$DIR"
           bubblewrap build --skipPwaValidation --manifest=./twa-manifest.json
           test -s app-release-signed.apk
           test -s app-release-bundle.aab
 
       - name: Checksums and the app's signing fingerprint
         id: info
-        working-directory: android
         env:
           KS_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          mkdir -p ../out
-          cp app-release-signed.apk "../out/DOORSTEP-$VERSION.apk"
-          cp app-release-bundle.aab "../out/DOORSTEP-$VERSION.aab"
-          cd ../out
-          sha256sum "DOORSTEP-$VERSION.apk" "DOORSTEP-$VERSION.aab" > "DOORSTEP-$VERSION.sha256.txt"
-          echo "sha256=$(sha256sum "DOORSTEP-$VERSION.apk" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "size=$(stat -c%s "DOORSTEP-$VERSION.apk")" >> "$GITHUB_OUTPUT"
+          mkdir -p out
+          cp "$DIR/app-release-signed.apk" "out/$FILE-$VERSION.apk"
+          cp "$DIR/app-release-bundle.aab" "out/$FILE-$VERSION.aab"
+          (cd out && sha256sum "$FILE-$VERSION.apk" "$FILE-$VERSION.aab" > "$FILE-$VERSION.sha256.txt")
+          echo "sha256=$(sha256sum "out/$FILE-$VERSION.apk" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "size=$(stat -c%s "out/$FILE-$VERSION.apk")" >> "$GITHUB_OUTPUT"
           # Public certificate fingerprint (not a secret) — Android uses it to trust the app for mydoorstep.com.co.
-          fp=$(keytool -list -v -keystore ../android/android.keystore -alias doorstep -storepass "$KS_PW" | grep -m1 'SHA256:' | sed 's/.*SHA256: *//')
+          fp=$(keytool -list -v -keystore "$DIR/android.keystore" -alias doorstep -storepass "$KS_PW" | grep -m1 'SHA256:' | sed 's/.*SHA256: *//')
           if [ -z "$fp" ]; then echo "::error::Couldn't read the signing fingerprint. Is the key alias 'doorstep'?"; exit 1; fi
           echo "fingerprint=$fp" >> "$GITHUB_OUTPUT"
-          rm -f ../android/android.keystore
+          rm -f "$DIR/android.keystore"
 
       - name: Publish the GitHub Release
+        env:
+          SHA: ${{ steps.info.outputs.sha256 }}
         run: |
-          gh release create "android-v$VERSION" out/DOORSTEP-$VERSION.apk out/DOORSTEP-$VERSION.aab out/DOORSTEP-$VERSION.sha256.txt \
-            --repo "$GITHUB_REPOSITORY" --title "DOORSTEP for Android $VERSION" --notes "$NOTES
+          gh release create "$TAG" "out/$FILE-$VERSION.apk" "out/$FILE-$VERSION.aab" "out/$FILE-$VERSION.sha256.txt" \
+            --repo "$GITHUB_REPOSITORY" --title "$TITLE $VERSION" --notes "$NOTES
 
-          SHA-256 of the APK: ${{ steps.info.outputs.sha256 }}"
+          SHA-256 of the APK: $SHA"
 
       - name: Work out the public download link (and check it works)
         id: link
         run: |
           private=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private')
           if [ "$private" = "false" ]; then
-            url="https://github.com/$GITHUB_REPOSITORY/releases/download/android-v$VERSION/DOORSTEP-$VERSION.apk"
+            url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$FILE-$VERSION.apk"
             ok=""
             for attempt in 1 2 3 4 5 6; do if curl -fsSIL -o /dev/null "$url"; then ok=1; break; fi; sleep 10; done
             if [ -z "$ok" ]; then echo "::error::The GitHub download link doesn't work yet: $url"; exit 1; fi
             echo "hosted=github" >> "$GITHUB_OUTPUT"
           else
-            # Private repository: serve the APK from the DOORSTEP website itself (keep only the newest one).
+            # Private repository: serve the APK from the DOORSTEP website itself (keep only this app's newest one;
+            # DOORSTEP-1.2.3.apk and DOORSTEP-Admin-1.2.3.apk never delete each other).
             mkdir -p public/downloads
-            find public/downloads -name 'DOORSTEP-*.apk' -delete
-            cp "out/DOORSTEP-$VERSION.apk" public/downloads/
-            url="/downloads/DOORSTEP-$VERSION.apk"
+            find public/downloads -regextype posix-extended -regex ".*/$FILE-[0-9]+\.[0-9]+\.[0-9]+\.apk" -delete
+            cp "out/$FILE-$VERSION.apk" public/downloads/
+            url="/downloads/$FILE-$VERSION.apk"
             echo "hosted=site" >> "$GITHUB_OUTPUT"
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
-      - name: Update the download page data and Android app links
+      - name: Update the release details and Android app links
         env:
           URL: ${{ steps.link.outputs.url }}
           HOSTED: ${{ steps.link.outputs.hosted }}
@@ -153,24 +171,32 @@ jobs:
           FP: ${{ steps.info.outputs.fingerprint }}
         run: |
           jq -n --arg version "$VERSION" --argjson code "$VERSION_CODE" --arg url "$URL" --arg hosted "$HOSTED" --arg sha "$SHA" \
-            --argjson size "$SIZE" --arg notes "$NOTES" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg release "https://github.com/$GITHUB_REPOSITORY/releases/tag/android-v$VERSION" \
-            '{available: true, platform: "android", packageId: "co.com.mydoorstep.app", version: $version, versionCode: $code,
+            --argjson size "$SIZE" --arg notes "$NOTES" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg pkg "$PKG" \
+            --arg release "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" \
+            '{available: true, platform: "android", packageId: $pkg, version: $version, versionCode: $code,
               releasedAt: $date, sizeBytes: $size, sha256: $sha, url: $url, hostedOn: $hosted, releasePage: $release,
-              minAndroid: "5.0", notes: $notes}' > public/app-release.json
-          # Keep fingerprints already listed (e.g. Google Play's signing key) and add this key's, without duplicates.
-          existing=$(jq -c '[.[]? | select(.target.package_name == "co.com.mydoorstep.app") | .target.sha256_cert_fingerprints[]?]' public/assetlinks.json 2>/dev/null || echo '[]')
-          jq -n --arg fp "$FP" --argjson old "${existing:-[]}" '[{relation: ["delegate_permission/common.handle_all_urls"],
-              target: {namespace: "android_app", package_name: "co.com.mydoorstep.app", sha256_cert_fingerprints: (($old + [$fp]) | unique)}}]' > public/assetlinks.json
+              minAndroid: "5.0", notes: $notes}' > "$RELEASE_JSON"
+          # Keep every other app's entry and this app's fingerprints already listed (e.g. Google Play's), add this key's.
+          old=$(jq -c '. // []' public/assetlinks.json 2>/dev/null || echo '[]')
+          jq -n --argjson old "${old:-[]}" --arg pkg "$PKG" --arg fp "$FP" '
+            ($old | map(select(.target.package_name != $pkg))) +
+            [{relation: ["delegate_permission/common.handle_all_urls"],
+              target: {namespace: "android_app", package_name: $pkg,
+                sha256_cert_fingerprints: (([$old[] | select(.target.package_name == $pkg) | .target.sha256_cert_fingerprints[]?] + [$fp]) | unique)}}]' > public/assetlinks.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/app-release.json public/assetlinks.json public/downloads 2>/dev/null || git add public/app-release.json public/assetlinks.json
-          git commit -m "Android app $VERSION: download page data and app links"
+          git add "$RELEASE_JSON" public/assetlinks.json
+          [ -d public/downloads ] && git add public/downloads
+          git commit -m "$TITLE $VERSION: release details and app links"
           git push
 
       - name: What to do next
+        env:
+          SHA: ${{ steps.info.outputs.sha256 }}
+          URL: ${{ steps.link.outputs.url }}
+          HOSTED: ${{ steps.link.outputs.hosted }}
         run: |
-          echo "### DOORSTEP for Android $VERSION is built" >> "$GITHUB_STEP_SUMMARY"
-          echo "- APK SHA-256: \`${{ steps.info.outputs.sha256 }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Download link: ${{ steps.link.outputs.url }} (${{ steps.link.outputs.hosted }})" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Next: pull the new commit in VS Code and deploy the website, so /download shows this version." >> "$GITHUB_STEP_SUMMARY"
+          echo "### $TITLE $VERSION is built" >> "$GITHUB_STEP_SUMMARY"
+          echo "- APK SHA-256: \`$SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Download link: $URL ($HOSTED)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Next: pull the new commit in VS Code and deploy the website, so the download page shows this version." >> "$GITHUB_STEP_SUMMARY"

@@ -14,5 +14,8 @@ coverage/
 android/*
 !android/twa-manifest.json
 !android/README.md
+android-admin/*
+!android-admin/twa-manifest.json
+!android-admin/README.md
 *.keystore
 *.jks

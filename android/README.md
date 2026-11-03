@@ -69,7 +69,9 @@ Then commit and push from VS Code as usual (the workflow must be on GitHub befor
 ## Every release (about 5 minutes)
 
 1. GitHub → **Actions** → **Android app** → **Run workflow**.
-2. Type a **new** version (e.g. `1.0.0`, then `1.0.1`…) and a one-line "what changed", then **Run**.
+2. Choose the app — **doorstep** (customers, businesses, riders) or **admin** (DOORSTEP Admin, see
+   `android-admin/README.md`) — type a **new** version for that app (e.g. `1.0.0`, then `1.0.1`…) and a one-line
+   "what changed", then **Run**. Each app has its own versions; both use the same signing key and secrets.
 3. Wait for the green tick (about 5–10 minutes). The run's **Summary** shows the SHA-256 and the download link.
    - It creates a **GitHub Release** `android-v1.0.0` with the `.apk`, the `.aab` (for Google Play) and a checksum file.
    - **Public repo:** the APK downloads straight from GitHub (the workflow checks the link works before using it).
@@ -79,6 +81,8 @@ Then commit and push from VS Code as usual (the workflow must be on GitHub befor
 4. In VS Code: **Pull** (to get that commit), then **deploy the website** as usual.
 5. Open **mydoorstep.com.co/download** on an Android phone: the green **Download for Android** button appears with
    the new version, size and date. Install it once to check (see the steps on that page).
+   For the **admin** app, the **Download** button appears on the admin dashboard instead (release `admin-android-v…`,
+   file `DOORSTEP-Admin-x.y.z.apk`, details in `public/admin-app-release.json`).
 
 ### Check it
 

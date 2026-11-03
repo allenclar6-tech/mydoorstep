@@ -46,7 +46,7 @@ export default {
       headers.set('X-Content-Type-Options', 'nosniff')
     }
     // Release details for the /download page: always fresh after a new version is published.
-    if (url.pathname === '/app-release.json') headers.set('Cache-Control', 'no-cache')
+    if (url.pathname === '/app-release.json' || url.pathname === '/admin-app-release.json') headers.set('Cache-Control', 'no-cache')
     return new Response(webResponse.body, { status: webResponse.status, statusText: webResponse.statusText, headers })
   },
 }
