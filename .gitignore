@@ -10,3 +10,9 @@ private-uploads/
 coverage/
 .DS_Store
 .vite/
+# Android app (Trusted Web Activity): only the config and guide are tracked. The signing key NEVER goes in git.
+android/*
+!android/twa-manifest.json
+!android/README.md
+*.keystore
+*.jks

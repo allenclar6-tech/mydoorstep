@@ -292,6 +292,7 @@ export function DesktopFooter() {
   const columns = [
     ['Order', [['Food', '/food'], ['Groceries', '/groceries'], ['Shops', '/shops'], ['Pharmacy & Beauty', '/pharmacy'], ['Send a package', '/send']]],
     ['Partners', [['Sell on DOORSTEP', '/partner/register'], ['Ride with DOORSTEP', '/riders'], ['Partner sign in', '/partner/login'], ['Rider sign in', '/rider/login']]],
+    ['Get the app', [['Android app', '/download'], ['Install on iPhone', '/download']]],
     ['Help', [['FAQ', '/help/faq'], ['Track an order', '/track-order'], ['Contact us', '/contact'], ['Refund policy', '/refund-policy']]],
     ['Legal', [['Terms', '/terms'], ['Privacy', '/privacy'], ['Delivery policy', '/delivery-policy']]],
   ]

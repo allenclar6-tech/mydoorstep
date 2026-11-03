@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bike, ChefHat, ChevronRight, PackageCheck, Store as StoreIcon } from 'lucide-react'
 import { ORDER_STATUS_LABELS } from '../orders/OrderActions'
-import { Band, BandSearch, BellButton, Bubble, CartButton, Logo, CATEGORY_TILES, categoryArt, EmptyState, OutOfArea, Rail, SectionHead, SkeletonList, StoreTile, TabBar, AddressPill } from './ShopKit'
+import { AddressSheet, Band, BandSearch, BellButton, Bubble, CartButton, Logo, CATEGORY_TILES, categoryArt, EmptyState, OutOfArea, Rail, SectionHead, SkeletonList, StoreTile, TabBar, AddressPill } from './ShopKit'
 import { Parcel, PercentTag, ShoppingBag as BagArt, Burger, Basket } from './Illustrations'
 import { PushPrompt } from '../notifications/PushPrompt'
 import { InstallApp } from '../app/InstallApp'
@@ -111,10 +111,28 @@ function OfferCard({ offer, signedIn }) {
 
 const BIG_CATEGORIES = CATEGORY_TILES.filter((tile) => tile.key !== 'OFFERS')
 
+const ASKED_KEY = 'doorstep-asked-address'
+const askedBefore = () => { try { return Boolean(localStorage.getItem(ASKED_KEY)) } catch { return true } }
+
+/** Grey shapes in the same layout as the real home while stores load (like Glovo), instead of a spinner. */
+function HomeSkeleton() {
+  return <div className="sp-home-skeleton" role="status" aria-label="Loading stores">
+    <div className="sp-m-only">
+      <span className="hs-line is-title" />
+      <div className="hs-tiles">{[0, 1, 2, 3].map((index) => <span key={index}><i /><b /></span>)}</div>
+      <span className="hs-card" />
+    </div>
+    <div className="sp-d-only"><SkeletonList rows={2} /></div>
+  </div>
+}
+
 export function ShopHome() {
   const home = useHome()
   const address = useAddress()
   const check = useDeliveryCheck(address)
+  // First open with no address yet: ask where to deliver straight away (Glovo does the same). Only once per device.
+  const [askAddress, setAskAddress] = useState(() => !address.label && !askedBefore())
+  const closeAsk = () => { try { localStorage.setItem(ASKED_KEY, String(Date.now())) } catch { /* private mode */ } setAskAddress(false) }
   const data = home.data
   const signedIn = Boolean(token())
   const open = data ? data.stores.filter((store) => store.openNow) : []
@@ -158,7 +176,7 @@ export function ShopHome() {
       <nav className="sp-bubbles sp-d-only" aria-label="Categories">{CATEGORY_TILES.map((tile) => <Bubble key={tile.key} art={categoryArt(tile.key)} label={tile.label} href={tile.href} tone={tile.tone} size="lg" />)}</nav>
 
       {outside ? <OutOfArea check={check} /> : <>
-        {home.status === 'loading' && <SkeletonList rows={2} />}
+        {home.status === 'loading' && <HomeSkeleton />}
         {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
         {data && <>
           {/* Phone layout */}
@@ -194,6 +212,7 @@ export function ShopHome() {
         </>}
       </>}
     </main>
+    {askAddress && <AddressSheet onClose={closeAsk} />}
     <TabBar active="home" />
   </div>
 }

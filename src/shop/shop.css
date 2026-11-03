@@ -1316,3 +1316,82 @@ html[data-shop-theme='dark'] .pk-actions { background: linear-gradient(transpare
 .pp-page.is-tone-b .pp-pin-head { background: #e0562b; }
 .pp-places { display: flex; gap: 8px; margin: -4px 0 4px; overflow-x: auto; scrollbar-width: none; }
 .pp-places button { align-items: center; background: #f2f4f1; border: 0; border-radius: 999px; color: #14231d; display: inline-flex; flex: 0 0 auto; font: inherit; font-size: .85rem; font-weight: 700; gap: 6px; min-height: 36px; padding: 0 14px; }
+
+/* ===== /download — Get the DOORSTEP app ===== */
+.dl-page { background: var(--sp-bg); min-height: 100dvh; }
+.dl-band { background: var(--sp-sun, #ffc244); color: #123d2d; padding: max(12px, env(safe-area-inset-top)) 16px 64px; position: relative; text-align: center; }
+.dl-back { align-items: center; background: rgba(255, 255, 255, .6); border: 0; border-radius: 50%; color: #123d2d; display: inline-flex; height: 44px; justify-content: center; left: 12px; position: absolute; top: max(12px, env(safe-area-inset-top)); width: 44px; }
+.dl-hero { margin: 0 auto; max-width: 520px; padding-top: 18px; }
+.dl-icon { border-radius: 24px; box-shadow: 0 14px 30px rgba(18, 61, 45, .25); display: block; margin: 0 auto 14px; }
+.dl-hero h1 { color: #123d2d; font-size: 1.9rem; font-weight: 900; letter-spacing: -.02em; line-height: 1.1; margin: 0 0 8px; }
+.dl-hero p { color: #2d4a3d; font-size: .98rem; line-height: 1.5; margin: 0 auto; max-width: 400px; }
+.dl-body { display: grid; gap: 14px; margin-top: -40px; max-width: 560px; padding-bottom: 48px; }
+.dl-card { background: var(--sp-card); border-radius: 22px; box-shadow: 0 8px 24px rgba(20, 35, 29, .08); padding: 18px; }
+.dl-card-head { align-items: center; display: flex; gap: 12px; margin-bottom: 14px; }
+.dl-card-head h2, .dl-h2 { color: var(--sp-ink); font-size: 1.15rem; font-weight: 900; margin: 0; }
+.dl-card-head p { color: var(--sp-muted); font-size: .84rem; margin: 2px 0 0; }
+.dl-h2 { margin-bottom: 12px; }
+.dl-badge { align-items: center; background: #123d2d; border-radius: 14px; color: #ffc244; display: inline-flex; height: 44px; justify-content: center; width: 44px; }
+.dl-badge.is-mint { background: #e6f2eb; color: #123d2d; }
+.dl-button { align-items: center; background: #123d2d; border-radius: 999px; box-shadow: 0 10px 22px rgba(18, 61, 45, .25); color: #fff; display: flex; font-size: 1.08rem; font-weight: 800; gap: 10px; justify-content: center; min-height: 58px; text-decoration: none; }
+.dl-button:active { transform: scale(.98); }
+.dl-facts { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); margin: 14px 0 0; }
+.dl-facts div { background: var(--sp-bg); border-radius: 12px; padding: 8px 6px; text-align: center; }
+.dl-facts dt { color: var(--sp-muted); font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.dl-facts dd { color: var(--sp-ink); font-size: .86rem; font-weight: 800; margin: 2px 0 0; }
+.dl-notes { color: var(--sp-soft); font-size: .88rem; line-height: 1.45; margin: 12px 0 0; }
+.dl-checksum { margin-top: 12px; }
+.dl-checksum summary { align-items: center; color: #0a7a4f; cursor: pointer; display: flex; font-size: .88rem; font-weight: 800; gap: 6px; list-style: none; }
+.dl-checksum code { background: var(--sp-bg); border-radius: 10px; display: block; font-size: .72rem; margin: 10px 0 8px; overflow-wrap: anywhere; padding: 10px; }
+.dl-checksum small { color: var(--sp-muted); display: block; font-size: .78rem; line-height: 1.4; margin-top: 6px; }
+.dl-soon { background: #fff7e0; border-radius: 16px; padding: 14px; }
+.dl-soon b { color: #6b4a00; display: block; font-size: 1rem; }
+.dl-soon p { color: #6b5420; font-size: .88rem; line-height: 1.45; margin: 4px 0 0; }
+.dl-skeleton { border-radius: 999px; height: 58px !important; }
+.dl-card .install-card { margin: 0; }
+.dl-card .install-note, .dl-card .install-on { margin: 0; }
+.dl-qr { align-items: center; display: grid; gap: 16px; grid-template-columns: 120px 1fr; }
+.dl-qr img { border-radius: 14px; height: auto; width: 120px; }
+.dl-qr h2 { font-size: 1.05rem; font-weight: 900; margin: 0 0 4px; }
+.dl-qr p { color: var(--sp-soft); font-size: .88rem; line-height: 1.45; margin: 0 0 6px; }
+.dl-qr small { color: var(--sp-muted); font-size: .78rem; }
+.dl-steps { display: grid; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.dl-steps li { align-items: flex-start; display: flex; gap: 12px; }
+.dl-steps li > span { align-items: center; background: #ffc244; border-radius: 50%; color: #123d2d; display: inline-flex; flex: 0 0 30px; font-weight: 900; height: 30px; justify-content: center; }
+.dl-steps b { color: var(--sp-ink); display: block; font-size: .95rem; }
+.dl-steps small { color: var(--sp-soft); display: block; font-size: .84rem; line-height: 1.45; margin-top: 2px; }
+.dl-warning { align-items: flex-start; background: #fff3d1; border-radius: 14px; color: #6b4a00; display: flex; font-size: .85rem; gap: 10px; line-height: 1.45; margin: 14px 0 0; padding: 12px; }
+.dl-warning svg { flex: 0 0 auto; margin-top: 1px; }
+.dl-who { display: grid; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.dl-who li { align-items: flex-start; display: flex; gap: 12px; }
+.dl-who svg { background: #e6f2eb; border-radius: 12px; box-sizing: content-box; color: #123d2d; flex: 0 0 auto; padding: 8px; }
+.dl-who b { color: var(--sp-ink); display: block; }
+.dl-who small { color: var(--sp-soft); display: block; font-size: .84rem; line-height: 1.4; }
+.dl-faq { display: grid; gap: 8px; margin-top: 6px; }
+.dl-faq-item { background: var(--sp-card); border-radius: 16px; overflow: hidden; }
+.dl-faq-item button { align-items: center; background: none; border: 0; color: var(--sp-ink); display: flex; font: inherit; font-size: .95rem; font-weight: 800; gap: 10px; justify-content: space-between; min-height: 54px; padding: 0 16px; text-align: left; width: 100%; }
+.dl-faq-item.is-open button svg { transform: rotate(180deg); }
+.dl-faq-item p { color: var(--sp-soft); font-size: .88rem; line-height: 1.5; margin: 0; padding: 0 16px 16px; }
+@media (max-width: 380px) { .dl-facts { grid-template-columns: repeat(2, 1fr); } .dl-qr { grid-template-columns: 96px 1fr; } .dl-qr img { width: 96px; } }
+
+/* Home loading placeholders (Glovo-style shimmer in the shape of the real content). */
+.sp-home-skeleton .hs-line, .sp-home-skeleton .hs-tiles i, .sp-home-skeleton .hs-tiles b, .sp-home-skeleton .hs-card { animation: hs-shimmer 1.3s linear infinite; background: linear-gradient(90deg, #ecebe5 0%, #f6f5f0 50%, #ecebe5 100%); background-size: 200% 100%; display: block; }
+html[data-shop-theme='dark'] .sp-home-skeleton :is(.hs-line, .hs-tiles i, .hs-tiles b, .hs-card) { background: linear-gradient(90deg, #1b2621 0%, #24312b 50%, #1b2621 100%); background-size: 200% 100%; }
+.hs-line.is-title { border-radius: 10px; height: 26px; margin: 8px 0 16px; width: 68%; }
+.hs-tiles { display: grid; gap: 12px; grid-template-columns: repeat(4, 1fr); }
+.hs-tiles span { display: grid; gap: 8px; justify-items: center; }
+.hs-tiles i { aspect-ratio: 1; border-radius: 18px; width: 100%; }
+.hs-tiles b { border-radius: 6px; height: 11px; width: 70%; }
+.hs-card { border-radius: 20px; height: 150px; margin-top: 22px; }
+@keyframes hs-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .sp-home-skeleton * { animation: none !important; } }
+.dl-page .dl-body { background: transparent; }
+
+/* Add card: the card boxes are buttons that open Paystack's secure form (where the details are typed). */
+.cd-field.is-paystack > button { align-items: center; background: #f7f7f7; border: 1px solid #e3e3e3; border-radius: 14px; box-sizing: border-box; cursor: pointer; display: flex; font: inherit; justify-content: space-between; min-height: 52px; padding: 0 16px; text-align: left; width: 100%; -webkit-tap-highlight-color: transparent; }
+.cd-field.is-paystack > button:active:not(:disabled) { background: #eef6f1; border-color: var(--sp-brand); }
+.cd-field.is-paystack > button:focus-visible { border-color: var(--sp-brand); box-shadow: 0 0 0 3px rgba(18, 61, 45, .1); outline: none; }
+.cd-field.is-paystack > button:disabled { cursor: default; opacity: .7; }
+.cd-field.is-paystack > button b { background: none; border: 0; color: #b5b5b5; font-size: 1rem; font-weight: 500; letter-spacing: .04em; min-height: 0; padding: 0; width: auto; }
+.cd-field.is-paystack > button svg { color: #9aa59f; flex: 0 0 auto; }
+html[data-shop-theme='dark'] .cd-field.is-paystack > button { background: rgba(255, 255, 255, .05); border-color: var(--sp-line); }

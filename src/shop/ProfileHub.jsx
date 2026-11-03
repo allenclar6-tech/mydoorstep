@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bell, BellRing, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCard, Globe, Heart, KeyRound, LogOut, MapPin, MessageCircle, Moon, ReceiptText, Tag, Trash2, User } from 'lucide-react'
+import { Bell, BellRing, Check, ChevronRight, CircleHelp, Copy, Crown, CreditCard, Globe, Heart, KeyRound, LogOut, MapPin, MessageCircle, Moon, ReceiptText, Smartphone, Tag, Trash2, User } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { useProfilePhoto } from '../account/profilePhoto'
 import { PushPrompt } from '../notifications/PushPrompt'
@@ -119,6 +119,7 @@ export function ProfileHub() {
         {signedIn && pushState !== 'unsupported' && <MenuRow icon={BellRing} label="Phone notifications" hint={pushBusy === 'asking' ? 'Tap “Allow” in your browser…' : pushBusy ? 'Turning on…' : pushState === 'granted' ? 'On for this device' : pushState === 'denied' ? 'Blocked — allow them in your browser settings' : 'Off — tap to turn on'} status={pushState === 'granted' ? 'on' : 'off'} onClick={pushState === 'granted' || pushState === 'denied' ? undefined : turnOnNow} />}
         <MenuRow icon={Globe} label="Language" hint="English" onClick={() => setSheet('language')} />
         <MenuRow icon={Moon} label="Appearance" hint={{ light: 'Light', dark: 'Dark', system: 'Same as phone' }[appearance()]} onClick={() => setSheet('appearance')} />
+        <MenuRow icon={Smartphone} label="Get the DOORSTEP app" hint="Android download or install" href="/download" />
         <MenuRow icon={CircleHelp} label="FAQ" href="/help/faq" />
         <MenuRow icon={MessageCircle} label="Help & support" href={signedIn ? '/account/support' : '/help'} />
       </ul>

@@ -10,7 +10,7 @@
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
-  "background_color": "#faf8f2",
+  "background_color": "#ffc244",
   "theme_color": "#ffc244",
   "categories": ["food", "shopping", "lifestyle"],
   "prefer_related_applications": false,

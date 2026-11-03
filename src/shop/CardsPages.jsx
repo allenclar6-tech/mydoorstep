@@ -140,12 +140,13 @@ export function AddCardPage() {
 
       <fieldset className="cd-secure" aria-describedby="cd-secure-note">
         <legend className="cd-sr">Card details (typed on Paystack)</legend>
-        <div className="cd-field is-paystack"><span>Card number</span><b aria-hidden="true">0000 0000 0000 0000</b><ShieldCheck size={16} aria-hidden="true" /></div>
+        {/* Tapping a card box opens Paystack's secure form, where the card details are actually typed. */}
+        <label className="cd-field is-paystack"><span>Card number</span><button type="submit" disabled={busy || (!cards.loading && !cards.enabled)} aria-describedby="cd-secure-note"><b>0000 0000 0000 0000</b><ShieldCheck size={16} aria-hidden="true" /></button></label>
         <div className="cd-row">
-          <div className="cd-field is-paystack"><span>Expiry date</span><b aria-hidden="true">MM/YY</b></div>
-          <div className="cd-field is-paystack"><span>CVC</span><b aria-hidden="true">123</b></div>
+          <label className="cd-field is-paystack"><span>Expiry date</span><button type="submit" disabled={busy || (!cards.loading && !cards.enabled)} aria-describedby="cd-secure-note"><b>MM/YY</b></button></label>
+          <label className="cd-field is-paystack"><span>CVC</span><button type="submit" disabled={busy || (!cards.loading && !cards.enabled)} aria-describedby="cd-secure-note"><b>123</b></button></label>
         </div>
-        <p className="cd-secure-note" id="cd-secure-note"><ShieldCheck size={15} aria-hidden="true" />You’ll type your card number, expiry and CVC on Paystack’s secure screen. DOORSTEP never sees them.</p>
+        <p className="cd-secure-note" id="cd-secure-note"><ShieldCheck size={15} aria-hidden="true" />Tap any card box (or the button below) to type your card number, expiry and CVC on Paystack’s secure form. DOORSTEP never sees them.</p>
       </fieldset>
 
       <label className="cd-field"><span>Name of the card holder</span><input value={holderName} maxLength={60} autoComplete="cc-name" onChange={(event) => setHolderName(event.target.value)} placeholder="As written on the card" /></label>
@@ -155,7 +156,7 @@ export function AddCardPage() {
       {error && <p className="cd-error" role="alert">{error}</p>}
 
       <div className="cd-actions"><button type="submit" className="sp-primary cd-done" disabled={busy || (!cards.loading && !cards.enabled)}>
-        {step === 'starting' ? 'Opening Paystack…' : step === 'paystack' ? 'Finish on Paystack…' : step === 'checking' ? 'Checking your card…' : 'Done'}
+        {step === 'starting' ? 'Opening Paystack…' : step === 'paystack' ? 'Finish on Paystack…' : step === 'checking' ? 'Checking your card…' : 'Enter card details'}
       </button></div>
     </form>
   </div>

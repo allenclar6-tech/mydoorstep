@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /restaurant/
+Disallow: /rider/
+Disallow: /account/
+Disallow: /checkout
+
+Sitemap: https://mydoorstep.com.co/sitemap.xml
