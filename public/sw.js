@@ -1,8 +1,10 @@
 /* DOORSTEP service worker (public app and Admin app): shows push notifications in the phone/computer notification
    bar and opens the right page when one is tapped, puts a badge on the app icon, and shows a friendly offline
    screen when there is no internet. It never caches pages or data, so the site always loads fresh. */
-const OFFLINE_CACHE = 'doorstep-offline-v1'
-const OFFLINE_URL = '/offline.html'
+const OFFLINE_CACHE = 'doorstep-offline-v2'
+// public/offline.html, served by Cloudflare at /offline (asking for /offline.html redirects, and a redirected
+// response can't be shown for a page load).
+const OFFLINE_URL = '/offline'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(OFFLINE_CACHE).then((cache) => cache.add(new Request(OFFLINE_URL, { cache: 'reload' }))).catch(() => undefined).then(() => self.skipWaiting()))
