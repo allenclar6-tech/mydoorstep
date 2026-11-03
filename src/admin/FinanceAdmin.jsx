@@ -5,6 +5,7 @@ import { CommissionCard, PayoutSettingsCard } from './PayoutControls'
 import { FundPartnerCard } from './FundPartner'
 import { PayoutReadiness, WithdrawalQueue } from './WithdrawalQueue'
 import { openAdminReceipt, PartnerPayPanel } from './PartnerPayPanel'
+import { RefundQueue } from './RefundQueue'
 
 const token = () => { try { return localStorage.getItem('doorstep-admin-token') } catch { return null } }
 async function call(path, { method = 'GET', body } = {}) {
@@ -167,6 +168,7 @@ export function FinanceAdmin() {
     <PayoutReadiness />
     <WithdrawalQueue onChanged={load} />
 
+    <RefundQueue onChanged={load} />
     {review.length > 0 && <section className="fa-card"><h3>Needs a price ({review.length})</h3><ul className="fa-list">{review.map((entry) => <PriceRow key={entry.id} entry={entry} onDone={load} />)}</ul></section>}
 
     <section className="fa-card"><h3>To pay out</h3>

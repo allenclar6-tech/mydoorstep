@@ -45,6 +45,7 @@ import { createPushRouter } from './pushRoutes.js'
 import { remindUnpaidOrders, sendPendingPushes } from './push.js'
 import { parsePrepRange } from './customerApp.js'
 import { COVERAGE_BOUNDS, COVERAGE_LABEL, isCoveredPoint } from './coverage.js'
+import { createRefundRouter } from './refundRoutes.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
 
@@ -105,6 +106,7 @@ app.use('/api', createLocationRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createPushRouter({ prisma, requireUser }))
 app.use('/api', createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant: (restaurant) => publicRestaurant(restaurant), isOpen: (restaurant) => isRestaurantOpen(restaurant) }))
 app.use('/api', createSupportRouter({ prisma, requireUser, readPrivateDocument }))
+app.use('/api', createRefundRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createParcelRouter({ prisma, requireUser, requireAdmin, getPaymentSettings, hasValidBankTransferConfig, realtime: deliveryRealtime }))
 
 app.get('/api/health', (_request, response) => {
@@ -939,12 +941,16 @@ app.get('/api/admin/orders', requireUser, requireAdmin, async (request, response
   } catch { return response.status(503).json({ error: 'ADMIN_ORDER_SERVICE_UNAVAILABLE' }) }
 })
 
+// Orders that were paid and not undone (unpaid, declined, cancelled and refunded orders are left out of sales).
+const ORDER_PAID_STATUSES = ['PAID', 'RESTAURANT_ACCEPTED', 'PREPARING', 'READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED']
+
 app.get('/api/admin/finance-summary', requireUser, requireAdmin, async (_request, response) => {
   try {
+    const paidOrder = { status: { in: ORDER_PAID_STATUSES } }
     const [gross, commission, restaurantPayouts, refunds, successfulPayments] = await Promise.all([
-      prisma.order.aggregate({ where: { status: { notIn: ['CANCELLED', 'REFUNDED'] } }, _sum: { totalMinor: true } }),
-      prisma.commission.aggregate({ _sum: { amountMinor: true } }),
-      prisma.restaurantPayout.aggregate({ _sum: { amountMinor: true } }),
+      prisma.order.aggregate({ where: paidOrder, _sum: { totalMinor: true } }),
+      prisma.commission.aggregate({ where: { order: paidOrder }, _sum: { amountMinor: true } }),
+      prisma.restaurantPayout.aggregate({ where: { status: { not: 'FAILED' }, order: paidOrder }, _sum: { amountMinor: true } }),
       prisma.payment.aggregate({ where: { status: 'REFUNDED' }, _sum: { amountMinor: true } }),
       prisma.payment.count({ where: { status: 'SUCCESSFUL' } }),
     ])

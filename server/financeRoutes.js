@@ -99,8 +99,10 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
       const settings = await getFinanceSettings(prisma)
       let orders = null
       if (who.kind === 'RESTAURANT') {
-        const agg = await prisma.order.aggregate({ where: { restaurantId: who.restaurantId, status: { notIn: ['PENDING_PAYMENT', 'CANCELLED', 'REFUNDED'] } }, _sum: { subtotalMinor: true }, _count: { _all: true } })
-        const commission = await prisma.commission.aggregate({ where: { order: { restaurantId: who.restaurantId } }, _sum: { amountMinor: true } })
+        // Paid orders only: unpaid, declined, cancelled and refunded orders aren't sales and carry no commission.
+        const paid = { restaurantId: who.restaurantId, status: { notIn: ['PENDING_PAYMENT', 'REJECTED', 'CANCELLED', 'REFUNDED'] } }
+        const agg = await prisma.order.aggregate({ where: paid, _sum: { subtotalMinor: true }, _count: { _all: true } })
+        const commission = await prisma.commission.aggregate({ where: { order: paid }, _sum: { amountMinor: true } })
         orders = { count: agg._count._all, salesMinor: agg._sum.subtotalMinor || 0, commissionMinor: commission._sum.amountMinor || 0 }
       }
       const payoutSettings = await getPayoutSettings(prisma)
