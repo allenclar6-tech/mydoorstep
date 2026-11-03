@@ -83,10 +83,18 @@ function createStore(tokenKey) {
     // Every side hears new notifications: a chime for customers/admins, a bell for businesses, an alarm for riders.
     playAlert(alertKindFor(notification))
     if (document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      try {
-        const alert = new Notification(notification.title, { body: notification.body, tag: notification.id, icon: '/doorstep-icon.svg', silent: false, renotify: true, requireInteraction: alertKindFor(notification) === 'job', vibrate: alertKindFor(notification) === 'job' ? [700, 150, 700, 150, 1000] : [200] })
-        alert.onclick = () => { window.focus(); if (notification.link) navigate(notification.link); alert.close() }
-      } catch { /* some mobile browsers only allow notifications from a service worker */ }
+      // DOORSTEP's own icons (PNG: phones can't show SVG and would fall back to the browser's icon). The service
+      // worker shows it where it can, because Android Chrome only allows notifications from there.
+      const admin = tokenKey === 'doorstep-admin-token' || String(notification.link || '').startsWith('/admin')
+      const options = { body: notification.body, tag: notification.id, icon: admin ? '/icons/admin-192.png?v=2' : '/icons/icon-192.png?v=2', badge: '/icons/badge-96.png?v=2', silent: false, renotify: true, requireInteraction: alertKindFor(notification) === 'job', vibrate: alertKindFor(notification) === 'job' ? [700, 150, 700, 150, 1000] : [200], data: { link: notification.link || '/' } }
+      const direct = () => {
+        try {
+          const alert = new Notification(notification.title, options)
+          alert.onclick = () => { window.focus(); if (notification.link) navigate(notification.link); alert.close() }
+        } catch { /* this browser only allows notifications from a service worker */ }
+      }
+      if (navigator.serviceWorker?.getRegistration) navigator.serviceWorker.getRegistration().then((registration) => registration ? registration.showNotification(notification.title, options) : direct()).catch(direct)
+      else direct()
     }
   }
 

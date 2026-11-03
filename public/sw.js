@@ -42,8 +42,8 @@ self.addEventListener('push', (event) => {
   const admin = String(data.link || '').startsWith('/admin')
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || '',
-    icon: admin ? '/icons/admin-192.png' : '/icons/icon-192.png',
-    badge: '/icons/badge-96.png',
+    icon: admin ? '/icons/admin-192.png?v=2' : '/icons/icon-192.png?v=2',
+    badge: '/icons/badge-96.png?v=2', // white DOORSTEP pin: Android draws the status-bar icon in one colour
     tag: data.tag || undefined,
     renotify: Boolean(data.tag),
     data: { link: data.link || '/' },
