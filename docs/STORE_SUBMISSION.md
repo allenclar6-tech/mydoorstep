@@ -26,7 +26,7 @@ out of step with the website, and is accepted by Google Play.
 | App name | DOORSTEP |
 | Package ID (permanent — never change it) | `co.com.mydoorstep.app` |
 | First version | 1.0.0 (version code = the workflow run number) |
-| Minimum Android | 5.0 (API 21) |
+| Minimum Android | 7.0 (API 24) — required by Google's Android Browser Helper |
 | Permissions | Internet; notifications (asked in the app); location only when the user taps "use my location" |
 | Config | `android/twa-manifest.json` |
 | Build | `docs/github-workflows/android-release.yml` (copy to `.github/workflows/`, see `android/README.md`) |
