@@ -1,6 +1,16 @@
 {
-  "available": false,
-  "platform": "android",
-  "packageId": "co.com.mydoorstep.app",
-  "message": "The Android app hasn’t been built yet. You can install DOORSTEP from your browser right now."
+    "available":  true,
+    "platform":  "android",
+    "packageId":  "co.com.mydoorstep.app",
+    "version":  "1.0.0",
+    "versionCode":  1,
+    "releasedAt":  "2026-11-03T13:30:24Z",
+    "sizeBytes":  997422,
+    "sha256":  "965bc8cce3589f105564f232821cc6aceb1cbf0bbfc88766752a675e7568d2ad",
+    "url":  "/downloads/DOORSTEP-1.0.0.apk",
+    "hostedOn":  "site",
+    "mirrorUrl":  "https://github.com/allenclar6-tech/mydoorstep/releases/download/android-v1.0.0/DOORSTEP-1.0.0.apk",
+    "releasePage":  "https://github.com/allenclar6-tech/mydoorstep/releases/tag/android-v1.0.0",
+    "minAndroid":  "7.0",
+    "notes":  "First Android release of DOORSTEP."
 }

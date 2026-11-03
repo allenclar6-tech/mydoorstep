@@ -18,7 +18,7 @@ export function AdminAppDownload() {
     <span className="install-icon" aria-hidden="true"><img src="/icons/admin-192.png?v=1" alt="" width="44" height="44" /></span>
     <div>
       <b>DOORSTEP Admin for Android</b>
-      <small>Version {release.version}{megabytes ? ` · ${megabytes}` : ''} · Android 5.0 or newer. Open the file on your phone and allow installing from this source.</small>
+      <small>Version {release.version}{megabytes ? ` · ${megabytes}` : ''} · Android {release.minAndroid || '7.0'} or newer. Open the file on your phone and allow installing from this source.</small>
       {release.sha256 && <small className="install-hint"><ShieldCheck size={13} aria-hidden="true" /> SHA-256 {release.sha256.slice(0, 16)}…</small>}
     </div>
     <a className="install-btn" href={release.url} download><Download size={16} aria-hidden="true" /> Download</a>

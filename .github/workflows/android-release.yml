@@ -175,7 +175,7 @@ jobs:
             --arg release "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" \
             '{available: true, platform: "android", packageId: $pkg, version: $version, versionCode: $code,
               releasedAt: $date, sizeBytes: $size, sha256: $sha, url: $url, hostedOn: $hosted, releasePage: $release,
-              minAndroid: "5.0", notes: $notes}' > "$RELEASE_JSON"
+              minAndroid: "7.0", notes: $notes}' > "$RELEASE_JSON"
           # Keep every other app's entry and this app's fingerprints already listed (e.g. Google Play's), add this key's.
           old=$(jq -c '. // []' public/assetlinks.json 2>/dev/null || echo '[]')
           jq -n --argjson old "${old:-[]}" --arg pkg "$PKG" --arg fp "$FP" '

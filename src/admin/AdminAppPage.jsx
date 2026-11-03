@@ -51,7 +51,7 @@ export function AdminAppPage() {
             <div><dt>Version</dt><dd>{release.version}</dd></div>
             <div><dt>Size</dt><dd>{sizeText(release.sizeBytes)}</dd></div>
             <div><dt>Updated</dt><dd>{dateText(release.releasedAt)}</dd></div>
-            <div><dt>Needs</dt><dd>Android {release.minAndroid || '5.0'}+</dd></div>
+            <div><dt>Needs</dt><dd>Android {release.minAndroid || '7.0'}+</dd></div>
           </dl>
           {release.notes && <p className="fa-muted"><b>What’s new:</b> {release.notes}</p>}
           <details className="aa-checksum"><summary><ShieldCheck size={15} aria-hidden="true" /> Check the file (SHA-256)</summary>

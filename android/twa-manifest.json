@@ -30,7 +30,7 @@
   "isChromeOSOnly": false,
   "isMetaQuest": false,
   "fullScopeUrl": "https://mydoorstep.com.co/",
-  "minSdkVersion": 21,
+  "minSdkVersion": 24,
   "fingerprints": [],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
