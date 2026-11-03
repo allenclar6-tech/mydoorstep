@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { ArrowDownUp, Bike, Check, ChevronDown, Clock3, Search, Sparkles, Star, Store, UtensilsCrossed } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowDownUp, Bike, Check, ChevronDown, Clock3, Search, Sparkles, Star, Store, UtensilsCrossed, X } from 'lucide-react'
 import { Band, BandSearch, BasketBar, BrandCircles, Bubble, EmptyState, OutOfArea, Rail, SectionHead, Sheet, SkeletonList, StoreCard, StoreTile, TabBar } from './ShopKit'
 import { SUB_ART } from './Illustrations'
 import { freeDeliveryFor, pick, PromoBanners } from './ShopHome'
@@ -148,6 +148,31 @@ const DISCOVER_SECTIONS = [
   ['top', 'Top restaurants', (data) => data.sections.topRated, 'Best rated by DOORSTEP customers'],
 ]
 
+// Recent searches (this device only) and "Popular on DOORSTEP" suggestions built from real store data.
+const RECENT_KEY = 'doorstep-recent-searches'
+const readRecent = () => { try { const list = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(list) ? list.filter((value) => typeof value === 'string').slice(0, 8) : [] } catch { return [] } }
+const writeRecent = (list) => { try { if (list.length) localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 8))); else localStorage.removeItem(RECENT_KEY) } catch { /* private mode */ } }
+/** Most common dish categories and cuisines across live stores (nothing invented: only words stores actually use). */
+export function popularTerms(stores, limit = 8) {
+  const counts = new Map()
+  const add = (value) => { const label = String(value || '').trim(); if (label.length < 3 || label.length > 24) return; const key = label.toLowerCase(); const entry = counts.get(key) || { label, count: 0 }; entry.count += 1; counts.set(key, entry) }
+  for (const store of stores || []) { for (const part of String(store.cuisine || '').split(/[·,/|]/)) add(part); for (const category of new Set((store.items || []).map((item) => item.category).filter(Boolean))) add(category) }
+  return [...counts.values()].filter((entry) => entry.count >= 1).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)).slice(0, limit).map((entry) => entry.label)
+}
+
+function SearchSuggestions({ stores, onPick }) {
+  const [recent, setRecent] = useState(readRecent)
+  const popular = useMemo(() => popularTerms(stores), [stores])
+  if (!recent.length && !popular.length) return null
+  const remove = (term) => { const next = recent.filter((value) => value !== term); setRecent(next); writeRecent(next) }
+  return <section className="sp-suggest" aria-label="Search suggestions">
+    {recent.length > 0 && <><div className="sp-suggest-head"><h3><Clock3 size={16} aria-hidden="true" />Recent searches</h3><button type="button" onClick={() => { setRecent([]); writeRecent([]) }}>Clear</button></div>
+      <ul className="sp-suggest-list">{recent.map((term) => <li key={term}><button type="button" className="sp-suggest-chip" onClick={() => onPick(term)}>{term}</button><button type="button" className="sp-suggest-x" onClick={() => remove(term)} aria-label={`Remove ${term}`}><X size={14} /></button></li>)}</ul></>}
+    {popular.length > 0 && <><div className="sp-suggest-head"><h3><Sparkles size={16} aria-hidden="true" />Popular on DOORSTEP</h3></div>
+      <ul className="sp-suggest-list">{popular.map((term) => <li key={term}><button type="button" className="sp-suggest-chip" onClick={() => onPick(term)}>{term}</button></li>)}</ul></>}
+  </section>
+}
+
 /** Discover: search across every store and item, plus ranked rails. */
 export function DiscoverPage() {
   const home = useHome()
@@ -160,6 +185,13 @@ export function DiscoverPage() {
   const stores = data ? applyFilters(data.stores.filter((store) => storeSearch(store, query)), { ...filters, home: data }) : []
   const dishes = data && trimmed.length >= 2 ? data.stores.flatMap((store) => (store.items || []).filter((item) => `${item.name} ${item.description || ''}`.toLowerCase().includes(trimmed)).map((item) => ({ item, store }))).slice(0, 12) : []
   const filtering = trimmed || filters.topRated || filters.pickup || filters.openOnly || filters.free || filters.sort !== 'recommended'
+  // Remember a search once the customer pauses on it and it found something.
+  const found = stores.length + dishes.length
+  useEffect(() => {
+    if (trimmed.length < 2 || !found) return undefined
+    const timer = window.setTimeout(() => { const term = query.trim(); writeRecent([term, ...readRecent().filter((value) => value.toLowerCase() !== term.toLowerCase())]) }, 1500)
+    return () => window.clearTimeout(timer)
+  }, [trimmed, found])
 
   return <div className="sp-screen sp-discover">
     <Band back={section ? '/discover' : undefined} title={section ? section[1] : 'Discover'} search={<BandSearch value={query} onChange={setQuery} placeholder="Search food, stores or items" autoFocus={!section && Boolean(params.get('q'))} />} />
@@ -171,6 +203,7 @@ export function DiscoverPage() {
       {home.status === 'error' && <EmptyState title="Couldn’t load stores" body={home.error} action={<button type="button" className="sp-primary" onClick={home.reload}>Try again</button>} />}
       {data && section && !filtering && (() => { const list = pick(data, section[2](data)); return list.length ? <div className="sp-store-list">{list.map((store, index) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} badge={`#${index + 1}`} />)}</div> : <EmptyState icon={Sparkles} title="Not enough orders yet" body="This list fills in from real orders and reviews as DOORSTEP grows." /> })()}
       {data && !section && !filtering && <>
+        <SearchSuggestions stores={data.stores} onPick={setQuery} />
         {DISCOVER_SECTIONS.map(([key, title, ids]) => { const list = pick(data, ids(data)); if (!list.length) return null; const ranked = key === 'demand' || key === 'performers'; return <section key={key} className="sp-section"><SectionHead title={title} href={`/discover?section=${key}`} /><Rail label={title}>{list.map((store, index) => <StoreTile key={store.id} store={store} badge={ranked ? `#${index + 1}` : undefined} freeDelivery={freeDeliveryFor(store, data)} />)}</Rail></section> })}
         {DISCOVER_SECTIONS.every(([, , ids]) => !ids(data).length) && <p className="sp-note">Rankings appear once stores have orders and reviews. Every store is below.</p>}
         <section className="sp-section"><SectionHead title="All stores" /><div className="sp-store-list">{applyFilters(data.stores, { ...filters, home: data }).map((store) => <StoreCard key={store.id} store={store} freeDelivery={freeDeliveryFor(store, data)} />)}</div></section>

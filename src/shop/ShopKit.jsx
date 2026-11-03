@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, Ban, Bell, Bike, ChevronDown, ChevronRight, Clock3, Heart, Home, LocateFixed, MapPin, Pencil, Plus, Search, ShoppingBag, ThumbsUp, User, X } from 'lucide-react'
+import { ArrowLeft, Ban, Bell, Bike, ChevronDown, ChevronRight, Clock3, Heart, Home, LocateFixed, MapPin, Pencil, Plus, ReceiptText, Search, ShoppingBag, ThumbsUp, User, X } from 'lucide-react'
 import { CATEGORY_ART } from './Illustrations'
 import { chooseAddress, etaText, navigate, ratingPercent, storeHref, token, useAddress, useCart, useDeliveryCheck, useSavedAddresses, VERTICALS } from './shopData'
 
@@ -175,6 +175,7 @@ export function TabBar({ active }) {
   const items = [
     ['home', 'Home', '/', Home],
     ['discover', 'Discover', '/discover', Search],
+    ['orders', 'Orders', '/account/orders', ReceiptText],
     ['profile', 'Profile', '/profile', User],
   ]
   return <nav className="sp-tabbar" aria-label="Main">{items.map(([key, label, href, Icon]) => <a key={key} href={href} onClick={link(href)} className={active === key ? 'is-active' : undefined} aria-current={active === key ? 'page' : undefined}><span className="sp-tab-icon"><Icon size={21} aria-hidden="true" /></span><span>{label}</span></a>)}</nav>
@@ -281,6 +282,7 @@ export function DesktopNav() {
         <AddressPill />
         <DesktopSearch />
         <a className="sp-dnav-cart" href="/checkout" onClick={link('/checkout')} aria-label={`Basket, ${count} item${count === 1 ? '' : 's'}`}><ShoppingBag size={18} aria-hidden="true" /><span>Basket</span>{count > 0 && <b>{count}</b>}</a>
+        {signedIn && <a className="sp-dnav-cart" href="/account/orders" onClick={link('/account/orders')} aria-label="Your orders"><ReceiptText size={18} aria-hidden="true" /><span>Orders</span></a>}
         <a className="sp-dnav-account" href={signedIn ? '/profile' : '/login'} onClick={link(signedIn ? '/profile' : '/login')}><User size={18} aria-hidden="true" /><span>{signedIn ? 'Account' : 'Sign in'}</span></a>
       </div>
     </div>

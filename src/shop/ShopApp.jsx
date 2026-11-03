@@ -9,6 +9,7 @@ import { Toaster } from './Toaster'
 import { AddressBookPage, AddressEditorPage, PinPickerPage } from './AddressEditor'
 import { AddCardPage, PaymentMethodsPage } from './CardsPages'
 import { DownloadPage } from './DownloadPage'
+import { OrdersPage, OrderTrackPage } from './OrdersPages'
 import { LiveNotificationToast } from '../notifications/NotificationCenter'
 import { PushPrompt } from '../notifications/PushPrompt'
 
@@ -25,8 +26,8 @@ const clean = (path) => path.replace(/\/$/, '') || '/'
 /** Paths this module draws (everything else stays with the older pages). */
 export function isShopPath(rawPath) {
   const path = clean(rawPath)
-  if (['/', '/food', '/restaurants', '/groceries', '/shops', '/pharmacy', '/discover', '/checkout', '/cart', '/profile', '/account/promos', '/help/faq', '/partner/register', '/partners/restaurants', '/riders', '/location', '/address/new', '/account/addresses', '/account/cards', '/account/cards/new', '/send', '/download', '/app'].includes(path)) return true
-  return /^\/(store|restaurants|groceries)\/[^/]+$/.test(path)
+  if (['/', '/food', '/restaurants', '/groceries', '/shops', '/pharmacy', '/discover', '/checkout', '/cart', '/profile', '/account/promos', '/help/faq', '/partner/register', '/partners/restaurants', '/riders', '/location', '/address/new', '/account/addresses', '/account/cards', '/account/cards/new', '/send', '/download', '/app', '/account/orders'].includes(path)) return true
+  return /^\/(store|restaurants|groceries)\/[^/]+$/.test(path) || /^\/account\/orders\/[^/]+$/.test(path)
 }
 
 export function ShopApp() {
@@ -58,6 +59,8 @@ export function ShopApp() {
   else if (path === '/account/cards') page = <PaymentMethodsPage key={location} />
   else if (path === '/account/cards/new') page = <AddCardPage />
   else if (path === '/download' || path === '/app') page = <DownloadPage />
+  else if (path === '/account/orders') page = <OrdersPage />
+  else if (path.startsWith('/account/orders/')) { const orderId = decodeURIComponent(path.split('/')[3] || ''); page = <OrderTrackPage key={orderId} orderId={orderId} /> }
   else if (path === '/send') page = <Suspense fallback={<div className="sp-screen"><div className="sp-skeletons" role="status" aria-label="Loading"><div className="sp-skeleton" /></div></div>}><ParcelRoutes path="/send" /></Suspense>
   else { const slug = decodeURIComponent(path.split('/')[2] || ''); page = <StorePage key={slug} slug={slug} /> }
   if (path === '/location') return <div className="sp-app is-fullmap">{page}<Toaster /></div>
