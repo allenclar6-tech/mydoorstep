@@ -229,6 +229,8 @@ model Restaurant {
   status            ApplicationStatus        @default(PENDING_APPROVAL)
   ratingAverage     Decimal                  @default(0) @db.Decimal(3, 2)
   ratingCount       Int                      @default(0)
+  /// Reviews with a thumbs-up (rating 4–5); shown as "92% (151)" like Glovo.
+  ratingLikes       Int                      @default(0)
   openingTime       String?
   closingTime       String?
   daysOpen          Json?
@@ -822,6 +824,8 @@ model Review {
   order        Order?     @relation(fields: [orderId], references: [id])
   rating       Int
   body         String?
+  /// Per-item thumbs from the same order: [{ menuItemId, name, liked }].
+  itemFeedback Json?
   moderatedAt  DateTime?
   createdAt    DateTime   @default(now())
 
@@ -939,6 +943,12 @@ model SavedCard {
   createdAt             DateTime  @default(now())
   lastUsedAt            DateTime?
   removedAt             DateTime?
+  /// Customer's own name for the card, e.g. "work card".
+  nickname              String?
+  /// Name on the card, as typed by the customer or reported by Paystack.
+  holderName            String?
+  /// The card picked first at checkout. At most one active default per customer.
+  isDefault             Boolean   @default(false)
 
   @@unique([userId, signature])
   @@index([userId, removedAt])
@@ -954,6 +964,9 @@ model CardVerification {
   status       String    @default("PENDING")
   refundStatus String?
   savedCardId  String?
+  /// What the customer typed on the Add new card screen, applied once Paystack confirms the card.
+  nickname     String?
+  holderName   String?
   createdAt    DateTime  @default(now())
   completedAt  DateTime?
 

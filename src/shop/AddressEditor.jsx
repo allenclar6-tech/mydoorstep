@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Briefcase, Check, ChevronRight, Home, LocateFixed, MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Briefcase, Check, ChevronRight, Home, MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { areaForAddress, isPlannableArea, SAPELE_DIRECTORY, searchDirectory } from '../../server/sapeleDirectory.js'
-import { createDoorstepMap, SAPELE_CENTER, useMapToken } from '../map/mapCore'
-import { describeGeolocationError, getDevicePosition, resolveGooglePlace, reverseGeocode, searchAddresses } from '../map/addressSearch'
+import { useMapToken } from '../map/mapCore'
+import { CenterPinMap } from '../map/CenterPinMap'
 import { EmptyState, Sheet, ShopHeader } from './ShopKit'
 import { checkDelivery, chooseAddress, currentAddress, navigate, token } from './shopData'
 import { toast } from './Toaster'
@@ -193,81 +193,25 @@ export function AddressEditorPage() {
   </div>
 }
 
-/** Full-screen map: the pin stays in the middle and you move the map under it (like Glovo). */
+/** Full-screen map for an address pin (the shared CenterPinMap), then back to the form or the page that asked. */
 export function PinPickerPage() {
   const query = params()
   const draftMode = query.get('draft') === '1'
   const returnTo = safeReturn(query.get('return'), '')
-  const { token: mapToken, resolved } = useMapToken()
-  const holder = useRef(null)
-  const mapRef = useRef(null)
   const start = useMemo(() => { const draft = draftMode ? readDraft() : null; return draft?.pin || currentAddress().point || null }, [])
-  const [center, setCenter] = useState(start || { latitude: SAPELE_CENTER[1], longitude: SAPELE_CENTER[0] })
-  const [moving, setMoving] = useState(false)
-  const [placeName, setPlaceName] = useState('')
-  const [looking, setLooking] = useState(false)
-  const [search, setSearch] = useState('')
-  const [results, setResults] = useState([])
-  const [searching, setSearching] = useState(false)
-  const [note, setNote] = useState('')
-  const [locating, setLocating] = useState(false)
-  const [touched, setTouched] = useState(Boolean(start))
-
-  useEffect(() => {
-    if (!mapToken || !holder.current || mapRef.current) return undefined
-    const created = createDoorstepMap(holder.current, { center: [center.longitude, center.latitude], zoom: start ? 17 : 14 })
-    if (!created) return undefined
-    const { map } = created
-    mapRef.current = map
-    map.on('dragstart', () => setTouched(true))
-    map.on('movestart', () => setMoving(true))
-    map.on('moveend', () => { const next = map.getCenter(); setMoving(false); setCenter({ latitude: next.lat, longitude: next.lng }) })
-    return () => { map.remove(); mapRef.current = null }
-  }, [mapToken])
-
-  // Name the street under the pin once the map stops.
-  useEffect(() => {
-    if (moving || !touched) return undefined
-    let active = true
-    setLooking(true)
-    const timer = setTimeout(() => reverseGeocode(center).then((label) => { if (active) setPlaceName(label || '') }).catch(() => { if (active) setPlaceName('') }).finally(() => { if (active) setLooking(false) }), 350)
-    return () => { active = false; clearTimeout(timer) }
-  }, [center.latitude, center.longitude, moving, touched])
-
-  // Search as you type (directory streets and real places).
-  useEffect(() => {
-    if (search.trim().length < 3) { setResults([]); return undefined }
-    const controller = new AbortController()
-    setSearching(true)
-    const timer = setTimeout(() => searchAddresses(search, { signal: controller.signal }).then((body) => setResults(body.results.slice(0, 6))).catch((searchError) => { if (searchError?.name !== 'AbortError') { setResults([]); setNote(searchError.message || 'Search isn’t working right now. Move the map instead.') } }).finally(() => setSearching(false)), 350)
-    return () => { controller.abort(); clearTimeout(timer) }
-  }, [search])
-
-  const flyTo = (latitude, longitude, zoom = 17.5) => { setTouched(true); mapRef.current?.flyTo({ center: [longitude, latitude], zoom, speed: 1.6 }) }
-  const pickResult = async (result) => {
-    setResults([]); setSearch(result.name)
-    try {
-      const coordinates = result.coordinates || (result.placeId ? (await resolveGooglePlace(result.placeId)).coordinates : null)
-      if (coordinates) flyTo(coordinates[1], coordinates[0])
-      setNote('Now move the map so the pin sits on your gate or entrance.')
-    } catch { setNote('Couldn’t open that place. Try another result or move the map.') }
+  const [noMap, setNoMap] = useState(false)
+  const typeInstead = () => {
+    if (!draftMode) writeDraft(null)
+    navigate(draftMode ? (returnTo || '/address/new') : `/address/new${returnTo ? `?return=${encodeURIComponent(returnTo)}` : ''}`)
   }
-  const locate = async () => {
-    setLocating(true); setNote('')
-    try {
-      const position = await getDevicePosition()
-      flyTo(position.coords.latitude, position.coords.longitude, 18)
-      if (position.coords.accuracy > 60) setNote(`Your phone is only sure within about ${Math.round(position.coords.accuracy)} m. Check the pin is on your gate.`)
-    } catch (locateError) { setNote(describeGeolocationError(locateError)) } finally { setLocating(false) }
-  }
-  const area = areaForAddress(placeName)
-  const confirm = () => {
-    const pin = { latitude: Number(center.latitude.toFixed(7)), longitude: Number(center.longitude.toFixed(7)) }
+  const confirm = ({ latitude, longitude, label, area }) => {
+    const pin = { latitude, longitude }
+    const named = label && !label.startsWith('Pinned spot') ? label : ''
     if (draftMode) {
       const draft = readDraft() || {}
       const next = { ...draft, pin }
       // Fill empty fields from the map, but never overwrite what the person typed.
-      if (!draft.street && placeName) next.street = placeName.split(',')[0]
+      if (!draft.street && named) next.street = named.split(',')[0]
       if (!draft.areaId && area) next.areaId = area.id
       writeDraft(next)
       navigate(returnTo || '/address/new')
@@ -275,44 +219,19 @@ export function PinPickerPage() {
     }
     if (returnTo) {
       const current = currentAddress()
-      chooseAddress({ label: placeName || current.label || 'Pinned location', latitude: pin.latitude, longitude: pin.longitude, landmark: current.landmark || null })
+      chooseAddress({ label: named || current.label || label, latitude, longitude, landmark: current.landmark || null })
       toast('Pin saved')
       navigate(returnTo)
       return
     }
     // From the address sheet: pin first, then the details riders need.
-    writeDraft({ label: 'Home', street: placeName ? placeName.split(',')[0] : '', areaId: area?.id || null, landmark: '', pin })
+    writeDraft({ label: 'Home', street: named ? named.split(',')[0] : '', areaId: area?.id || null, landmark: '', pin })
     navigate('/address/new')
   }
-  const typeInstead = () => {
-    if (!draftMode) writeDraft(null)
-    navigate(draftMode ? (returnTo || '/address/new') : `/address/new${returnTo ? `?return=${encodeURIComponent(returnTo)}` : ''}`)
-  }
-
-  if (resolved && !mapToken) return <div className="sp-screen ae-page"><ShopHeader title="Map" back={returnTo || '/'} />
+  if (noMap) return <div className="sp-screen ae-page"><ShopHeader title="Map" back={returnTo || '/'} />
     <main className="sp-body"><EmptyState icon={MapPin} title="The map isn’t available right now" body="No problem — type your address instead. The delivery fee will be priced by your area." action={<button type="button" className="sp-primary" onClick={typeInstead}>Type my address</button>} /></main></div>
-
-  return <div className="pp-page">
-    <div className="pp-map" ref={holder} aria-label="Map. Move it to put the pin on your gate." role="application" />
-    <div className={`pp-pin${moving ? ' is-moving' : ''}`} aria-hidden="true"><span className="pp-pin-head"><i /></span><span className="pp-pin-shadow" /></div>
-
-    <header className="pp-top">
-      <button type="button" className="pp-round" onClick={() => navigate(returnTo || (draftMode ? '/address/new' : '/'))} aria-label="Back"><ArrowLeft size={20} /></button>
-      <label className="pp-search"><Search size={18} aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search street, place or landmark" aria-label="Search" />{search && <button type="button" onClick={() => { setSearch(''); setResults([]) }} aria-label="Clear"><X size={16} /></button>}</label>
-    </header>
-    {(results.length > 0 || searching) && <ul className="pp-results">{searching && !results.length ? <li className="pp-results-note">Searching…</li> : results.map((result) => <li key={`${result.source}:${result.id}`}><button type="button" onClick={() => pickResult(result)}><MapPin size={16} aria-hidden="true" /><span><b>{result.name}</b><small>{result.label}</small></span></button></li>)}</ul>}
-
-    <button type="button" className="pp-round pp-locate" onClick={locate} disabled={locating} aria-label="Use my location"><LocateFixed size={20} className={locating ? 'is-spinning' : ''} /></button>
-
-    <section className="pp-card">
-      <span className="pp-card-kicker">{touched ? 'Your pin' : 'Move the map'}</span>
-      <h2>{!touched ? 'Put the pin on your gate' : moving ? 'Finding the street…' : looking ? 'Finding the street…' : placeName ? placeName.split(',').slice(0, 2).join(',') : 'Pinned spot'}</h2>
-      <p>{touched && area ? `${area.name}, Sapele · ` : ''}Drag the map so the pin sits exactly on your entrance.</p>
-      {note && <p className="pp-note" role="status">{note}</p>}
-      <button type="button" className="sp-primary" disabled={!touched || moving} onClick={confirm}>Use this spot</button>
-      <button type="button" className="pp-type" onClick={typeInstead}><Pencil size={15} aria-hidden="true" />Type my address instead</button>
-    </section>
-  </div>
+  return <CenterPinMap start={start} onBack={() => navigate(returnTo || (draftMode ? '/address/new' : '/'))} onConfirm={confirm} onNoMap={() => setNoMap(true)}
+    footer={<button type="button" className="pp-type" onClick={typeInstead}><Pencil size={15} aria-hidden="true" />Type my address instead</button>} />
 }
 
 /** Saved addresses: use one, edit it, add a pin, or delete it. */

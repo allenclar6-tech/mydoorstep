@@ -78,6 +78,8 @@ export function CheckoutPage() {
   const [nonce] = useState(() => window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
   const config = usePaymentConfig()
   const savedCards = useSavedCards()
+  // Start on the customer's default card (cards arrive default-first), unless they already picked something.
+  useEffect(() => { const preferred = savedCards.cards.find((card) => !card.expired); if (preferred) setCardChoice((current) => current === 'NEW' ? preferred.id : current) }, [savedCards.cards.length])
   const days = useMemo(() => scheduleDays(store), [store?.id])
   const storeClosed = store && !store.openNow
 

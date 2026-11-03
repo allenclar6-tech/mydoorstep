@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Bike, Check, Clock3, Copy, CreditCard, Landmark, MapPin, Package, Phone, RefreshCw, Star, Truck, X } from 'lucide-react'
-import { MapPointPicker } from '../map/MapPointPicker'
+import { RouteStep } from './RouteStep'
 import { DeliveryTrackingMap } from '../DeliveryTrackingMap'
 import { useDeliveryTracking } from '../tracking/useDeliveryTracking'
 import { formatDistance, formatDuration } from '../map/addressSearch'
@@ -66,7 +66,6 @@ export function SendPackagePage() {
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
-  const [previewRoutes, setPreviewRoutes] = useState([])
   const signedIn = Boolean(token())
   const savedCards = useSavedCards()
   const [cardChoice, setCardChoice] = useState('NEW')
@@ -197,32 +196,17 @@ export function SendPackagePage() {
   const steps = [['route', 'Route'], ['details', 'Details'], ['review', 'Review & pay']]
   const stepIndex = steps.findIndex(([key]) => key === draft.step)
 
+  if (draft.step === 'route') return <RouteStep points={points} samePlace={samePlace}
+    onChange={(next) => setDraft((current) => ({ ...current, points: next, idempotencyKey: '' }))}
+    onContinue={() => setDraft({ step: 'details' })}
+    notices={<>{configError && <Notice tone="error" action={<button type="button" className="quiet-button" onClick={() => window.location.reload()}>Retry</button>}>{configError}</Notice>}{unavailable && <Notice tone="warning">{unavailableText} You can still plan the route; booking opens once fares are live.</Notice>}</>} />
+
   return <main className={`route-page parcel-page parcel-step-${draft.step}`}>
     <nav className="parcel-steps" aria-label="Booking progress">
       {steps.map(([key, label], index) => <button key={key} type="button" className={index === stepIndex ? 'is-current' : index < stepIndex ? 'is-done' : ''} disabled={index > stepIndex} aria-current={index === stepIndex ? 'step' : undefined} onClick={() => index < stepIndex && setDraft({ step: key })}><i>{index < stepIndex ? <Check size={13} /> : index + 1}</i>{label}</button>)}
     </nav>
     {configError && <Notice tone="error" action={<button type="button" className="quiet-button" onClick={() => window.location.reload()}>Retry</button>}>{configError}</Notice>}
     {unavailable && <Notice tone="warning">{unavailableText} You can still plan the route; booking opens once fares are live.</Notice>}
-
-    {draft.step === 'route' && <div className="parcel-route-step">
-      <MapPointPicker
-        targets={targets}
-        value={points}
-        onChange={(next) => setDraft((current) => ({ ...current, points: next, idempotencyKey: '' }))}
-        heading={{ kicker: 'SEND A PACKAGE · SAPELE', title: 'Where are we picking up and delivering?', intro: 'Set the pickup (A) and destination (B). Search, use GPS, tap the map, or drag a pin.' }}
-        onClose={() => navigate('/')}
-        routeMode="between"
-        selectedRouteId={draft.previewRouteId}
-        onSelectRoute={(id) => setDraft({ previewRouteId: id })}
-        onRoutes={setPreviewRoutes}
-      >
-        {samePlace && <Notice tone="warning">Pickup and destination are at the same spot. Move one of the pins.</Notice>}
-        <button type="button" className="primary-button parcel-continue" disabled={!points.pickup || !points.dropoff || samePlace} onClick={() => setDraft({ step: 'details' })}>
-          {!points.pickup ? 'Set the pickup point' : !points.dropoff ? 'Set the destination' : <>Continue to details <ArrowRight size={16} /></>}
-        </button>
-        {points.pickup && points.dropoff && previewRoutes.length === 0 && <small className="parcel-hint">The final road distance and price are calculated by DOORSTEP on the next steps.</small>}
-      </MapPointPicker>
-    </div>}
 
     {draft.step === 'details' && <section className="parcel-card parcel-details">
       <header className="parcel-card-head"><button type="button" className="map-icon-button" aria-label="Back to route" onClick={() => setDraft({ step: 'route' })}><ArrowLeft size={18} /></button><div><span className="section-kicker">STEP 2 OF 3</span><h2>Package and contact details</h2></div></header>

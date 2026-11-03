@@ -3,7 +3,8 @@ import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { authenticateBearerToken } from './auth.js'
 import { deliverability, discoverSections, etaRange, medianItemPrice } from './customerApp.js'
-import { pricingZones } from './deliveryQuote.js'
+import { pricingZones, quoteOrderDelivery } from './deliveryQuote.js'
+import { itemStats, PUBLIC_REVIEW_SELECT, publicReview, reviewMentionsItem } from './reviewsPublic.js'
 import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { notifyAdmins } from './notify.js'
 import { PAUSE_CHOICES, pausedNow, todayStats } from './partnerToday.js'
@@ -90,11 +91,11 @@ export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, pub
       const since = new Date(Date.now() - 60 * DAY)
       const [sellers, reviews, orders30] = await Promise.all([
         prisma.orderItem.groupBy({ by: ['menuItemId'], where: { order: { restaurantId: restaurant.id, createdAt: { gte: since }, status: { notIn: ['PENDING_PAYMENT', 'CANCELLED', 'REJECTED', 'REFUNDED'] } } }, _sum: { quantity: true }, orderBy: { _sum: { quantity: 'desc' } }, take: 8 }),
-        prisma.review.findMany({ where: { restaurantId: restaurant.id, moderatedAt: { not: null } }, select: { id: true, rating: true, body: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 6 }),
+        prisma.review.findMany({ where: { restaurantId: restaurant.id, moderatedAt: { not: null } }, select: PUBLIC_REVIEW_SELECT, orderBy: { createdAt: 'desc' }, take: 500 }),
         prisma.order.count({ where: { restaurantId: restaurant.id, createdAt: { gte: new Date(Date.now() - 30 * DAY) }, status: { notIn: ['PENDING_PAYMENT', 'CANCELLED', 'REJECTED', 'REFUNDED'] } } }),
       ])
       const card = publicRestaurant(restaurant)
-      return response.json({ store: { ...card, ordersLast30Days: orders30, eta: etaRange(card), pickupEta: etaRange(card, { orderType: 'PICKUP' }) }, topSellerIds: sellers.filter((row) => row.menuItemId && row._sum.quantity > 0).map((row) => row.menuItemId), reviews })
+      return response.json({ store: { ...card, ordersLast30Days: orders30, eta: etaRange(card), pickupEta: etaRange(card, { orderType: 'PICKUP' }) }, topSellerIds: sellers.filter((row) => row.menuItemId && row._sum.quantity > 0).map((row) => row.menuItemId), reviews: reviews.slice(0, 8).map(publicReview), reviewCount: reviews.length, itemStats: itemStats(reviews) })
     } catch (error) {
       console.error('[app] store_failed', error?.message)
       return response.status(503).json({ error: 'STORE_SERVICE_UNAVAILABLE' })
@@ -161,6 +162,50 @@ export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, pub
       if (!membership) return response.status(404).json({ error: 'RESTAURANT_NOT_FOUND' })
       return response.json({ restaurant: membership.restaurant })
     } catch { return response.status(503).json({ error: 'RESTAURANT_SERVICE_UNAVAILABLE' }) }
+  })
+
+  // All approved reviews for a store, newest first; ?itemId= shows only reviews about that item.
+  router.get('/app/stores/:slug/reviews', async (request, response) => {
+    const limit = Math.min(30, Math.max(5, Number(request.query.limit) || 20))
+    const itemId = typeof request.query.itemId === 'string' ? request.query.itemId : null
+    const cursor = typeof request.query.cursor === 'string' ? request.query.cursor : null
+    try {
+      const store = await prisma.restaurant.findFirst({ where: { slug: request.params.slug, status: 'APPROVED' }, select: { id: true } })
+      if (!store) return response.status(404).json({ error: 'STORE_NOT_FOUND' })
+      const where = { restaurantId: store.id, moderatedAt: { not: null }, ...(itemId ? { OR: [{ order: { items: { some: { menuItemId: itemId } } } }] } : {}) }
+      const rows = await prisma.review.findMany({ where, select: PUBLIC_REVIEW_SELECT, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit + 1, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}) })
+      const page = rows.slice(0, limit).filter((review) => !itemId || reviewMentionsItem(review, itemId))
+      return response.json({ reviews: page.map(publicReview), nextCursor: rows.length > limit ? rows[limit - 1].id : null })
+    } catch { return response.status(503).json({ error: 'REVIEW_SERVICE_UNAVAILABLE' }) }
+  })
+
+  // Delivered orders from this store that the signed-in customer hasn't reviewed yet (last 30 days).
+  router.get('/app/stores/:slug/my-reviewable', requireUser, async (request, response) => {
+    try {
+      const store = await prisma.restaurant.findFirst({ where: { slug: request.params.slug }, select: { id: true } })
+      if (!store) return response.status(404).json({ error: 'STORE_NOT_FOUND' })
+      const orders = await prisma.order.findMany({ where: { restaurantId: store.id, customerId: request.user.id, status: 'DELIVERED', createdAt: { gte: new Date(Date.now() - 30 * DAY) }, reviews: { none: {} } }, select: { id: true, orderNumber: true, createdAt: true, deliveredAt: true, items: { select: { menuItemId: true, nameSnapshot: true, quantity: true } } }, orderBy: { createdAt: 'desc' }, take: 3 })
+      return response.json({ orders: orders.map((order) => ({ id: order.id, orderNumber: order.orderNumber, deliveredAt: order.deliveredAt || order.createdAt, items: order.items.map((item) => ({ menuItemId: item.menuItemId, name: item.nameSnapshot, quantity: item.quantity })) })) })
+    } catch { return response.status(503).json({ error: 'REVIEW_SERVICE_UNAVAILABLE' }) }
+  })
+
+  // The real delivery fee from this store to the customer's address (pin or typed area), for the store page.
+  router.post('/app/stores/:slug/delivery-fee', checkLimiter, async (request, response) => {
+    const parsed = z.object({ latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional(), addressLine: z.string().trim().max(240).optional(), subtotalMinor: z.number().int().min(0).max(100_000_000).optional() }).safeParse(request.body || {})
+    if (!parsed.success) return response.status(400).json({ error: 'INVALID_ADDRESS' })
+    const { latitude, longitude, addressLine, subtotalMinor = 0 } = parsed.data
+    try {
+      const restaurant = await prisma.restaurant.findFirst({ where: { slug: request.params.slug, status: 'APPROVED' }, include: { city: { include: { serviceAreas: true } }, application: { select: { deliveryPreference: true } } } })
+      if (!restaurant) return response.status(404).json({ error: 'STORE_NOT_FOUND' })
+      const destination = { point: latitude != null && longitude != null ? { latitude, longitude } : null, addressLine }
+      // Same price the checkout will charge; until distance pricing is published that is the flat ₦800.
+      const quote = await quoteOrderDelivery({ db: prisma, restaurant, destination, subtotalMinor: Math.max(subtotalMinor, restaurant.minimumOrderMinor || 0) })
+      if (!quote) return response.json({ feeMinor: 80000, exact: false, basis: 'FLAT' })
+      return response.json({ feeMinor: quote.customer.deliveryFeeMinor, km: quote.km, exact: quote.dropoffSource === 'PIN' && quote.distance.source !== 'ASSUMED', basis: quote.dropoffSource })
+    } catch (error) {
+      if (error?.status) return response.json({ feeMinor: null, problem: error.message })
+      return response.status(503).json({ error: 'DELIVERY_PRICING_UNAVAILABLE' })
+    }
   })
 
   // Business "Today" screen: store status, live orders, today's sales, the last 7 days, best sellers.

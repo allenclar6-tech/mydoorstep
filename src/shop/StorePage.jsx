@@ -5,6 +5,7 @@ import { BasketBar, DesktopBasket, EmptyState, Sheet, SkeletonList } from './Sho
 import { toast } from './Toaster'
 import { CATEGORY_ART } from './Illustrations'
 import { freeDeliveryFor } from './ShopHome'
+import { itemRating, RateSheet, ReviewCard, ReviewsSection, ReviewsSheet, StoreFactsRow, useReviewable, useStoreDeliveryFee } from './StoreReviews'
 import { addItem, authHeaders, changeItem, etaText, navigate, nairaWhole, ratingPercent, setItemNote, token, useCart, useHome, useStorePage } from './shopData'
 
 export const ORDER_TYPE_KEY = 'doorstep-order-type'
@@ -23,21 +24,17 @@ export function FeesInfo({ onClose }) {
   </Sheet>
 }
 
-function ReviewsSheet({ store, reviews, onClose }) {
-  const percent = ratingPercent(store)
-  return <Sheet title="Ratings & reviews" onClose={onClose}>
-    <div className="sp-review-summary"><b>{percent != null ? `${percent}%` : '—'}</b><span>{store.ratingCount ? `${Number(store.rating).toFixed(1)} out of 5 from ${store.ratingCount} rating${store.ratingCount === 1 ? '' : 's'}` : 'No ratings yet'}</span></div>
-    {reviews.length ? <ul className="sp-review-list">{reviews.map((review) => <li key={review.id}><span className="sp-stars" aria-label={`${review.rating} out of 5`}>{'★'.repeat(review.rating)}<i>{'★'.repeat(5 - review.rating)}</i></span>{review.body && <p>{review.body}</p>}<small>{new Date(review.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</small></li>)}</ul>
-      : <p className="sp-note">Reviews appear here after customers rate their delivered orders.</p>}
-  </Sheet>
-}
 
-function ItemSheet({ item, store, onClose, onAdd }) {
+function ItemSheet({ item, store, onClose, onAdd, rating, reviews = [], onReviews }) {
   const [quantity, setQuantity] = useState(1)
   const [note, setNote] = useState('')
   return <Sheet title={item.name} onClose={onClose} className="sp-item-sheet">
     {item.image && <img className="sp-item-hero" src={item.image} alt="" />}
     {item.description && <p className="sp-item-desc">{item.description}</p>}
+    {(rating || reviews.length > 0) && <section className="rv-item-block">
+      <div className="rv-section-head"><h3>{rating ? <><ThumbsUp size={16} aria-hidden="true" /> {rating.percent}% ({rating.total})</> : 'What people say'}</h3><button type="button" className="rv-link" onClick={onReviews}>Read reviews</button></div>
+      {reviews.slice(0, 2).map((review) => <ReviewCard key={review.id} review={review} compact />)}
+    </section>}
     <label className="sp-field">Note for {store.name} (optional)<textarea rows={2} maxLength={200} value={note} onChange={(event) => setNote(event.target.value)} placeholder="e.g. no pepper, extra sauce" /></label>
     <div className="sp-item-actions">
       <div className="sp-stepper is-big"><button type="button" onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Fewer"><Minus size={17} /></button><span>{quantity}</span><button type="button" onClick={() => setQuantity(Math.min(50, quantity + 1))} aria-label="More"><Plus size={17} /></button></div>
@@ -53,10 +50,10 @@ function ReplaceSheet({ current, store, onCancel, onReplace }) {
   </Sheet>
 }
 
-function ItemRow({ item, quantity, onOpen, onPlus, onMinus, compact = false }) {
+function ItemRow({ item, quantity, onOpen, onPlus, onMinus, compact = false, rating = null }) {
   return <li className={`sp-item${compact ? ' is-compact' : ''}`} id={`item-${item.id}`}>
     <button type="button" className="sp-item-main" onClick={onOpen}>
-      <span className="sp-item-text"><b>{item.name}</b>{item.description && !compact && <small>{item.description}</small>}<strong>{nairaWhole(item.price)}</strong></span>
+      <span className="sp-item-text"><b>{item.name}</b>{item.description && !compact && <small>{item.description}</small>}<strong>{nairaWhole(item.price)}{rating && <em className="rv-item-chip"><ThumbsUp size={12} aria-hidden="true" />{rating.percent}% ({rating.total})</em>}</strong></span>
       {item.image ? <img src={item.image} alt="" loading="lazy" /> : compact ? null : <span className="sp-item-noimg" aria-hidden="true" />}
     </button>
     {quantity ? <div className="sp-stepper"><button type="button" onClick={onMinus} aria-label={`Remove one ${item.name}`}><Minus size={15} /></button><span>{quantity}</span><button type="button" onClick={onPlus} aria-label={`Add one more ${item.name}`}><Plus size={15} /></button></div>
@@ -94,6 +91,9 @@ export function StorePage({ slug }) {
   const sectionRefs = useRef({})
   const store = page.store
   const [favorite, toggleFavorite] = useFavorite(store?.id)
+  const [reviewable, reloadReviewable] = useReviewable(slug)
+  const cartSubtotalMinor = Math.round(cart.filter((entry) => entry.restaurantId === store?.id).reduce((sum, entry) => sum + entry.price * entry.quantity, 0) * 100)
+  const fee = useStoreDeliveryFee(store, cartSubtotalMinor)
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 200)
@@ -157,6 +157,7 @@ export function StorePage({ slug }) {
     <div className="sp-store-layout">
       <nav className="sp-store-side" aria-label="Menu sections">
         <b>Menu</b>
+        <button type="button" className={activeTab === '__reviews' ? 'is-on' : ''} onClick={() => scrollTo('__reviews')}>Reviews<small>{page.reviewCount || ''}</small></button>
         {!query && topSellers.length > 0 && <button type="button" className={activeTab === '__top' ? 'is-on' : ''} onClick={() => scrollTo('__top')}>Top sellers</button>}
         {sections.map(([name, items]) => <button key={name} type="button" className={activeTab === name ? 'is-on' : ''} onClick={() => scrollTo(name)}>{name}<small>{items.length}</small></button>)}
         <button type="button" className="sp-store-side-info" onClick={() => setSheet({ kind: 'fees' })}>Fees information</button>
@@ -170,11 +171,7 @@ export function StorePage({ slug }) {
           <button type="button" role="radio" aria-checked={orderType === 'DELIVERY'} className={orderType === 'DELIVERY' ? 'is-on' : ''} onClick={() => chooseType('DELIVERY')}><Bike size={15} aria-hidden="true" />Delivery</button>
           <button type="button" role="radio" aria-checked={orderType === 'PICKUP'} className={orderType === 'PICKUP' ? 'is-on' : ''} onClick={() => chooseType('PICKUP')}><Store size={15} aria-hidden="true" />Pickup</button>
         </div>}
-        <div className="sp-store-stats">
-          <button type="button" onClick={() => setSheet({ kind: 'reviews' })}><ThumbsUp size={15} aria-hidden="true" /><b>{percent != null ? `${percent}%` : 'New'}</b><small>{store.ratingCount ? `${store.ratingCount} rating${store.ratingCount === 1 ? '' : 's'}` : 'No ratings yet'}</small></button>
-          <div><Clock3 size={15} aria-hidden="true" /><b>{etaText(orderType === 'PICKUP' ? store.pickupEta : store.eta)}</b><small>{orderType === 'PICKUP' ? 'Ready to collect' : 'Estimated'}</small></div>
-          <div>{orderType === 'PICKUP' ? <MapPin size={15} aria-hidden="true" /> : <Bike size={15} aria-hidden="true" />}<b>{orderType === 'PICKUP' ? 'No fee' : free ? <><s>Fee</s> Free</> : 'By distance'}</b><small>{orderType === 'PICKUP' ? 'You collect' : free ? 'First order' : 'Delivery fee'}</small></div>
-        </div>
+        <StoreFactsRow store={store} orderType={orderType} free={free} fee={fee} reviewCount={page.reviewCount} onReviews={() => setSheet({ kind: 'reviews' })} />
         {!store.openNow && <p className="sp-closed-banner"><Clock3 size={15} aria-hidden="true" />{store.temporarilyClosed ? 'This store has paused orders for now.' : `Closed now${store.openingTime ? ` · opens ${store.openingTime}` : ''}. You can schedule your order at checkout.`}</p>}
         {store.minimumOrderMinor > 0 && <p className="sp-min-order">Minimum order {nairaWhole(store.minimumOrderMinor / 100)}</p>}
         <button type="button" className="sp-fees-link" onClick={() => setSheet({ kind: 'fees' })}><Info size={15} aria-hidden="true" /><span>Fees information</span><ChevronRight size={16} aria-hidden="true" /></button>
@@ -183,8 +180,9 @@ export function StorePage({ slug }) {
       {(store.items || []).length === 0 ? <EmptyState icon={Store} title="Menu coming soon" body="This store hasn’t added items yet." /> : <>
         <div className="sp-menu-tools">
           <label className="sp-search-field is-small"><Search size={15} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${store.name}`} aria-label="Search this menu" />{query && <button type="button" onClick={() => setQuery('')} aria-label="Clear"><X size={14} /></button>}</label>
-          {sections.length > 1 && <nav className="sp-menu-tabs" aria-label="Menu sections">{!query && topSellers.length > 0 && <button type="button" className={activeTab === '__top' ? 'is-on' : ''} onClick={() => scrollTo('__top')}>Top sellers</button>}{sections.map(([name]) => <button key={name} type="button" className={activeTab === name ? 'is-on' : ''} onClick={() => scrollTo(name)}>{name}</button>)}</nav>}
+          {!query && <nav className="sp-menu-tabs" aria-label="Menu sections"><button type="button" className={activeTab === '__reviews' ? 'is-on' : ''} onClick={() => scrollTo('__reviews')}>Reviews</button>{topSellers.length > 0 && <button type="button" className={activeTab === '__top' ? 'is-on' : ''} onClick={() => scrollTo('__top')}>Top sellers</button>}{sections.map(([name]) => <button key={name} type="button" className={activeTab === name ? 'is-on' : ''} onClick={() => scrollTo(name)}>{name}</button>)}<span className="sp-menu-tabs-bar" aria-hidden="true" /></nav>}
         </div>
+        {!query && <ReviewsSection reviews={page.reviews} reviewCount={page.reviewCount} onAll={() => setSheet({ kind: 'reviews' })} canRate={reviewable.length > 0} onRate={() => setSheet({ kind: 'rate', order: reviewable[0] })} sectionRef={(node) => { sectionRefs.current.__reviews = node }} />}
         {!query && topSellers.length > 0 && <section className="sp-menu-section" ref={(node) => { sectionRefs.current.__top = node }}>
           <h2>Top sellers</h2>
           <ul className="sp-top-sellers">{topSellers.map((item) => <li key={item.id}>
@@ -194,15 +192,16 @@ export function StorePage({ slug }) {
         </section>}
         {sections.map(([name, items]) => <section key={name} className="sp-menu-section" ref={(node) => { sectionRefs.current[name] = node }}>
           <h2>{name}</h2>
-          <ul className="sp-items">{items.map((item) => <ItemRow key={item.id} item={item} quantity={quantityOf(item.id)} onOpen={() => setSheet({ kind: 'item', item })} onPlus={() => (quantityOf(item.id) ? changeItem(item.id, 1) : add(item))} onMinus={() => changeItem(item.id, -1)} />)}</ul>
+          <ul className="sp-items">{items.map((item) => <ItemRow key={item.id} item={item} rating={itemRating(page.itemStats, item.id)} quantity={quantityOf(item.id)} onOpen={() => setSheet({ kind: 'item', item })} onPlus={() => (quantityOf(item.id) ? changeItem(item.id, 1) : add(item))} onMinus={() => changeItem(item.id, -1)} />)}</ul>
         </section>)}
         {query && sections.length === 0 && <EmptyState icon={Search} title="No items match" body={`Nothing called “${query}” here.`} />}
       </>}
     </main><DesktopBasket /></div>
     <BasketBar />
     {sheet?.kind === 'fees' && <FeesInfo onClose={() => setSheet(null)} />}
-    {sheet?.kind === 'reviews' && <ReviewsSheet store={store} reviews={page.reviews} onClose={() => setSheet(null)} />}
-    {sheet?.kind === 'item' && <ItemSheet item={sheet.item} store={store} onClose={() => setSheet(null)} onAdd={add} />}
+    {sheet?.kind === 'reviews' && <ReviewsSheet store={store} item={sheet.item} onClose={() => setSheet(null)} canRate={!sheet.item && reviewable.length > 0} onRate={() => setSheet({ kind: 'rate', order: reviewable[0] })} />}
+    {sheet?.kind === 'rate' && <RateSheet store={store} order={sheet.order} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reloadReviewable() }} />}
+    {sheet?.kind === 'item' && <ItemSheet item={sheet.item} store={store} onClose={() => setSheet(null)} onAdd={add} rating={itemRating(page.itemStats, sheet.item.id)} reviews={page.reviews.filter((review) => review.items.some((entry) => entry.menuItemId === sheet.item.id))} onReviews={() => setSheet({ kind: 'reviews', item: sheet.item })} />}
     {pending && <ReplaceSheet current={cart[0]?.restaurantName} store={store} onCancel={() => setPending(null)} onReplace={() => { const next = pending; setPending(null); add(next.item, next.quantity, next.note, true) }} />}
   </div>
 }

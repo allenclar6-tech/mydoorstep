@@ -6,7 +6,7 @@ const navigate = (path) => { window.history.pushState({}, '', path); window.disp
 const brandName = (brand) => brand ? brand.charAt(0).toUpperCase() + brand.slice(1).toLowerCase() : 'Card'
 
 export function cardLabel(card) {
-  return `${brandName(card.brand)} •••• ${card.last4}`
+  return `${card.nickname ? `${card.nickname} · ` : ''}${brandName(card.brand)} •••• ${card.last4}`
 }
 
 /** Loads the customer's saved cards. `enabled` is false until the server has saved cards configured. */
@@ -31,7 +31,7 @@ export function SavedCardChoices({ cards, value, onChange, saveCard, onSaveCardC
     {usable.map((card) => <label key={card.id} className={value === card.id ? 'is-selected' : ''}>
       <input type="radio" name={name} checked={value === card.id} onChange={() => onChange(card.id)} />
       <CreditCard size={18} aria-hidden="true" />
-      <span><strong>{cardLabel(card)}</strong><small>Expires {card.expMonth}/{String(card.expYear).slice(-2)}{card.bank ? ` · ${card.bank}` : ''}</small></span>
+      <span><strong>{cardLabel(card)}{card.isDefault && <em className="saved-card-default">Default</em>}</strong><small>Expires {card.expMonth}/{String(card.expYear).slice(-2)}{card.bank ? ` · ${card.bank}` : ''}</small></span>
     </label>)}
     <label className={value === 'NEW' ? 'is-selected' : ''}>
       <input type="radio" name={name} checked={value === 'NEW'} onChange={() => onChange('NEW')} />

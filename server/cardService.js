@@ -43,8 +43,10 @@ export function decryptToken(stored) {
 }
 
 export function publicCard(card) {
-  return { id: card.id, brand: card.brand, bank: card.bank, last4: card.last4, expMonth: card.expMonth, expYear: card.expYear, expired: isExpired(card), lastUsedAt: card.lastUsedAt, createdAt: card.createdAt }
+  return { id: card.id, brand: card.brand, bank: card.bank, last4: card.last4, expMonth: card.expMonth, expYear: card.expYear, expired: isExpired(card), nickname: card.nickname || null, holderName: card.holderName || null, isDefault: Boolean(card.isDefault), lastUsedAt: card.lastUsedAt, createdAt: card.createdAt }
 }
+
+export const cleanText = (value, max) => { const text = String(value ?? '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max); return text || null }
 
 export function isExpired(card, now = new Date()) {
   const year = Number(card.expYear)
@@ -57,7 +59,7 @@ export function isExpired(card, now = new Date()) {
  * Stores a reusable card from a verified Paystack transaction. Only card payments whose
  * authorization Paystack marks reusable are kept. Returns the saved card or null.
  */
-export async function saveCardFromAuthorization(prisma, userId, { authorization, customerEmail, channel }) {
+export async function saveCardFromAuthorization(prisma, userId, { authorization, customerEmail, channel }, { nickname = null, holderName = null } = {}) {
   if (!savedCardsEnabled()) return null
   if (!authorization || channel !== 'card' || authorization.reusable !== true || !authorization.authorization_code || !authorization.signature) return null
   if (!/^\d{4}$/.test(String(authorization.last4 || ''))) return null
@@ -71,6 +73,11 @@ export async function saveCardFromAuthorization(prisma, userId, { authorization,
     expYear: String(authorization.exp_year || ''),
     removedAt: null,
   }
+  // Name on the card: what the customer typed, else what Paystack reports (often empty for Nigerian cards).
+  const holder = cleanText(holderName, 60) || cleanText(authorization.account_name, 60)
+  if (holder) data.holderName = holder
+  // A nickname is only changed when the customer gave one, so paying at checkout never wipes it.
+  if (cleanText(nickname, 30)) data.nickname = cleanText(nickname, 30)
   return prisma.savedCard.upsert({ where: { userId_signature: { userId, signature: authorization.signature } }, update: data, create: { userId, signature: authorization.signature, ...data } })
 }
 

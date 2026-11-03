@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
-import { CardError, chargeSavedCard, deactivateAuthorization, isExpired, publicCard, refundTransaction, saveCardFromAuthorization, savedCardsEnabled } from './cardService.js'
+import { CardError, chargeSavedCard, cleanText, deactivateAuthorization, isExpired, publicCard, refundTransaction, saveCardFromAuthorization, savedCardsEnabled } from './cardService.js'
 import { initializePayment, PaymentError, paystackMode, verifyPaystackTransaction } from './paymentService.js'
 
 // ₦100 by default: very small charges are more likely to be declined or flagged by card fraud checks.
@@ -36,7 +36,17 @@ export async function completeCardVerification(prisma, verification, verified, s
   }
   const claimed = await prisma.cardVerification.updateMany({ where: { id: verification.id, status: 'PENDING' }, data: { status: 'PROCESSING' } })
   if (claimed.count !== 1) return { status: 'PROCESSING', duplicate: true }
-  const card = await saveCardFromAuthorization(prisma, verification.userId, { authorization: verified.authorization, customerEmail: verified.customerEmail, channel: verified.channel })
+  // Was this exact card already saved (and not removed)? Then the customer just sees "already saved".
+  const existing = verified.authorization?.signature && prisma.savedCard.findUnique
+    ? await prisma.savedCard.findUnique({ where: { userId_signature: { userId: verification.userId, signature: verified.authorization.signature } }, select: { removedAt: true } }).catch(() => null)
+    : null
+  const alreadySaved = Boolean(existing && !existing.removedAt)
+  const card = await saveCardFromAuthorization(prisma, verification.userId, { authorization: verified.authorization, customerEmail: verified.customerEmail, channel: verified.channel }, { nickname: verification.nickname, holderName: verification.holderName })
+  // The first card a customer saves becomes their default.
+  if (card && prisma.savedCard.count && prisma.savedCard.update) {
+    const defaults = await prisma.savedCard.count({ where: { userId: verification.userId, removedAt: null, isDefault: true } })
+    if (!defaults) await prisma.savedCard.update({ where: { id: card.id }, data: { isDefault: true } })
+  }
   const refundStatus = await refundTransaction(verification.reference, { fetchImpl }).catch(() => 'failed')
   await prisma.cardVerification.update({ where: { id: verification.id }, data: { status: card ? 'SUCCEEDED' : 'NOT_REUSABLE', savedCardId: card?.id || null, refundStatus, completedAt: new Date() } })
   if (refundStatus === 'failed') {
@@ -44,7 +54,7 @@ export async function completeCardVerification(prisma, verification, verified, s
     if (admins.length) await prisma.notification.createMany({ data: admins.map((admin) => ({ userId: admin.id, type: 'PAYMENT', title: 'Card verification refund failed', body: `Refund the ₦${verification.amountMinor / 100} card verification ${verification.reference} manually in Paystack.` })) })
   }
   console.info('[cards] verification_completed', JSON.stringify({ source, saved: Boolean(card), refundStatus }))
-  return { status: card ? 'SUCCEEDED' : 'NOT_REUSABLE', savedCardId: card?.id || null, refundStatus }
+  return { status: card ? 'SUCCEEDED' : 'NOT_REUSABLE', savedCardId: card?.id || null, refundStatus, alreadySaved }
 }
 
 /**
@@ -59,7 +69,7 @@ export function createCardRouter({ prisma, requireUser, applyVerifiedPayment, ro
 
   router.get('/cards', requireUser, requireCustomer, async (request, response) => {
     try {
-      const cards = await prisma.savedCard.findMany({ where: { userId: request.user.id, removedAt: null }, orderBy: [{ lastUsedAt: 'desc' }, { createdAt: 'desc' }] })
+      const cards = await prisma.savedCard.findMany({ where: { userId: request.user.id, removedAt: null }, orderBy: [{ isDefault: 'desc' }, { lastUsedAt: 'desc' }, { createdAt: 'desc' }] })
       return response.json({ enabled: savedCardsEnabled(), mode: paystackMode(), verificationAmountMinor: verificationAmount(), cards: cards.map(publicCard) })
     } catch (error) { return fail(response, error, 'CARD_SERVICE_UNAVAILABLE') }
   })
@@ -69,11 +79,15 @@ export function createCardRouter({ prisma, requireUser, applyVerifiedPayment, ro
       if (!savedCardsEnabled()) throw new CardError('SAVED_CARDS_NOT_CONFIGURED', 'Saving cards is not available yet.', 503)
       const recentAttempts = await prisma.cardVerification.count({ where: { userId: request.user.id, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }, status: { not: 'SUCCEEDED' } } })
       if (recentAttempts >= MAX_ADD_CARD_ATTEMPTS_PER_DAY) throw new CardError('CARD_ATTEMPTS_LIMIT', 'You have tried to add a card several times today. To avoid your bank or Paystack blocking the card, try again tomorrow — or tick “Save my card” the next time you pay for an order.', 429)
+      // Only a name and a nickname come from DOORSTEP's form. Card number, expiry and CVC are typed on Paystack.
+      const input = z.object({ holderName: z.string().max(80).optional().nullable(), nickname: z.string().max(40).optional().nullable() }).safeParse(request.body || {})
+      if (!input.success) throw new CardError('INVALID_CARD_DETAILS', 'Check the name and nickname, then try again.', 400)
       const reference = `DSPCARD-${randomUUID()}`
       const amountMinor = verificationAmount()
-      await prisma.cardVerification.create({ data: { reference, userId: request.user.id, amountMinor } })
+      await prisma.cardVerification.create({ data: { reference, userId: request.user.id, amountMinor, holderName: cleanText(input.data.holderName, 60), nickname: cleanText(input.data.nickname, 30) } })
       const initialized = await initializePayment({ email: request.user.email, amountMinor, reference, callbackUrl: process.env.PAYMENT_CALLBACK_URL, metadata: { purpose: 'card_verification' }, channels: ['card'] })
-      return response.json({ authorizationUrl: initialized.authorizationUrl, reference, amountMinor })
+      // accessCode lets the app open Paystack's secure pop-up (InlineJS); authorizationUrl is the full-page fallback.
+      return response.json({ authorizationUrl: initialized.authorizationUrl, accessCode: initialized.accessCode || null, reference, amountMinor })
     } catch (error) { return fail(response, error, 'CARD_SERVICE_UNAVAILABLE') }
   })
 
@@ -81,10 +95,31 @@ export function createCardRouter({ prisma, requireUser, applyVerifiedPayment, ro
     try {
       const card = await prisma.savedCard.findFirst({ where: { id: request.params.cardId, userId: request.user.id, removedAt: null } })
       if (!card) return response.status(404).json({ error: 'CARD_NOT_FOUND' })
-      await prisma.savedCard.update({ where: { id: card.id }, data: { removedAt: new Date(), authorizationCipher: 'removed' } })
+      await prisma.savedCard.update({ where: { id: card.id }, data: { removedAt: new Date(), authorizationCipher: 'removed', isDefault: false } })
+      // Removing the default card: the most recently used remaining card becomes the default.
+      if (card.isDefault) {
+        const next = await prisma.savedCard.findFirst({ where: { userId: request.user.id, removedAt: null }, orderBy: [{ lastUsedAt: 'desc' }, { createdAt: 'desc' }], select: { id: true } })
+        if (next) await prisma.savedCard.update({ where: { id: next.id }, data: { isDefault: true } })
+      }
       // Also ask Paystack to retire the token; the card is unusable here either way.
       deactivateAuthorization(card, { fetchImpl }).catch(() => undefined)
       return response.status(204).end()
+    } catch (error) { return fail(response, error, 'CARD_SERVICE_UNAVAILABLE') }
+  })
+
+  // Rename a card, or make it the default (the card picked first at checkout).
+  router.patch('/cards/:cardId', requireUser, requireCustomer, async (request, response) => {
+    const result = z.object({ nickname: z.string().max(40).nullable().optional(), isDefault: z.literal(true).optional() }).safeParse(request.body || {})
+    if (!result.success) return response.status(400).json({ error: 'INVALID_CARD_UPDATE', message: 'Nicknames can be up to 30 characters.' })
+    try {
+      const card = await prisma.savedCard.findFirst({ where: { id: request.params.cardId, userId: request.user.id, removedAt: null } })
+      if (!card) return response.status(404).json({ error: 'CARD_NOT_FOUND', message: 'That card is no longer saved.' })
+      if (result.data.isDefault && isExpired(card)) throw new CardError('CARD_EXPIRED', 'An expired card can’t be your default. Add a new card instead.', 409)
+      const updated = await prisma.$transaction(async (transaction) => {
+        if (result.data.isDefault) await transaction.savedCard.updateMany({ where: { userId: request.user.id, isDefault: true, NOT: { id: card.id } }, data: { isDefault: false } })
+        return transaction.savedCard.update({ where: { id: card.id }, data: { ...(result.data.isDefault ? { isDefault: true } : {}), ...('nickname' in result.data ? { nickname: cleanText(result.data.nickname, 30) } : {}) } })
+      })
+      return response.json({ card: publicCard(updated) })
     } catch (error) { return fail(response, error, 'CARD_SERVICE_UNAVAILABLE') }
   })
 

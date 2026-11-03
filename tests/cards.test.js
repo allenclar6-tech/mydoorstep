@@ -95,3 +95,35 @@ test('add-card attempts are capped per day so Paystack does not block the custom
   const { MAX_ADD_CARD_ATTEMPTS_PER_DAY } = await import('../server/cardRoutes.js')
   assert.ok(MAX_ADD_CARD_ATTEMPTS_PER_DAY >= 2 && MAX_ADD_CARD_ATTEMPTS_PER_DAY <= 5)
 })
+
+test('add-card screen: holder name and nickname are kept, the first card becomes default, a repeat card says "already saved"', async () => {
+  const cards = new Map()
+  const prisma = {
+    cardVerification: { updateMany: async () => ({ count: 1 }), update: async () => undefined },
+    savedCard: {
+      findUnique: async ({ where }) => cards.get(where.userId_signature.signature) || null,
+      upsert: async ({ where, update, create }) => { const key = where.userId_signature.signature; const next = cards.has(key) ? { ...cards.get(key), ...update } : { id: `card${cards.size + 1}`, isDefault: false, ...create }; cards.set(key, next); return next },
+      count: async () => [...cards.values()].filter((card) => card.isDefault && !card.removedAt).length,
+      update: async ({ where, data }) => { for (const [key, card] of cards) if (card.id === where.id) cards.set(key, { ...card, ...data }); return null },
+    },
+    user: { findMany: async () => [] },
+    notification: { createMany: async () => undefined },
+  }
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ status: true, data: { status: 'pending' } }) })
+  const verified = { status: 'success', reference: 'DSPCARD-9', amount: 10000, currency: 'NGN', authorization, customerEmail: 'a@b.c', channel: 'card' }
+  const verification = { id: 'v9', reference: 'DSPCARD-9', userId: 'u1', amountMinor: 10000, status: 'PENDING', holderName: 'Ejiro Eyedo', nickname: 'work card' }
+  const first = await completeCardVerification(prisma, verification, verified, 'verify', { fetchImpl })
+  assert.equal(first.alreadySaved, false)
+  const saved = [...cards.values()][0]
+  assert.equal(saved.nickname, 'work card')
+  assert.equal(saved.holderName, 'Ejiro Eyedo')
+  assert.equal(saved.isDefault, true)
+  // Same card again, with no nickname: reported as already saved, nickname not wiped.
+  const again = await completeCardVerification(prisma, { ...verification, id: 'v10', status: 'PENDING', nickname: null }, verified, 'verify', { fetchImpl })
+  assert.equal(again.alreadySaved, true)
+  assert.equal([...cards.values()][0].nickname, 'work card')
+  // What the app receives never contains the Paystack token.
+  const shown = publicCard([...cards.values()][0])
+  assert.equal(JSON.stringify(shown).includes('AUTH_'), false)
+  assert.deepEqual([shown.nickname, shown.holderName, shown.isDefault], ['work card', 'Ejiro Eyedo', true])
+})

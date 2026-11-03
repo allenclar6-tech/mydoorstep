@@ -98,7 +98,7 @@ export function useStorePage(slug) {
     setState({ status: 'loading', store: null, topSellerIds: [], reviews: [], error: '' })
     fetch(`${apiBase}/api/app/stores/${encodeURIComponent(slug)}`)
       .then(async (response) => { const body = await response.json().catch(() => ({})); if (response.status === 404) throw new Error('This store isn’t on DOORSTEP right now.'); if (!response.ok) throw new Error('The store couldn’t load. Try again shortly.'); return body })
-      .then((body) => { if (active) setState({ status: 'ready', store: body.store, topSellerIds: body.topSellerIds || [], reviews: body.reviews || [], error: '' }) })
+      .then((body) => { if (active) setState({ status: 'ready', store: body.store, topSellerIds: body.topSellerIds || [], reviews: body.reviews || [], reviewCount: body.reviewCount ?? (body.reviews || []).length, itemStats: body.itemStats || {}, error: '' }) })
       .catch((error) => { if (active) setState({ status: 'error', store: null, topSellerIds: [], reviews: [], error: error instanceof TypeError ? 'You seem to be offline.' : error.message }) })
     return () => { active = false }
   }, [slug])
@@ -106,7 +106,8 @@ export function useStorePage(slug) {
 }
 
 // Ratings and timing shown on cards ------------------------------------------------------------------------------
-export const ratingPercent = (store) => store?.ratingCount ? Math.round((Number(store.rating) / 5) * 100) : null
+/** Glovo-style: the share of reviewers who gave a thumbs-up (falls back to the average for older data). */
+export const ratingPercent = (store) => !store?.ratingCount ? null : store.ratingLikes != null ? Math.round((store.ratingLikes / store.ratingCount) * 100) : Math.round((Number(store.rating) / 5) * 100)
 export const etaText = (range) => range ? `${range[0]}–${range[1]} min` : ''
 export const storeHref = (store) => `/store/${store.slug}`
 

@@ -232,6 +232,7 @@ function publicRestaurant(restaurant) {
     city: restaurant.city?.name || null,
     rating: Number(restaurant.ratingAverage),
     ratingCount: restaurant.ratingCount,
+    ratingLikes: restaurant.ratingLikes ?? null,
     openingTime: restaurant.openingTime,
     closingTime: restaurant.closingTime,
     daysOpen: Array.isArray(restaurant.daysOpen) ? restaurant.daysOpen : null,
@@ -1220,15 +1221,21 @@ app.post('/api/orders', requireUser, async (request, response) => {
 
 app.post('/api/reviews', requireUser, async (request, response) => {
   if (request.user.role !== 'CUSTOMER') return response.status(403).json({ error: 'CUSTOMER_ROLE_REQUIRED' })
-  const result = z.object({ orderId: z.string().min(1), rating: z.number().int().min(1).max(5), body: z.string().max(2000).optional() }).safeParse(request.body)
+  const result = z.object({ orderId: z.string().min(1), rating: z.number().int().min(1).max(5), body: z.string().trim().max(2000).optional(), items: z.array(z.object({ menuItemId: z.string().min(1), liked: z.boolean() })).max(50).optional() }).safeParse(request.body)
   if (!result.success) return response.status(400).json({ error: 'INVALID_REVIEW', details: result.error.flatten() })
   try {
-    const order = await prisma.order.findFirst({ where: { id: result.data.orderId, customerId: request.user.id, status: 'DELIVERED' }, select: { id: true, restaurantId: true } })
+    const order = await prisma.order.findFirst({ where: { id: result.data.orderId, customerId: request.user.id, status: 'DELIVERED' }, select: { id: true, restaurantId: true, items: { select: { menuItemId: true, nameSnapshot: true } } } })
     if (!order) return response.status(409).json({ error: 'ORDER_NOT_REVIEWABLE' })
+    // Item thumbs only count for items that were really in this order.
+    const inOrder = new Map(order.items.filter((item) => item.menuItemId).map((item) => [item.menuItemId, item.nameSnapshot]))
+    const itemFeedback = (result.data.items || []).filter((item) => inOrder.has(item.menuItemId)).map((item) => ({ menuItemId: item.menuItemId, name: inOrder.get(item.menuItemId), liked: item.liked }))
     const review = await prisma.$transaction(async (transaction) => {
-      const created = await transaction.review.create({ data: { userId: request.user.id, restaurantId: order.restaurantId, orderId: order.id, rating: result.data.rating, body: result.data.body } })
-      const aggregate = await transaction.review.aggregate({ where: { restaurantId: order.restaurantId }, _avg: { rating: true }, _count: { _all: true } })
-      await transaction.restaurant.update({ where: { id: order.restaurantId }, data: { ratingAverage: aggregate._avg.rating || 0, ratingCount: aggregate._count._all } })
+      const created = await transaction.review.create({ data: { userId: request.user.id, restaurantId: order.restaurantId, orderId: order.id, rating: result.data.rating, body: result.data.body || null, itemFeedback: itemFeedback.length ? itemFeedback : undefined } })
+      const [aggregate, likes] = await Promise.all([
+        transaction.review.aggregate({ where: { restaurantId: order.restaurantId }, _avg: { rating: true }, _count: { _all: true } }),
+        transaction.review.count({ where: { restaurantId: order.restaurantId, rating: { gte: 4 } } }),
+      ])
+      await transaction.restaurant.update({ where: { id: order.restaurantId }, data: { ratingAverage: aggregate._avg.rating || 0, ratingCount: aggregate._count._all, ratingLikes: likes } })
       return created
     })
     return response.status(201).json({ review })
@@ -1562,7 +1569,7 @@ app.post('/api/payments/verify', requireUser, rateLimit({ windowMs: 60_000, limi
       if (verification.userId !== request.user.id) return response.status(404).json({ error: 'PAYMENT_NOT_FOUND' })
       const verified = await verifyPaystackTransaction(result.data.reference)
       const outcome = await completeCardVerification(prisma, verification, verified, 'verify')
-      return response.json({ kind: 'card', status: outcome.status, providerStatus: verified.status, gatewayResponse: verified.gatewayResponse || null, refundStatus: outcome.refundStatus || null })
+      return response.json({ kind: 'card', status: outcome.status, providerStatus: verified.status, gatewayResponse: verified.gatewayResponse || null, refundStatus: outcome.refundStatus || null, alreadySaved: Boolean(outcome.alreadySaved), savedCardId: outcome.savedCardId || null })
     }
     const { payment, expectedReference } = await findPaymentByReference(result.data.reference)
     if (!payment) return response.status(404).json({ error: 'PAYMENT_NOT_FOUND' })
