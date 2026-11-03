@@ -2,8 +2,24 @@
 // formatter or the token does not pull the map library into the main bundle.
 import { useEffect, useState } from 'react'
 import { apiBase } from '../config/apiBase'
+import { readConfirmedLocation } from '../location'
+import { COVERAGE_BOUNDS, COVERAGE_CENTER, isCoveredPoint } from '../../server/coverage.js'
 
 export const SAPELE_CENTER = [5.6846, 5.8916]
+
+/**
+ * Where a map opens and searches look first: the person's confirmed location when it's inside Delta, Edo or
+ * Rivers State, otherwise the middle of the three states. [longitude, latitude].
+ */
+export function defaultMapCenter() {
+  try {
+    const location = readConfirmedLocation()
+    if (location && isCoveredPoint(location)) return [location.longitude, location.latitude]
+  } catch { /* storage unavailable */ }
+  return COVERAGE_CENTER
+}
+/** Mapbox bbox for the three covered states: west,south,east,north. */
+export const COVERAGE_BBOX = [COVERAGE_BOUNDS.west, COVERAGE_BOUNDS.south, COVERAGE_BOUNDS.east, COVERAGE_BOUNDS.north].join(',')
 
 // Public, browser-side token (pk.*). It is not a secret: restrict it to the DOORSTEP website URLs and the
 // public scopes the app needs in the Mapbox account.

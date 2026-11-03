@@ -105,7 +105,7 @@ export function OutOfArea({ check }) {
   return <section className="sp-out-of-area" aria-live="polite">
     <div className="sp-out-art" aria-hidden="true"><MapPin size={34} /><span><Ban size={20} /></span></div>
     <h2>Out of delivery area</h2>
-    <p>{check?.message || 'DOORSTEP doesn’t deliver to this address yet.'} We’re growing across Sapele — try another address, or pick up from a store yourself.</p>
+    <p>{check?.message || 'DOORSTEP doesn’t deliver to this address yet.'} We’re growing across Delta, Edo and Rivers — try another address, or pick up from a store yourself.</p>
     <button type="button" className="sp-primary" onClick={() => setOpen(true)}>Change address</button>
     <button type="button" className="sp-ghost" onClick={() => navigate('/discover?pickup=1')}>See stores for pickup</button>
     {open && <AddressSheet onClose={() => setOpen(false)} />}
@@ -298,10 +298,10 @@ export function DesktopFooter() {
   ]
   return <footer className="sp-dfoot">
     <div className="sp-dfoot-inner">
-      <div className="sp-dfoot-brand"><Logo /><p>Food, groceries and everyday essentials from shops and kitchens in Sapele, delivered by local riders.</p></div>
+      <div className="sp-dfoot-brand"><Logo /><p>Food, groceries and everyday essentials from shops and kitchens across Delta, Edo and Rivers, delivered by local riders.</p></div>
       {columns.map(([title, links]) => <nav key={title} aria-label={title}><b>{title}</b>{links.map(([label, href]) => <a key={href} href={href} onClick={link(href)}>{label}</a>)}</nav>)}
     </div>
-    <small className="sp-dfoot-legal">© {new Date().getFullYear()} DOORSTEP · Sapele, Delta State</small>
+    <small className="sp-dfoot-legal">© {new Date().getFullYear()} DOORSTEP · Nigeria</small>
   </footer>
 }
 

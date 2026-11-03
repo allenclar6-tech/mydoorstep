@@ -45,6 +45,11 @@ try {
     const result = await seedCandidateLocations(prisma)
     console.info('[database] location_candidates', JSON.stringify(result))
   } catch (error) { console.warn('[database] location_seed_skipped', error?.message) }
+  // Service towns across Delta, Edo and Rivers States (server/coverage.js); only adds missing ones.
+  try {
+    const { ensureCoverage } = await import('./coverage.js')
+    console.info('[database] coverage', JSON.stringify(await ensureCoverage(prisma)))
+  } catch (error) { console.warn('[database] coverage_skipped', error?.message) }
 } finally {
   await prisma.$disconnect()
 }

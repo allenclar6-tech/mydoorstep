@@ -313,7 +313,7 @@ export function DeliveryPricingAdmin() {
       </div>
 
       <div className="dp-card"><h2><Bike size={18} aria-hidden="true" />What riders earn</h2>
-        <p className="dp-muted">Sapele has no official rider tariff, so this is DOORSTEP’s own rate card. A delivery earns the first band its road distance fits in. Agreed prices on specific routes override it.</p>
+        <p className="dp-muted">There’s no official rider tariff, so this is DOORSTEP’s own rate card. A delivery earns the first band its road distance fits in. Agreed prices on specific routes override it.</p>
         <Toggle checked={riderPay.enabled} onChange={(v) => setRiderPay({ ...riderPay, enabled: v })} label="Pay riders from this rate card" />
         <div className="dp-bands">
           {riderPay.bands.map((band, index) => <div className="dp-band" key={index}>

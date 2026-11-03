@@ -1,7 +1,7 @@
 // Pure helpers for the customer app: "can we deliver here?" and the Discover rankings.
 // Kept free of express/prisma imports so they can be unit-tested.
 import { resolveDropoff } from './deliveryQuote.js'
-import { haversineMeters, SAPELE_CENTRE, SERVICE_AREA_KM } from './locations.js'
+import { COVERAGE_LABEL, isCoveredPoint } from './coverage.js'
 
 /**
  * Whether DOORSTEP delivers to a pin or typed address.
@@ -11,9 +11,9 @@ export function deliverability({ point, addressLine }, { pricing, zones }) {
   const dropoff = resolveDropoff({ point, addressLine }, zones || [])
   const zone = dropoff.zone ? { id: dropoff.zone.id, name: dropoff.zone.name } : null
   if (dropoff.zone?.closed) return { deliverable: false, reason: 'PAUSED', zone, message: `Deliveries to ${dropoff.zone.name} are paused${dropoff.zone.closedReason ? `: ${dropoff.zone.closedReason}` : ''}.` }
-  if (dropoff.point) {
-    const km = haversineMeters(dropoff.point, SAPELE_CENTRE) / 1000
-    if (km > SERVICE_AREA_KM) return { deliverable: false, reason: 'TOO_FAR', zone, km: Math.round(km), message: `This address is about ${Math.round(km)} km from Sapele. DOORSTEP delivers within Sapele for now.` }
+  // Outside Delta, Edo and Rivers States: not served. Inside, the store's distance limit applies at checkout.
+  if (dropoff.point && !isCoveredPoint(dropoff.point)) {
+    return { deliverable: false, reason: 'TOO_FAR', zone, message: `DOORSTEP delivers in ${COVERAGE_LABEL} only. This address is outside them.` }
   }
   if (pricing?.coverage?.requireApprovedZone && !dropoff.zone) {
     return { deliverable: false, reason: dropoff.point ? 'NOT_COVERED' : 'UNKNOWN', zone: null, message: dropoff.point ? 'DOORSTEP doesn’t deliver to this spot yet.' : 'Set your exact pin on the map so we can check this address.' }

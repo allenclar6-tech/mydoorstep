@@ -40,17 +40,17 @@ The Amazon Appstore stopped supporting Android phones in 2025, so it isn't liste
 
 ## Store listing text (copy and paste)
 
-**App name:** DOORSTEP — Food & Delivery in Sapele
+**App name:** DOORSTEP — Food & Delivery in Nigeria
 
 **Short description (≤ 80 characters):**
-Order food, groceries & more in Sapele. Send packages. Track your rider live.
+Order food, groceries & more in Delta, Edo and Rivers. Send packages. Track your rider live.
 
 **Full description:**
-DOORSTEP is Sapele's own delivery app.
+DOORSTEP is the delivery app for Delta, Edo and Rivers States, Nigeria.
 
 • Food from local kitchens, bukas, cafés and bakeries
 • Groceries, shops, pharmacy and beauty — delivered to your door
-• Send a package anywhere in Sapele: pick-up and drop-off, price shown before you pay
+• Send a package anywhere in your town: pick-up and drop-off, price shown before you pay
 • Track your rider live on the map until your order arrives
 • Type your address or drop a pin — the delivery fee is worked out by distance
 • Pay securely by card (Paystack) or bank transfer; save your card for one-tap checkout
@@ -67,7 +67,7 @@ account in the same app.
 **Icon:** `public/icons/icon-512.png` (512 × 512).
 **Screenshots:** take 4–6 real screenshots on an Android phone after installing (home, a store page, checkout,
 live tracking, send a package). Stores reject mock-ups that don't match the app.
-**Feature graphic (Play/Galaxy):** 1024 × 500, DOORSTEP yellow `#FFC244` with the logo and "Delivered across Sapele".
+**Feature graphic (Play/Galaxy):** 1024 × 500, DOORSTEP yellow `#FFC244` with the logo and "Delivered across Delta, Edo and Rivers".
 
 ## Getting found on Google
 
@@ -75,7 +75,7 @@ live tracking, send a package). Stores reject mock-ups that don't match the app.
    the sitemap `https://mydoorstep.com.co/sitemap.xml` and use *URL inspection → Request indexing* for
    `https://mydoorstep.com.co/download`. The download page already tells Google it's an app download page (once a
    real APK exists) — no fake ratings or reviews.
-2. **Google Business Profile** (free): create "DOORSTEP" (delivery service, Sapele), add the website and the
+2. **Google Business Profile** (free): create "DOORSTEP" (delivery service, Delta, Edo and Rivers), add the website and the
    download link, photos, opening hours, and ask happy customers for reviews there.
 3. Put the download link in your WhatsApp Business profile, Instagram/Facebook/TikTok bios, and on every receipt.
 4. Ask partner restaurants and shops to display the QR code at their counters.

@@ -41,14 +41,16 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-// Opening screen (index.html): fade it out once the first page has drawn. In the installed app it stays a moment on
-// the first launch of a session, like Glovo; in a browser tab it goes as soon as the page is ready (never a delay).
+// Opening screen (index.html): fade it out once the first page has drawn, after holding it a little on the first
+// opening of a session (like Glovo). Later page loads in the same session skip it.
 const splash = document.getElementById('ds-splash')
 if (splash) {
   const installed = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
   let seen = true
   try { seen = Boolean(sessionStorage.getItem('doorstep-splash-seen')); sessionStorage.setItem('doorstep-splash-seen', '1') } catch { /* private mode */ }
-  const holdMs = installed && !seen ? Math.max(0, 900 - performance.now()) : 0
+  // First opening in a session: the installed app shows the opening screen for about 2.4 s, a browser tab for about
+  // 1.6 s (counted from when the page started loading). After that, pages open straight away.
+  const holdMs = seen ? 0 : Math.max(0, (installed ? 2400 : 1600) - performance.now())
   const hide = () => { splash.classList.add('is-done'); setTimeout(() => splash.remove(), 450) }
   requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(hide, holdMs)))
 }

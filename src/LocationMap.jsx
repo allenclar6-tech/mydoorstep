@@ -27,7 +27,7 @@ export function LocationMap({ onSelect, onCancel }) {
       targets={deliveryTargets}
       value={points}
       onChange={(next) => { setPoints(next); setConfirmed('') }}
-      heading={{ kicker: 'DOORSTEP DELIVERY · SAPELE', title: 'Set your delivery point', intro: 'Search an address, use GPS, or tap the map to place your doorstep pin.' }}
+      heading={{ kicker: 'DOORSTEP DELIVERY', title: 'Set your delivery point', intro: 'Search an address, use GPS, or tap the map to place your doorstep pin.' }}
       onClose={onCancel}
       routeMode="fromCenter"
     >

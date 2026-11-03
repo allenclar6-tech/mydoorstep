@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { Bookmark, Crosshair, HelpCircle, LocateFixed, Search, Trash2, X } from 'lucide-react'
-import { createDoorstepMap, describeMapError, featureOf, lineOverlay, SAPELE_CENTER, useMapToken } from './mapCore'
+import { createDoorstepMap, defaultMapCenter, describeMapError, featureOf, lineOverlay, useMapToken } from './mapCore'
 import { LayersControl } from './LayersControl'
 import { apiBase, describeGeolocationError, fetchDrivingRoutes, formatDistance, formatDuration, getDevicePosition, resolveGooglePlace, reverseGeocode, searchAddresses } from './addressSearch'
 
@@ -138,7 +138,7 @@ export function MapPointPicker({
       return undefined
     }
     const first = targets.map((target) => valueRef.current[target.key]).find(Boolean)
-    const created = createDoorstepMap(mapElement.current, { center: first ? [first.longitude, first.latitude] : SAPELE_CENTER, zoom: first ? 15 : 13 })
+    const created = createDoorstepMap(mapElement.current, { center: first ? [first.longitude, first.latitude] : defaultMapCenter(), zoom: first ? 15 : 13 })
     const { map, controller: mapController } = created
     mapRef.current = map
     controllerRef.current = mapController
@@ -220,7 +220,7 @@ export function MapPointPicker({
     }
     if (routeMode === 'fromCenter') {
       const b = value[targets[0].key]
-      return b ? [{ latitude: SAPELE_CENTER[1], longitude: SAPELE_CENTER[0] }, b] : null
+      return b ? [{ latitude: defaultMapCenter()[1], longitude: defaultMapCenter()[0] }, b] : null
     }
     return null
   }, [value, routeMode])
@@ -341,7 +341,7 @@ export function MapPointPicker({
     const map = mapRef.current
     const point = value[activeKey]
     if (!map) return
-    map.flyTo({ center: point ? [point.longitude, point.latitude] : SAPELE_CENTER, zoom: point ? 16 : 13, bearing: 0, pitch: 0, duration: 700 })
+    map.flyTo({ center: point ? [point.longitude, point.latitude] : defaultMapCenter(), zoom: point ? 16 : 13, bearing: 0, pitch: 0, duration: 700 })
   }
 
   const activePoint = value[activeKey]
@@ -409,7 +409,7 @@ export function MapPointPicker({
       </div>
       {routeEnds && <div className="map-picker-route" aria-live="polite">
         {routeState === 'loading' && <span>Checking road route…</span>}
-        {routeState === 'ready' && selectedRoute && <span><strong>{formatDistance(selectedRoute.distanceMeters)}</strong> by road · about <strong>{formatDuration(selectedRoute.durationSeconds)}</strong> driving{routeMode === 'fromCenter' ? ' from central Sapele (preview)' : ''}</span>}
+        {routeState === 'ready' && selectedRoute && <span><strong>{formatDistance(selectedRoute.distanceMeters)}</strong> by road · about <strong>{formatDuration(selectedRoute.durationSeconds)}</strong> driving{routeMode === 'fromCenter' ? ' from the map centre (preview)' : ''}</span>}
         {routeState === 'ready' && routes.length > 1 && onSelectRoute && <div className="map-picker-route-options" role="radiogroup" aria-label="Route options">
           {routes.map((route, index) => <button key={route.id} type="button" role="radio" aria-checked={route.id === (selectedRoute?.id)} onClick={() => onSelectRoute(route.id)}>{index === 0 ? 'Fastest' : `Option ${index + 1}`} · {formatDistance(route.distanceMeters)} · {formatDuration(route.durationSeconds)}</button>)}
         </div>}

@@ -81,7 +81,7 @@ export async function quoteOrderDelivery({ db, restaurant, destination, subtotal
   distance.warnings = [...distance.warnings, ...extraWarnings]
   const priced = priceDelivery({ distance, pickupZone, dropoffZone: dropoff.zone, subtotalMinor, fulfilment, pricing, finance: withBusinessCommission(finance, restaurant) })
   if (priced.warnings.includes('BEYOND_MAX_DISTANCE') && distance.source !== 'ASSUMED') {
-    throw new DeliveryQuoteError('DELIVERY_TOO_FAR', `This address is about ${priced.km} km from the store. DOORSTEP delivers up to ${pricing.distance.maxDeliveryKm} km in Sapele.`, 422)
+    throw new DeliveryQuoteError('DELIVERY_TOO_FAR', `This address is about ${priced.km} km from the store. DOORSTEP delivers up to ${pricing.distance.maxDeliveryKm} km from the store.`, 422)
   }
   return { ...priced, dropoffSource: dropoff.source, pricedAt: new Date().toISOString() }
 }

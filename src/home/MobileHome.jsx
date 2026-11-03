@@ -65,7 +65,7 @@ export function MobileHome({ deliveryLocation, search, onSearch, restaurants, gr
       </nav>}
 
       {!search && <button type="button" className="m-send-card" onClick={() => onNavigate('/send')}>
-        <span className="m-send-copy"><strong>Need something moved across Sapele?</strong><span>Book a rider from your door to theirs. You see the road distance and the price before you pay.</span></span>
+        <span className="m-send-copy"><strong>Need something moved across town?</strong><span>Book a rider from your door to theirs. You see the road distance and the price before you pay.</span></span>
         <span className="m-send-icon" aria-hidden="true"><Package size={30} strokeWidth={2} /></span>
       </button>}
 

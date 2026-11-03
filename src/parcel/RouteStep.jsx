@@ -48,7 +48,7 @@ export function RouteStep({ points, onChange, onContinue, samePlace, notices }) 
   return <div className="sp-screen pk-page">
     <header className="pk-header"><button type="button" className="cd-back" onClick={() => navigate('/')} aria-label="Back"><ArrowLeft size={20} /></button><h1>Send a package</h1><button type="button" className="pk-link" onClick={() => navigate('/parcels')}>My packages</button></header>
     <main className="sp-body pk-body">
-      <section className="pk-hero"><span className="pk-hero-art" aria-hidden="true"><Parcel /></span><div><h2>Anything, anywhere in Sapele</h2><p>A rider collects it and brings it straight to the door. You see the price before you pay.</p></div></section>
+      <section className="pk-hero"><span className="pk-hero-art" aria-hidden="true"><Parcel /></span><div><h2>Anything, anywhere in town</h2><p>A rider collects it and brings it straight to the door. You see the price before you pay.</p></div></section>
       {notices}
       <section className="pk-route" aria-label="Route">
         {['pickup', 'dropoff'].map((key, index) => {

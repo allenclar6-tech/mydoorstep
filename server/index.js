@@ -44,6 +44,7 @@ import { dailySeries, localDay, pausedNow } from './partnerToday.js'
 import { createPushRouter } from './pushRoutes.js'
 import { remindUnpaidOrders, sendPendingPushes } from './push.js'
 import { parsePrepRange } from './customerApp.js'
+import { COVERAGE_BOUNDS, COVERAGE_LABEL, isCoveredPoint } from './coverage.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
 
@@ -129,7 +130,7 @@ app.get('/api/health/database', async (_request, response) => {
 })
 
 app.get('/api', (_request, response) => {
-  response.json({ name: 'DOORSTEP API', version: '0.1.0', market: 'Sapele, Delta State, Nigeria' })
+  response.json({ name: 'DOORSTEP API', version: '0.1.0', market: 'Delta, Edo and Rivers States, Nigeria' })
 })
 
 app.get('/api/service-areas', async (_request, response) => {
@@ -158,7 +159,7 @@ app.get('/api/locations/google/autocomplete', locationSearchLimiter, async (requ
       body: JSON.stringify({
         input: query.data.query,
         includedRegionCodes: ['ng'],
-        locationBias: { circle: { center: { latitude: 5.8916, longitude: 5.6846 }, radius: 50000 } },
+        locationBias: { rectangle: { low: { latitude: COVERAGE_BOUNDS.south, longitude: COVERAGE_BOUNDS.west }, high: { latitude: COVERAGE_BOUNDS.north, longitude: COVERAGE_BOUNDS.east } } },
       }),
     })
     if (!googleResponse.ok) {
@@ -1740,8 +1741,7 @@ app.patch('/api/restaurant/location', requireUser, async (request, response) => 
   if (!result.success) return response.status(400).json({ error: 'INVALID_STORE_LOCATION', message: 'Choose a point on the map.' })
   const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
   if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
-  const distanceKm = Math.hypot((result.data.latitude - 5.8916) * 111, (result.data.longitude - 5.6846) * 110.6)
-  if (distanceKm > 30) return response.status(409).json({ error: 'STORE_OUTSIDE_SAPELE', message: 'That point is outside Sapele. Move the pin to your store’s entrance.' })
+  if (!isCoveredPoint(result.data)) return response.status(409).json({ error: 'STORE_OUTSIDE_COVERAGE', message: `That point is outside ${COVERAGE_LABEL}, where DOORSTEP operates. Move the pin to your store’s entrance.` })
   try {
     const restaurant = await prisma.restaurant.update({ where: { id: membership.restaurantId }, data: { latitude: result.data.latitude, longitude: result.data.longitude }, select: { id: true, latitude: true, longitude: true } })
     await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'SET_STORE_LOCATION', entityType: 'Restaurant', entityId: restaurant.id, metadata: result.data } }).catch(() => undefined)
@@ -2192,8 +2192,11 @@ async function quoteOrder(input) {
   // A scheduled order needs the store to be open at the chosen time; an ASAP order needs it open now.
   const requestedAt = checkSchedule(input.scheduledFor).at
   if (!isRestaurantOpen(restaurant, requestedAt || new Date())) throw Object.assign(new Error(requestedAt ? 'The store is closed at the time you picked. Choose a time within its opening hours.' : 'This restaurant is currently closed. Please try again during its opening hours, or schedule your order.'), { status: 409, code: 'RESTAURANT_CLOSED' })
-  if (!activeServiceArea || restaurant.cityId !== activeServiceArea.cityId) throw Object.assign(new Error('DOORSTEP is currently unavailable in this restaurant location.'), { status: 409, code: 'SERVICE_AREA_UNAVAILABLE' })
-  if (address?.cityId && address.cityId !== activeServiceArea.cityId) throw Object.assign(new Error('This delivery address is outside the active DOORSTEP service area.'), { status: 409, code: 'ADDRESS_OUTSIDE_SERVICE_AREA' })
+  // DOORSTEP serves every enabled town in Delta, Edo and Rivers States; the delivery distance limit keeps each order local.
+  if (!activeServiceArea || !restaurant.city?.serviceAreas?.some((area) => area.enabled)) throw Object.assign(new Error('DOORSTEP is currently unavailable in this restaurant location.'), { status: 409, code: 'SERVICE_AREA_UNAVAILABLE' })
+  if (address?.cityId && address.cityId !== restaurant.cityId && !(await prisma.serviceArea.findFirst({ where: { cityId: address.cityId, enabled: true }, select: { id: true } }))) throw Object.assign(new Error('This delivery address is outside the areas DOORSTEP serves.'), { status: 409, code: 'ADDRESS_OUTSIDE_SERVICE_AREA' })
+  const dropPoint = address?.latitude != null ? { latitude: Number(address.latitude), longitude: Number(address.longitude) } : input.latitude != null ? { latitude: Number(input.latitude), longitude: Number(input.longitude) } : null
+  if (dropPoint && !isCoveredPoint(dropPoint)) throw Object.assign(new Error(`DOORSTEP only delivers in ${COVERAGE_LABEL}.`), { status: 409, code: 'ADDRESS_OUTSIDE_SERVICE_AREA' })
   const pickup = input.orderType === 'PICKUP'
   if (pickup && restaurant.pickupEnabled === false) throw Object.assign(new Error('This store doesn’t offer pickup. Choose delivery instead.'), { status: 409, code: 'PICKUP_UNAVAILABLE' })
   if (!pickup && !address && !input.addressLine) throw Object.assign(new Error('Delivery address is required.'), { status: 400, code: 'ADDRESS_REQUIRED' })

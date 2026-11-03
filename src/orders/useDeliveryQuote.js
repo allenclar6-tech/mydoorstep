@@ -55,7 +55,7 @@ export function checkoutTotals(state, cart) {
 
 export function deliveryExplanation(details) {
   if (!details || details.pricing !== 'DISTANCE') return ''
-  const where = details.basis === 'AREA' ? `centre of ${details.area}` : details.basis === 'TYPICAL_DISTANCE' ? 'a typical Sapele trip' : 'your map pin'
+  const where = details.basis === 'AREA' ? `centre of ${details.area}` : details.basis === 'TYPICAL_DISTANCE' ? 'a typical local trip' : 'your map pin'
   const parts = [`${details.km} km by road to ${where}`]
   if (details.estimated && details.basis !== 'TYPICAL_DISTANCE') parts[0] = `about ${details.km} km to ${where}`
   if (details.basis === 'AREA' || details.basis === 'TYPICAL_DISTANCE') parts.push('pin your exact spot for the exact fee')

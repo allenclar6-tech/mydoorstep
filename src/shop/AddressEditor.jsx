@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Briefcase, Check, ChevronRight, Home, MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { areaForAddress, isPlannableArea, SAPELE_DIRECTORY, searchDirectory } from '../../server/sapeleDirectory.js'
+import { COVERED_STATES, stateForCity } from '../../server/coverage.js'
 import { useMapToken } from '../map/mapCore'
 import { CenterPinMap } from '../map/CenterPinMap'
 import { EmptyState, Sheet, ShopHeader } from './ShopKit'
@@ -10,9 +11,17 @@ import { toast } from './Toaster'
 
 // Glovo-style addresses: type the address (area, street and house number, landmark), and add a map pin only if you
 // want the exact delivery fee. Without a pin the fee is priced by the area. Screens: /address/new, /location, /account/addresses.
+// DOORSTEP serves towns across Delta, Edo and Rivers States: Sapele has a full area directory, so a pin is optional
+// there; in other towns the map pin is what prices the delivery, so it is required.
 
 const AREAS = SAPELE_DIRECTORY.filter(isPlannableArea).sort((a, b) => a.name.localeCompare(b.name))
 const DRAFT_KEY = 'doorstep-address-draft'
+const TOWNS = COVERED_STATES.flatMap((state) => state.cities)
+/** The covered town named in an address line (longest name wins, so "Benin City" beats "Benin"). */
+export function townFromLine(line) {
+  const text = String(line || '').toLowerCase()
+  return [...TOWNS].sort((a, b) => b.length - a.length).find((town) => new RegExp(`\\b${town.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text)) || null
+}
 const authHeaders = () => ({ Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' })
 const safeReturn = (value, fallback = '/') => (value && /^\/(?![/\\])/.test(value) ? value : fallback)
 const params = () => new URLSearchParams(window.location.search)
@@ -20,11 +29,12 @@ const readDraft = () => { try { return JSON.parse(sessionStorage.getItem(DRAFT_K
 const writeDraft = (draft) => { try { if (draft) sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); else sessionStorage.removeItem(DRAFT_KEY) } catch { /* private mode */ } }
 const LABELS = [['Home', Home], ['Work', Briefcase], ['Other', MapPin]]
 
-/** Builds the one-line address customers and riders read: "12 Boyo Road, Ayomanor Road district, Sapele". */
-export function fullAddressLine(street, area) {
+/** Builds the one-line address customers and riders read: "12 Boyo Road, Ayomanor Road district, Sapele" or "5 Airport Road, Benin City". */
+export function fullAddressLine(street, area, town = 'Sapele') {
   const line = String(street || '').trim().replace(/\s+/g, ' ')
-  if (!area) return line
-  return line.toLowerCase().includes(area.name.toLowerCase()) ? line : `${line}, ${area.name}, Sapele`
+  if (town === 'Sapele' && area) return line.toLowerCase().includes(area.name.toLowerCase()) ? line : `${line}, ${area.name}, Sapele`
+  if (!town || town === 'Sapele') return line
+  return line.toLowerCase().includes(town.toLowerCase()) ? line : `${line}, ${town}`
 }
 
 function staticMapUrl(pin, mapToken, { width = 640, height = 240 } = {}) {
@@ -47,10 +57,10 @@ function AreaSheet({ value, onPick, onClose }) {
 }
 
 /** Street box with suggestions from the Sapele directory; picking one fills in the area too. */
-function StreetInput({ value, onChange, onArea }) {
+function StreetInput({ value, onChange, onArea, suggest = true }) {
   const [open, setOpen] = useState(false)
   const typedStreet = String(value || '').replace(/^((?:no\.?|plot|house)\s*)?\d+[a-z]?\s*,?\s*/i, '')
-  const results = useMemo(() => open && typedStreet.trim().length >= 2 ? searchDirectory(typedStreet, 5).filter((result) => result.type !== 'area') : [], [open, typedStreet])
+  const results = useMemo(() => suggest && open && typedStreet.trim().length >= 2 ? searchDirectory(typedStreet, 5).filter((result) => result.type !== 'area') : [], [suggest, open, typedStreet])
   const pick = (result) => {
     const house = String(value || '').match(/^((?:no\.?|plot|house)\s*)?\d+[a-z]?\b/i)?.[0]
     onChange(`${house ? `${house} ` : ''}${result.name}`)
@@ -78,6 +88,8 @@ export function AddressEditorPage() {
   const [label, setLabel] = useState(draft?.label || 'Home')
   const [customLabel, setCustomLabel] = useState(draft?.customLabel || '')
   const [street, setStreet] = useState(draft?.street || '')
+  const [town, setTown] = useState(() => draft?.town || townFromLine(currentAddress()?.label) || 'Sapele')
+  const sapele = town === 'Sapele'
   const [area, setArea] = useState(() => AREAS.find((entry) => entry.id === draft?.areaId) || null)
   const [landmark, setLandmark] = useState(draft?.landmark || '')
   const [pin, setPin] = useState(draft?.pin || null)
@@ -96,10 +108,13 @@ export function AddressEditorPage() {
       if (!saved) return
       const known = LABELS.some(([name]) => name === saved.label)
       setLabel(known ? saved.label : 'Other'); setCustomLabel(known ? '' : saved.label)
-      const found = areaForAddress(saved.addressLine)
+      const savedTown = townFromLine(saved.addressLine) || 'Sapele'
+      setTown(savedTown)
+      const found = savedTown === 'Sapele' ? areaForAddress(saved.addressLine) : null
       const foundArea = found ? AREAS.find((entry) => entry.id === found.id) : null
       setArea(foundArea); areaTouched.current = Boolean(foundArea)
-      setStreet(foundArea ? saved.addressLine.replace(new RegExp(`,?\\s*${foundArea.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*$`, 'i'), '') : saved.addressLine)
+      const cut = foundArea?.name || (savedTown !== 'Sapele' ? savedTown : null)
+      setStreet(cut ? saved.addressLine.replace(new RegExp(`,?\\s*${cut.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*$`, 'i'), '') : saved.addressLine)
       setLandmark(saved.landmark || '')
       if (saved.latitude != null && saved.longitude != null) setPin({ latitude: Number(saved.latitude), longitude: Number(saved.longitude) })
     }).catch(() => undefined)
@@ -107,20 +122,20 @@ export function AddressEditorPage() {
 
   // Typing a known street fills in the area (until the person picks one themselves).
   useEffect(() => {
-    if (areaTouched.current || street.trim().length < 3) return
+    if (!sapele || areaTouched.current || street.trim().length < 3) return
     const found = areaForAddress(street)
     if (found) setArea(AREAS.find((entry) => entry.id === found.id) || null)
-  }, [street])
+  }, [street, sapele])
 
-  const line = fullAddressLine(street, area)
+  const line = fullAddressLine(street, sapele ? area : null, town)
   useEffect(() => {
-    if (street.trim().length < 3 || !area) { setCheck(null); return undefined }
+    if (street.trim().length < 3 || (sapele && !area) || (!sapele && !pin)) { setCheck(null); return undefined }
     let active = true
     const timer = setTimeout(() => checkDelivery({ point: pin, label: line }).then((body) => { if (active) setCheck(body) }).catch(() => undefined), 400)
     return () => { active = false; clearTimeout(timer) }
   }, [line, pin?.latitude, pin?.longitude])
 
-  const snapshot = () => ({ id: editId, label, customLabel, street, areaId: area?.id || null, landmark, pin })
+  const snapshot = () => ({ id: editId, label, customLabel, town, street, areaId: area?.id || null, landmark, pin })
   const openMap = () => { writeDraft(snapshot()); navigate(`/location?draft=1&return=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`) }
   const finalLabel = label === 'Other' ? (customLabel.trim() || 'Other') : label
 
@@ -128,7 +143,8 @@ export function AddressEditorPage() {
     event.preventDefault()
     setError('')
     if (street.trim().length < 3) { setError('Type your street and house number.'); return }
-    if (!area) { setError('Choose your area so we can work out the delivery fee.'); setAreaOpen(true); return }
+    if (sapele && !area) { setError('Choose your area so we can work out the delivery fee.'); setAreaOpen(true); return }
+    if (!sapele && !pin) { setError(`Add a map pin for your address in ${town} so we can work out the delivery fee.`); return }
     setSaving(true)
     let savedId = editId || null
     try {
@@ -150,20 +166,25 @@ export function AddressEditorPage() {
   return <div className="sp-screen ae-page">
     <ShopHeader title={editId ? 'Edit address' : 'Add an address'} back={returnTo} />
     <form className="sp-body ae-form" onSubmit={save} noValidate>
-      <p className="ae-intro">Type your address the way you’d tell a rider. A map pin is optional.</p>
+      <p className="ae-intro">Type your address the way you’d tell a rider{sapele ? '. A map pin is optional.' : ', then add a map pin.'}</p>
 
       <fieldset className="ae-labels"><legend>Save it as</legend>
         {LABELS.map(([name, Icon]) => <button key={name} type="button" className={label === name ? 'is-on' : ''} aria-pressed={label === name} onClick={() => setLabel(name)}><Icon size={17} aria-hidden="true" />{name}</button>)}
       </fieldset>
       {label === 'Other' && <label className="ae-field"><span>Name this place</span><input value={customLabel} maxLength={40} onChange={(event) => setCustomLabel(event.target.value)} placeholder="e.g. Mum’s house, Shop" /></label>}
 
-      <div className="ae-field"><label htmlFor="ae-street">Street and house number</label><StreetInput value={street} onChange={setStreet} onArea={(next) => { areaTouched.current = true; setArea(next) }} /></div>
+      <label className="ae-field"><span>Town or city</span>
+        <select value={town} onChange={(event) => { setTown(event.target.value); setCheck(null) }}>{COVERED_STATES.map((state) => <optgroup key={state.name} label={state.name}>{state.cities.map((city) => <option key={city} value={city}>{city}</option>)}</optgroup>)}</select>
+        <small className="ae-count">{stateForCity(town)}</small>
+      </label>
 
-      <div className="ae-field"><span id="ae-area-label">Area in Sapele</span>
+      <div className="ae-field"><label htmlFor="ae-street">Street and house number</label><StreetInput value={street} suggest={sapele} onChange={setStreet} onArea={(next) => { areaTouched.current = true; setArea(next) }} /></div>
+
+      {sapele && <div className="ae-field"><span id="ae-area-label">Area in Sapele</span>
         <button type="button" className={`ae-select${area ? '' : ' is-empty'}`} aria-labelledby="ae-area-label" onClick={() => setAreaOpen(true)}>
           <MapPin size={18} aria-hidden="true" /><span>{area ? <><b>{area.name}</b>{area.postcode && <small>Sapele {area.postcode}</small>}</> : 'Choose your area'}</span><ChevronRight size={18} aria-hidden="true" />
         </button>
-      </div>
+      </div>}
 
       <label className="ae-field"><span>Landmark and directions <em>(helps your rider)</em></span>
         <textarea rows={2} value={landmark} maxLength={200} onChange={(event) => setLandmark(event.target.value)} placeholder="e.g. Blue gate opposite Total filling station, 2nd floor" />
@@ -178,12 +199,12 @@ export function AddressEditorPage() {
             <button type="button" className="ae-icon" onClick={() => setPin(null)} aria-label="Remove pin"><X size={18} /></button></div>
         </> : <button type="button" className="ae-pin-add" onClick={openMap}>
           <span className="ae-pin-icon" aria-hidden="true"><MapPin size={20} /></span>
-          <span><b>Add a map pin <em>optional</em></b><small>Get the exact delivery fee and help riders find your gate.</small></span>
+          <span><b>Add a map pin <em>{sapele ? 'optional' : 'needed'}</em></b><small>{sapele ? 'Get the exact delivery fee and help riders find your gate.' : `In ${town} the pin sets your delivery fee and shows riders your gate.`}</small></span>
           <ChevronRight size={18} aria-hidden="true" />
         </button>}
       </section>
 
-      {check && <p className={`ae-check${check.deliverable === false ? ' is-out' : ''}`} role="status">{check.deliverable === false ? check.message : pin ? `✓ ${check.message}` : `✓ ${check.message || 'DOORSTEP delivers here.'} The fee is priced by your area until you add a pin.`}</p>}
+      {check && <p className={`ae-check${check.deliverable === false ? ' is-out' : ''}`} role="status">{check.deliverable === false ? check.message : pin ? `✓ ${check.message}` : `✓ ${check.message || 'DOORSTEP delivers here.'}${sapele ? ' The fee is priced by your area until you add a pin.' : ''}`}</p>}
       {error && <p className="ae-error" role="alert">{error}</p>}
       {!signedIn && <p className="sp-note">You’re not signed in, so this address is used on this phone only. <a href="/login" onClick={(event) => { event.preventDefault(); navigate('/login') }}>Sign in</a> to keep it.</p>}
 

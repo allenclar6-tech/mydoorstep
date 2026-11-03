@@ -73,7 +73,7 @@ export function RiderOfferCard({ online, busy, onAccepted }) {
       <div>
         <span className="ro-kicker">NEW DELIVERY</span>
         <h2 id="ro-title">{offer.paidByBusiness ? 'Delivery for your business' : offer.earningMinor != null ? <>You earn <b>{formatNaira(offer.earningMinor / 100)}</b></> : 'New delivery request'}</h2>
-        <p>{offer.tripKm != null ? `${offer.tripKm} km trip` : 'Trip in Sapele'}{offer.toStoreMeters != null ? ` · store ${(offer.toStoreMeters / 1000).toFixed(1)} km away` : ''}{offer.items ? ` · ${offer.items} item${offer.items === 1 ? '' : 's'}` : ''}</p>
+        <p>{offer.tripKm != null ? `${offer.tripKm} km trip` : 'Local trip'}{offer.toStoreMeters != null ? ` · store ${(offer.toStoreMeters / 1000).toFixed(1)} km away` : ''}{offer.items ? ` · ${offer.items} item${offer.items === 1 ? '' : 's'}` : ''}</p>
       </div>
       <div className="ro-timer" style={{ '--share': share }} aria-label={`${left} seconds left to accept`}><span>{left}</span><small>sec</small></div>
     </div>

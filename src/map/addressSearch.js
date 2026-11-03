@@ -1,4 +1,4 @@
-import { loadMapToken, SAPELE_CENTER } from './mapConfig'
+import { COVERAGE_BBOX, defaultMapCenter, loadMapToken, SAPELE_CENTER } from './mapConfig'
 import { sapeleDeliveryDirectory } from '../data'
 import { searchDirectory } from '../../server/sapeleDirectory.js'
 
@@ -13,12 +13,15 @@ export function featureLabel(feature) {
   return feature.properties?.full_address || feature.place_name || [feature.properties?.name, feature.properties?.place_formatted].filter(Boolean).join(', ') || 'Selected map location'
 }
 
+const nearSapele = () => { const [longitude, latitude] = defaultMapCenter(); return Math.hypot((latitude - SAPELE_CENTER[1]) * 111, (longitude - SAPELE_CENTER[0]) * 110.6) < 30 }
+
 function nigeriaQuery(query) {
   if (/\bnigeria\b/i.test(query)) return query
   const directoryMatch = sapeleDeliveryDirectory.find((location) => location.name.toLowerCase() === query.toLowerCase())
   if (directoryMatch) return `${directoryMatch.name}, Sapele, Delta State, Nigeria`
-  // A street or quarter from the Sapele LGA directory: anchor the search in Sapele so the right "Court Road" is found.
-  if (!/\bsapele\b/i.test(query) && searchDirectory(query, 1).length) return `${query}, Sapele, Delta State, Nigeria`
+  // A street or quarter from the Sapele LGA directory, typed by someone in or near Sapele: anchor the search there so
+  // the right "Court Road" is found. Elsewhere (Warri, Benin City, Port Harcourt…) the same street name is left alone.
+  if (!/\bsapele\b/i.test(query) && nearSapele() && searchDirectory(query, 1).length) return `${query}, Sapele, Delta State, Nigeria`
   return `${query}, Nigeria`
 }
 
@@ -33,12 +36,12 @@ const statusError = (status, label) => status === 429
  * server-side Google Places fallback in parallel. Results are never invented:
  * if neither provider knows a place, the caller is told so.
  */
-export async function searchAddresses(query, { signal, proximity = SAPELE_CENTER } = {}) {
+export async function searchAddresses(query, { signal, proximity = defaultMapCenter() } = {}) {
   const mapToken = await loadMapToken()
   const q = nigeriaQuery(query.trim())
   const [mapboxResult, googleResult, poiResult] = await Promise.allSettled([
     mapToken
-      ? fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(q)}&country=ng&types=address,street,neighborhood,locality,place&proximity=${proximity.join(',')}&autocomplete=true&limit=8&language=en&access_token=${encodeURIComponent(mapToken)}`, { signal }).then(async (response) => {
+      ? fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(q)}&country=ng&types=address,street,neighborhood,locality,place&bbox=${COVERAGE_BBOX}&proximity=${proximity.join(',')}&autocomplete=true&limit=8&language=en&access_token=${encodeURIComponent(mapToken)}`, { signal }).then(async (response) => {
         if (!response.ok) throw statusError(response.status, 'Map search')
         return response.json()
       })
@@ -49,7 +52,7 @@ export async function searchAddresses(query, { signal, proximity = SAPELE_CENTER
     }),
     // Businesses and landmarks (points of interest) come from the Mapbox Search Box API.
     mapToken
-      ? fetch(`https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(q)}&country=ng&types=poi&proximity=${proximity.join(',')}&limit=5&language=en&access_token=${encodeURIComponent(mapToken)}`, { signal }).then(async (response) => {
+      ? fetch(`https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(q)}&country=ng&types=poi&bbox=${COVERAGE_BBOX}&proximity=${proximity.join(',')}&limit=5&language=en&access_token=${encodeURIComponent(mapToken)}`, { signal }).then(async (response) => {
         if (!response.ok) throw statusError(response.status, 'Business search')
         return response.json()
       })

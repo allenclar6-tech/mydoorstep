@@ -164,7 +164,7 @@ export function ShopHome() {
     <div className="sp-d-only">
       <Band search={<BandSearch href="/discover" placeholder="What can we get you?" />}>
         <div className="sp-hero-desk">
-          <h1>{signedIn ? `${greeting()}${name ? `, ${name}` : ''}!` : 'Food, groceries and more,'}<br /><em>{signedIn ? 'What can we get you today?' : 'delivered across Sapele.'}</em></h1>
+          <h1>{signedIn ? `${greeting()}${name ? `, ${name}` : ''}!` : 'Food, groceries and more,'}<br /><em>{signedIn ? 'What can we get you today?' : 'delivered near you.'}</em></h1>
           <div className="sp-hero-art" aria-hidden="true"><span><Burger /></span><span><Basket /></span><span><BagArt /></span><span><Parcel /></span></div>
         </div>
         <AddressPill />

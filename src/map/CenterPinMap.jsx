@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Home, LocateFixed, MapPin, Search, X } from 'lucide-react'
 import { areaForAddress } from '../../server/sapeleDirectory.js'
-import { createDoorstepMap, SAPELE_CENTER, useMapToken } from './mapCore'
+import { createDoorstepMap, defaultMapCenter, useMapToken } from './mapCore'
 import { describeGeolocationError, getDevicePosition, resolveGooglePlace, reverseGeocode, searchAddresses } from './addressSearch'
 
 // Glovo-style full-screen map: the pin stays in the middle and the map moves under it.
 // Used for delivery addresses (shop/AddressEditor.jsx) and package pick-up / drop-off (parcel/RouteStep.jsx).
 
 /**
- * start:      { latitude, longitude } to open on, or null (Sapele overview)
+ * start:      { latitude, longitude } to open on, or null (the person's area, or the middle of the covered states)
  * onConfirm:  ({ latitude, longitude, label, area }) when "Use this spot" is tapped
  * tone:       '' | 'a' | 'b' — pin colour (A = pick-up, B = drop-off)
  * places:     saved places shown as one-tap chips: [{ id, label, addressLine, latitude, longitude }]
@@ -20,7 +20,7 @@ export function CenterPinMap({ start = null, onBack, onConfirm, onNoMap, kicker 
   const holder = useRef(null)
   const mapRef = useRef(null)
   const startPoint = useMemo(() => start, [])
-  const [center, setCenter] = useState(startPoint || { latitude: SAPELE_CENTER[1], longitude: SAPELE_CENTER[0] })
+  const [center, setCenter] = useState(startPoint || { latitude: defaultMapCenter()[1], longitude: defaultMapCenter()[0] })
   const [moving, setMoving] = useState(false)
   const [placeName, setPlaceName] = useState(startPoint?.label || '')
   const [looking, setLooking] = useState(false)
@@ -88,7 +88,7 @@ export function CenterPinMap({ start = null, onBack, onConfirm, onNoMap, kicker 
     } catch (locateError) { setNote(describeGeolocationError(locateError)) } finally { setLocating(false) }
   }
   const area = areaForAddress(placeName)
-  const confirm = () => onConfirm({ latitude: Number(center.latitude.toFixed(7)), longitude: Number(center.longitude.toFixed(7)), label: placeName || `Pinned spot near ${area ? area.name : 'Sapele'}`, area })
+  const confirm = () => onConfirm({ latitude: Number(center.latitude.toFixed(7)), longitude: Number(center.longitude.toFixed(7)), label: placeName || (area ? `Pinned spot near ${area.name}` : 'Pinned spot on the map'), area })
   const usablePlaces = places.filter((place) => Number.isFinite(place.latitude) && Number.isFinite(place.longitude)).slice(0, 4)
 
   return <div className={`pp-page${tone ? ` is-tone-${tone}` : ''}`}>

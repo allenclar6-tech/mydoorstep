@@ -142,7 +142,7 @@ export const privacyPolicy = {
 
 export const termsAndConditions = {
   title: 'Terms and Conditions',
-  intro: 'The rules for using DOORSTEP to order, sell or deliver in Sapele. Please read them — by using DOORSTEP you agree to them.',
+  intro: 'The rules for using DOORSTEP to order, sell or deliver in Delta, Edo and Rivers States. Please read them — by using DOORSTEP you agree to them.',
   summary: [
     'DOORSTEP is a platform: stores sell their own products, and riders deliver them. We take and pay for the order and coordinate it.',
     'The price you see at checkout, including delivery and service fees, is the price you pay.',
@@ -171,7 +171,7 @@ export const termsAndConditions = {
     {
       id: 'service', heading: 'What DOORSTEP does',
       paragraphs: [
-        'DOORSTEP is a technology platform that connects customers, partners and riders in Sapele. **Partners sell their own products** and are responsible for them — their quality, safety, ingredients, allergens, labelling, freshness and legality. **Riders carry out deliveries** as independent service providers, not as DOORSTEP employees. DOORSTEP takes and processes the order and payment, coordinates the store and the rider, and provides customer support.',
+        'DOORSTEP is a technology platform that connects customers, partners and riders in towns across Delta, Edo and Rivers States, Nigeria. **Partners sell their own products** and are responsible for them — their quality, safety, ingredients, allergens, labelling, freshness and legality. **Riders carry out deliveries** as independent service providers, not as DOORSTEP employees. DOORSTEP takes and processes the order and payment, coordinates the store and the rider, and provides customer support.',
         'We do our best to keep the Platform available and accurate, but stores open and close, menus change, and some areas or times may not be served. Delivery is only available in the areas shown in the app.',
       ],
     },
@@ -189,7 +189,7 @@ export const termsAndConditions = {
       id: 'ordering', heading: 'Placing an order',
       list: [
         '**Prices** are set by the partner and shown in naira, including VAT where it applies. Partners may change prices, and the price that counts is the one shown at checkout when you place the order.',
-        '**Fees:** the checkout shows every fee before you pay — the **delivery fee** (based on the road distance in Sapele, the area and busy times; none for pickup), the **service fee**, any **tip** you add, and any **promotion** applied. The total you confirm is the total you pay.',
+        '**Fees:** the checkout shows every fee before you pay — the **delivery fee** (based on the road distance, the area and busy times; none for pickup), the **service fee**, any **tip** you add, and any **promotion** applied. The total you confirm is the total you pay.',
         '**When the contract is made:** your order is a request to buy from the partner. It is confirmed when the partner accepts it. A partner may decline an order (for example when an item has sold out); if that happens you are refunded as described below.',
         '**Substitutions:** if an item is unavailable, the partner or DOORSTEP may contact you. Nothing is substituted at a higher price without your agreement.',
         '**Special requests and allergies:** add notes for the store, but partners cannot guarantee that food is free of any allergen. If you have a serious allergy, contact the store before ordering.',

@@ -75,7 +75,7 @@ export function OpenJobs({ online, approved, busy, onAccepted, title = 'Open job
     <ul className="oj-list">{list.map((job) => {
       const earning = job.earning?.amountMinor != null ? `You earn ${formatNaira(job.earning.amountMinor / 100)}` : job.earning?.paidByBusiness ? 'Paid by your business' : 'Pay shown after delivery'
       return <li key={job.id} className="oj-job">
-        <div className="oj-top"><b>{earning}</b><span>{job.earning?.km != null ? `${job.earning.km} km trip` : 'Sapele trip'}</span></div>
+        <div className="oj-top"><b>{earning}</b><span>{job.earning?.km != null ? `${job.earning.km} km trip` : 'Local trip'}</span></div>
         <ol className="oj-route">
           <li><Store size={16} aria-hidden="true" /><span><small>Pick up · {job.order.orderNumber}</small><b>{job.order.restaurant?.name}</b><em>{job.order.restaurant?.address}</em></span></li>
           <li><MapPin size={16} aria-hidden="true" /><span><small>Drop off</small><b>{job.order.addressSnapshot}</b>{job.order.landmarkSnapshot && <em>Landmark: {job.order.landmarkSnapshot}</em>}</span></li>

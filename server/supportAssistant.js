@@ -60,7 +60,7 @@ export async function supportReply(db, message, { signedIn = true, category = ''
       return `For sign-in problems use “Forgot password?” on the sign-in page; we email you a 6-digit code. Codes expire after 10 minutes, and you can request a new one after a minute. ${handoff}`
     }
     if (has(text, ['deliver to', 'delivery area', 'cover', 'location', 'address'])) {
-      return 'DOORSTEP delivers in Sapele. Set your exact address with the map or GPS when you check out. The delivery fee is shown before you pay.'
+      return 'DOORSTEP delivers in towns across Delta, Edo and Rivers States. Set your exact address with the map or GPS when you check out. The delivery fee is shown before you pay.'
     }
     if (category === 'PAYMENT') return `Tell me the order number and what happened with the payment. ${handoff}`
     return `Thanks for your message. ${handoff}`

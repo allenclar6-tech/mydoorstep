@@ -69,7 +69,7 @@ function SettingsForm({ onSaved }) {
     <p className="fa-muted">Taken from the item subtotal only. With its own rider, the business also keeps the delivery fee.</p>
 
     <fieldset className="fa-bands">
-      <legend>Sapele rider pay by road distance</legend>
+      <legend>Rider pay by road distance</legend>
       <p className="fa-muted">Enter your official rate per distance band. Until this is switched on, deliveries are recorded as “to be priced” and nothing is guessed.</p>
       {form.bands.map((band, index) => <div className="fa-band" key={index}>
         <label>Up to (km)<input type="number" min="0.1" max="100" step="0.1" required value={band.upToKm} onChange={(event) => setBand(index, { upToKm: event.target.value })} /></label>

@@ -14,7 +14,7 @@ const read = (key, fallback = null) => { try { const value = localStorage.getIte
 const write = (key, value) => { try { if (value == null) localStorage.removeItem(key); else localStorage.setItem(key, value) } catch { /* private mode */ } }
 
 export const VERTICALS = {
-  FOOD: { key: 'FOOD', label: 'Food', path: '/food', blurb: 'Kitchens around Sapele' },
+  FOOD: { key: 'FOOD', label: 'Food', path: '/food', blurb: 'Kitchens near you' },
   GROCERIES: { key: 'GROCERIES', label: 'Groceries', path: '/groceries', blurb: 'Market run, done' },
   SHOPS: { key: 'SHOPS', label: 'Shops', path: '/shops', blurb: 'Phones, fashion & more' },
   PHARMACY_BEAUTY: { key: 'PHARMACY_BEAUTY', label: 'Pharmacy & Beauty', path: '/pharmacy', blurb: 'Health and self-care' },

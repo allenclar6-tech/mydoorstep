@@ -51,7 +51,7 @@ export function BusinessLanding() {
   return <div className="sp-screen pl-page">
     <Band back="/" title="Partner with DOORSTEP" />
     <main className="sp-body">
-      <Hero art={Storefront} kicker="FOR BUSINESSES IN SAPELE" title="More orders. Less hassle." body="Put your restaurant, shop or pharmacy in front of customers across Sapele. Orders land on your phone, riders collect them, and your money goes to your bank." action="Apply now" href="#types" secondary="Already a partner? Sign in" secondaryHref="/partner/login" />
+      <Hero art={Storefront} kicker="FOR BUSINESSES IN DELTA, EDO & RIVERS" title="More orders. Less hassle." body="Put your restaurant, shop or pharmacy in front of customers across Delta, Edo and Rivers. Orders land on your phone, riders collect them, and your money goes to your bank." action="Apply now" href="#types" secondary="Already a partner? Sign in" secondaryHref="/partner/login" />
 
       <section className="sp-section">
         <h2 className="pl-h2">Why businesses join</h2>
@@ -61,7 +61,7 @@ export function BusinessLanding() {
           [MoneyBag, 'Paid to your bank', 'See every order’s earnings and withdraw from your dashboard.', 'mint'],
           [Storefront, 'Pickup orders too', 'Customers can collect at your counter. No rider, no delivery fee for them.', 'sand'],
           [PercentTag, 'Promotions on us', 'Free-delivery and promo-code offers are paid by DOORSTEP. You get your full share.', 'sun'],
-          [MapPinArt, 'Found across Sapele', 'Show up in Food, Groceries, Shops or Pharmacy & Beauty — with photos, ratings and your menu.', 'rose'],
+          [MapPinArt, 'Found by customers near you', 'Show up in Food, Groceries, Shops or Pharmacy & Beauty — with photos, ratings and your menu.', 'rose'],
         ]} />
       </section>
 
@@ -104,7 +104,7 @@ export function RiderLanding() {
   return <div className="sp-screen pl-page">
     <Band back="/" title="Ride with DOORSTEP" />
     <main className="sp-body">
-      <Hero art={Scooter} kicker="FOR RIDERS IN SAPELE" title="Ride when you want. Earn every trip." body="Deliver food, groceries and packages around Sapele. Go online when it suits you and see what you’ll earn before you accept." action="Become a rider" href="/rider/register" secondary="Already a rider? Sign in" secondaryHref="/rider/login" />
+      <Hero art={Scooter} kicker="FOR RIDERS IN DELTA, EDO & RIVERS" title="Ride when you want. Earn every trip." body="Deliver food, groceries and packages around your town. Go online when it suits you and see what you’ll earn before you accept." action="Become a rider" href="/rider/register" secondary="Already a rider? Sign in" secondaryHref="/rider/login" />
 
       <section className="sp-section">
         <h2 className="pl-h2">Why riders choose DOORSTEP</h2>
@@ -113,7 +113,7 @@ export function RiderLanding() {
           [Scooter, 'Your hours, your choice', 'Go online and offline whenever you like. No fixed shifts.', 'sun'],
           [HeartTip, '100% of tips are yours', 'Customers can tip at checkout, and every naira goes to you.', 'rose'],
           [PhoneOrders, 'Clear jobs, loud alerts', 'Strong vibration and sound for new jobs, plus pickup and drop-off on the map.', 'sky'],
-          [Parcel, 'Food and packages', 'Restaurant orders, grocery runs and door-to-door packages across Sapele.', 'sand'],
+          [Parcel, 'Food and packages', 'Restaurant orders, grocery runs and door-to-door packages across your town.', 'sand'],
           [MapPinArt, 'Withdraw to your bank', 'Track your earnings and withdraw from your rider dashboard.', 'mint'],
         ]} />
       </section>

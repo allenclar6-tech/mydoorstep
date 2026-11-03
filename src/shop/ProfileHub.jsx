@@ -162,14 +162,14 @@ export function PromosPage() {
 }
 
 const FAQ = [
-  ['How is the delivery fee worked out?', 'By the road distance from the store to your pin in Sapele. You see the exact fee at checkout before paying. Pickup orders have no delivery fee.'],
+  ['How is the delivery fee worked out?', 'By the road distance from the store to your pin. You see the exact fee at checkout before paying. Pickup orders have no delivery fee.'],
   ['Can I collect my order myself?', 'Yes — on stores that offer pickup, choose “Pickup” on the store page or at checkout. You’ll be notified when it’s ready to collect.'],
   ['Can I order for later?', 'Choose “Schedule” at checkout and pick a time at least 45 minutes ahead, up to 7 days, within the store’s opening hours.'],
   ['Who gets my rider tip?', 'All of it goes to the rider who delivers your order.'],
   ['How do promo codes work?', 'Enter the code at checkout. Automatic offers, like free delivery on your first order, are applied for you. DOORSTEP pays for promotions — the store still gets its full price.'],
   ['Which payment methods can I use?', 'Card, bank and USSD through Paystack, or a bank transfer to DOORSTEP with your receipt uploaded. DOORSTEP never sees your card number.'],
   ['My order is late or wrong. What do I do?', 'Open the order from Orders and tap Help, or message DOORSTEP support from Profile. We’ll sort it out with the store or rider.'],
-  ['Do you deliver outside Sapele?', 'Not yet. If your address is outside the delivery area you’ll see “Out of delivery area” — you can still pick up from a store.'],
+  ['Where does DOORSTEP deliver?', 'In towns across Delta, Edo and Rivers States, Nigeria, within a set distance of each store. If your address is outside it you’ll see “Out of delivery area” — you can still pick up from a store.'],
 ]
 export function FaqPage() {
   const [open, setOpen] = useState(0)

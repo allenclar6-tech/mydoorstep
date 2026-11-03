@@ -44,7 +44,7 @@ function PromoForm({ initial, stores, onCancel, onSaved, id }) {
   return <form className="pa-form" onSubmit={save}>
     <div className="pa-grid">
       <label>Name (customers see this)<input required value={form.name} onChange={set('name')} maxLength={80} placeholder="e.g. Weekend treat" /></label>
-      <label>Code {form.autoApply ? '(optional)' : ''}<input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase().replace(/\s/g, '') }))} maxLength={24} placeholder="e.g. SAPELE10" /></label>
+      <label>Code {form.autoApply ? '(optional)' : ''}<input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase().replace(/\s/g, '') }))} maxLength={24} placeholder="e.g. DOORSTEP10" /></label>
       <label>Type<select value={form.type} onChange={set('type')}><option value="PERCENT">% off the items</option><option value="FIXED">₦ off</option><option value="FREE_DELIVERY">Free delivery</option></select></label>
       {form.type === 'PERCENT' && <label>Percent off<input type="number" min="1" max="100" required value={form.percentage} onChange={set('percentage')} /></label>}
       {form.type === 'PERCENT' && <label>Maximum discount (₦, optional)<input type="number" min="0" value={form.maxNaira} onChange={set('maxNaira')} /></label>}

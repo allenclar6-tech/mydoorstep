@@ -1,8 +1,8 @@
 import mapboxgl from 'mapbox-gl'
 import { describeStyleStatus, readPreferredStyleId, savePreferredStyleId, styleById } from './mapStyles'
-import { mapToken, SAPELE_CENTER } from './mapConfig'
+import { defaultMapCenter, mapToken } from './mapConfig'
 
-export { loadMapToken, mapToken, SAPELE_CENTER, useMapToken } from './mapConfig'
+export { defaultMapCenter, loadMapToken, mapToken, SAPELE_CENTER, useMapToken } from './mapConfig'
 
 export function describeMapError(event) {
   const status = event?.error?.status ?? event?.status
@@ -128,7 +128,7 @@ export function createMapController(map, { onStyleChange, onStyleError } = {}) {
 }
 
 /** Creates a map using the viewer's remembered basemap (Standard by default). */
-export function createDoorstepMap(container, { center = SAPELE_CENTER, zoom = 13, styleId, interactive = true } = {}) {
+export function createDoorstepMap(container, { center = defaultMapCenter(), zoom = 13, styleId, interactive = true } = {}) {
   if (!mapToken) return null
   mapboxgl.accessToken = mapToken
   const initialStyle = styleById(styleId || readPreferredStyleId())

@@ -35,10 +35,10 @@ function useRelease() {
 function useSeo(release, ready) {
   useEffect(() => {
     const previous = document.title
-    document.title = 'Download the DOORSTEP app — food & delivery in Sapele'
+    document.title = 'Download the DOORSTEP app — food & delivery in Nigeria'
     const meta = document.querySelector('meta[name="description"]')
     const previousDescription = meta?.content
-    if (meta) meta.content = 'Get DOORSTEP on your phone: order food, groceries and more, send packages, and track your rider live across Sapele. Free Android app and browser install.'
+    if (meta) meta.content = 'Get DOORSTEP on your phone: order food, groceries and more, send packages, and track your rider live across Delta, Edo and Rivers. Free Android app and browser install.'
     let script = null
     if (ready) {
       script = document.createElement('script')
@@ -73,7 +73,7 @@ export function DownloadPage() {
       <div className="dl-hero">
         <img src="/icons/icon-192.png?v=3" alt="" width="88" height="88" className="dl-icon" />
         <h1>Get the DOORSTEP app</h1>
-        <p>Food, groceries, shops and packages — delivered across Sapele. Order in one tap and track your rider live.</p>
+        <p>Food, groceries, shops and packages — delivered across Delta, Edo and Rivers. Order in one tap and track your rider live.</p>
       </div>
     </header>
 

@@ -307,7 +307,7 @@ export function ParcelListPage() {
       <header className="parcel-card-head"><div><span className="section-kicker">PACKAGE DELIVERIES</span><h2>Your packages</h2></div><button type="button" className="primary-button" onClick={() => navigate('/send')}>Send a package</button></header>
       {error && <Notice tone="error" action={<button type="button" className="quiet-button" onClick={load}>Retry</button>}>{error}</Notice>}
       {!bookings && !error && <p className="parcel-hint" role="status">Loading your bookings…</p>}
-      {bookings && bookings.length === 0 && <div className="parcel-empty"><Package size={26} /><h3>No packages yet</h3><p>Book a rider to move documents, parcels and everyday items across Sapele.</p></div>}
+      {bookings && bookings.length === 0 && <div className="parcel-empty"><Package size={26} /><h3>No packages yet</h3><p>Book a rider to move documents, parcels and everyday items across town.</p></div>}
       {active.length > 0 && <><h3 className="parcel-subhead">Active</h3><div className="parcel-rows">{active.map(row)}</div></>}
       {past.length > 0 && <><h3 className="parcel-subhead">History</h3><div className="parcel-rows">{past.map(row)}</div></>}
     </section>
@@ -592,7 +592,7 @@ export function PaymentResultPage() {
 }
 
 export function SendPackageEntry() {
-  return <button type="button" className="send-package-entry" onClick={() => navigate('/send')}><span><MapPin size={18} /></span><span><strong>Send a package</strong><small>Book a rider from A to B in Sapele</small></span><ArrowRight size={18} /></button>
+  return <button type="button" className="send-package-entry" onClick={() => navigate('/send')}><span><MapPin size={18} /></span><span><strong>Send a package</strong><small>Book a rider from A to B in your town</small></span><ArrowRight size={18} /></button>
 }
 
 export const parcelRouteFor = (path) => {

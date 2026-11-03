@@ -41,7 +41,7 @@ export function StoreLocationPin({ restaurant, onSaved }) {
     {open && <div className="store-pin-layer" role="dialog" aria-modal="true" aria-label="Set store location">
       <div className="location-map-card delivery-map-experience map-picker-host">
         <Suspense fallback={<p role="status" style={{ padding: 24 }}>Loading the map…</p>}>
-          <MapPointPicker targets={targets} value={points} onChange={setPoints} heading={{ kicker: 'YOUR STORE · SAPELE', title: 'Where is your store?', intro: 'Stand at your shop and tap GPS, or search and drag the pin to your entrance.' }} onClose={() => setOpen(false)} routeMode="none" savedPlaces={false}>
+          <MapPointPicker targets={targets} value={points} onChange={setPoints} heading={{ kicker: 'YOUR STORE', title: 'Where is your store?', intro: 'Stand at your shop and tap GPS, or search and drag the pin to your entrance.' }} onClose={() => setOpen(false)} routeMode="none" savedPlaces={false}>
             <div className="map-picker-actions">
               <button className="primary-button map-picker-confirm" type="button" disabled={!points.store || busy} onClick={save}>{busy ? 'Saving…' : 'Save store location'}</button>
               {error && <p className="map-picker-message" role="alert">{error}</p>}

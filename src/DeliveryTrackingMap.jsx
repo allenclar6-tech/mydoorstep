@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { createDoorstepMap, describeMapError, featureOf, lineOverlay, mapToken as currentMapToken, SAPELE_CENTER, useMapToken } from './map/mapCore'
+import { createDoorstepMap, describeMapError, featureOf, lineOverlay, mapToken as currentMapToken, defaultMapCenter, useMapToken } from './map/mapCore'
 import { LayersControl } from './map/LayersControl'
 import { fetchDrivingRoutes, formatDuration } from './map/addressSearch'
 
@@ -75,7 +75,7 @@ export function DeliveryTrackingMap({ tracking, connection }) {
   useEffect(() => {
     if (!mapToken || !mapElement.current || mapRef.current) return undefined
     if (!mapboxgl.supported()) { setMapState('unavailable'); setMapError('This browser cannot display the map. Your delivery status updates still work.'); return undefined }
-    const created = createDoorstepMap(mapElement.current, { center: destination || SAPELE_CENTER, zoom: destination ? 14 : 12 })
+    const created = createDoorstepMap(mapElement.current, { center: destination || defaultMapCenter(), zoom: destination ? 14 : 12 })
     const { map, controller: mapController } = created
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right')
     mapRef.current = map

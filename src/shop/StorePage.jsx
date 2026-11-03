@@ -15,7 +15,7 @@ export const writeOrderType = (value) => { try { localStorage.setItem(ORDER_TYPE
 export function FeesInfo({ onClose }) {
   return <Sheet title="Fees information" onClose={onClose}>
     <dl className="sp-fees">
-      <div><dt>Delivery fee</dt><dd>Worked out from the road distance between the store and your pin in Sapele. You always see the exact fee before you pay. Pickup orders have no delivery fee.</dd></div>
+      <div><dt>Delivery fee</dt><dd>Worked out from the road distance between the store and your pin. You always see the exact fee before you pay. Pickup orders have no delivery fee.</dd></div>
       <div><dt>Service fee</dt><dd>A small percentage of your items that keeps DOORSTEP running — support, secure payments and order tracking.</dd></div>
       <div><dt>Rider tip</dt><dd>Optional. 100% of your tip goes to the rider who delivers your order.</dd></div>
       <div><dt>Promotions</dt><dd>Promo codes and free-delivery offers are paid for by DOORSTEP. The store is always paid in full.</dd></div>
