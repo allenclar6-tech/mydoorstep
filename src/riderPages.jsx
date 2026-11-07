@@ -73,7 +73,8 @@ function RiderLocationSharing({ deliveryId, active }) {
     stop()
     setState('requesting')
     setMessage('Allow precise location when your browser asks. It is used only while this delivery is active.')
-    const websocketUrl = new URL(`${apiBase}/api/deliveries/${deliveryId}/live`)
+    // On the DOORSTEP domains apiBase is '' (same-origin), so the page address is the base.
+    const websocketUrl = new URL(`${apiBase}/api/deliveries/${deliveryId}/live`, window.location.href)
     websocketUrl.protocol = websocketUrl.protocol === 'https:' ? 'wss:' : 'ws:'
     socket.current = new WebSocket(websocketUrl, ['bearer', token])
     socket.current.onclose = () => { if (watchId.current !== null) setMessage('Live connection lost. Location updates will use the secure backup connection.') }

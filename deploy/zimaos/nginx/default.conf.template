@@ -1,0 +1,157 @@
+# DOORSTEP web container (nginx). Rendered at start by the nginx image's envsubst step:
+# only ${TRUST_CLOUDFLARE_IP} is an environment variable here; every lowercase $name is nginx's own.
+#
+# Does what the Cloudflare Worker (worker.js) did, so the site works the same behind Nginx Proxy Manager
+# or a Cloudflare Tunnel:
+#   - mydoorstep.com.co / www  -> the React build, /api and the delivery WebSocket go to the API
+#   - api.mydoorstep.com.co    -> everything goes to the API
+#   - assetlinks.json for the Android apps, /downloads/doorstep.apk redirect, APK and cache headers
+
+# One visitor address for the API (Express runs with "trust proxy 1", so it reads the last X-Forwarded-For entry).
+# CF-Connecting-IP is only believed when TRUST_CLOUDFLARE_IP=on, i.e. when every request really arrives via Cloudflare.
+map $http_x_forwarded_for $doorstep_forwarded_ip {
+  ""                       $remote_addr;
+  "~(?<last>[^,\s]+)\s*$"  $last;
+  default                  $remote_addr;
+}
+map "${TRUST_CLOUDFLARE_IP}:$http_cf_connecting_ip" $doorstep_client_ip {
+  "~^on:(?<cfip>.+)$"  $cfip;
+  default              $doorstep_forwarded_ip;
+}
+map $http_x_forwarded_proto $doorstep_forwarded_proto {
+  ""       $scheme;
+  default  $http_x_forwarded_proto;
+}
+map $http_upgrade $doorstep_connection_upgrade {
+  default  upgrade;
+  ""       close;
+}
+# HTML pages must never be cached (new releases reach phones at once); other files keep their own rules.
+map $sent_http_content_type $doorstep_html_cache {
+  "~^text/html"  "no-store, max-age=0, must-revalidate";
+  default        "";
+}
+# Canonical address for search engines: path without query string or trailing slash ("/" stays "/").
+map $request_uri $doorstep_canonical_path {
+  "~^(?<cpath>/[^?]*?)/*(?:\?.*)?$"  $cpath;
+  default                             /;
+}
+
+# Docker's internal DNS, re-resolved so nginx starts (and recovers) even while the API container restarts.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+server_tokens off;
+client_max_body_size 12m;
+# Behind the HTTPS proxy nginx only sees http://, so redirects stay relative (no http:// Location headers).
+absolute_redirect off;
+
+gzip on;
+gzip_comp_level 5;
+gzip_min_length 1024;
+gzip_types text/css application/javascript application/json application/manifest+json image/svg+xml text/plain;
+
+# ---------------------------------------------------------------- API host: api.mydoorstep.com.co
+server {
+  listen 80;
+  server_name api.mydoorstep.com.co api.localhost;
+
+  location / {
+    include /etc/nginx/snippets/doorstep-api-proxy.conf;
+  }
+}
+
+# ---------------------------------------------------------------- Website: mydoorstep.com.co, www, LAN tests
+server {
+  listen 80 default_server;
+  server_name mydoorstep.com.co www.mydoorstep.com.co _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  include /etc/nginx/snippets/doorstep-headers.conf;
+  add_header Cache-Control $doorstep_html_cache always;
+
+  # One canonical domain: www -> mydoorstep.com.co (the API's CORS list and the Android apps use the bare domain).
+  if ($host = www.mydoorstep.com.co) {
+    return 301 https://mydoorstep.com.co$request_uri;
+  }
+
+  sub_filter_once on;
+  sub_filter '</head>' '<link rel="canonical" href="https://mydoorstep.com.co$doorstep_canonical_path" /></head>';
+
+  # Same-origin API and live delivery WebSocket (the site calls /api on its own domain).
+  location /api/ {
+    include /etc/nginx/snippets/doorstep-api-proxy.conf;
+  }
+
+  # Android app links: proves the DOORSTEP apps and this website belong together.
+  location = /.well-known/assetlinks.json {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    add_header Cache-Control "max-age=300" always;
+    default_type application/json;
+    try_files /assetlinks.json @no_assetlinks;
+  }
+  location @no_assetlinks {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    default_type application/json;
+    return 200 '[]';
+  }
+
+  # /downloads/doorstep.apk -> newest APK named in app-release.json (generated at image build).
+  include /etc/nginx/snippets/doorstep-apk-redirect.conf;
+
+  # Downloads are real files or a real 404, never the app's home page.
+  location /downloads/ {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    try_files $uri =404;
+  }
+  location ~ ^/downloads/(?<apkname>[^/]+\.apk)$ {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    types { }
+    default_type application/vnd.android.package-archive;
+    add_header Content-Disposition 'attachment; filename="$apkname"' always;
+    try_files $uri =404;
+  }
+
+  # Hashed build files: cache for a year; a missing one is a 404, not HTML.
+  location /assets/ {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    try_files $uri =404;
+  }
+
+  # The notification service worker and the app manifests must always be fresh.
+  location = /sw.js {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    add_header Cache-Control "no-cache" always;
+    add_header Service-Worker-Allowed "/" always;
+    try_files $uri =404;
+  }
+  location ~ ^/(manifest|admin)\.webmanifest$ {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    add_header Cache-Control "no-cache" always;
+    types { }
+    default_type application/manifest+json;
+    try_files $uri =404;
+  }
+  location ~ ^/(app-release|admin-app-release)\.json$ {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    add_header Cache-Control "no-cache" always;
+    try_files $uri =404;
+  }
+
+  # Download page: its own title and summary in the HTML, so crawlers see them without running the app.
+  location ~ ^/download/?$ {
+    include /etc/nginx/snippets/doorstep-headers.conf;
+    add_header Cache-Control "no-store, max-age=0, must-revalidate" always;
+    sub_filter_once on;
+    sub_filter '<title>DOORSTEP — Good food, closer to home</title>' '<title>Download the DOORSTEP app — food and delivery app for Delta, Edo and Port Harcourt</title>';
+    sub_filter 'content="DOORSTEP delivers food, groceries and more across Delta, Edo and Rivers States, Nigeria."' 'content="Download DOORSTEP for Android: order food, groceries and more, send packages and track your rider live in Delta State, Edo State and Port Harcourt, Nigeria. Free direct APK download and browser install."';
+    sub_filter '</head>' '<link rel="canonical" href="https://mydoorstep.com.co/download" /><meta property="og:title" content="Download the DOORSTEP app — food and delivery app for Delta, Edo and Port Harcourt" /><meta property="og:description" content="Download DOORSTEP for Android: order food, groceries and more, send packages and track your rider live in Delta State, Edo State and Port Harcourt, Nigeria. Free direct APK download and browser install." /><meta property="og:url" content="https://mydoorstep.com.co/download" /><meta property="og:type" content="website" /><meta property="og:image" content="https://mydoorstep.com.co/icons/icon-512.png" /></head>';
+    try_files /index.html =404;
+  }
+
+  # React Router: every other path is the single-page app.
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}

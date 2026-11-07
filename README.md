@@ -175,6 +175,8 @@ npx vite build
 
 Use a managed PostgreSQL provider, a managed Node runtime for the API, and a production secret manager. The deployment guide covers the recommended production architecture in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
+Self-hosting on your own server (ZimaOS, Docker Compose: PostgreSQL, API, website, nightly backups, persistent uploads): [docs/ZIMAOS_DEPLOYMENT.md](docs/ZIMAOS_DEPLOYMENT.md).
+
 ## Payment setup
 
 - Main provider: Paystack

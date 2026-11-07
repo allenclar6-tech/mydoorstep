@@ -38,6 +38,8 @@ Run `npm ci` to install Sharp and `node --test tests/partnerMedia.test.js`.
 
 ## Recommended deployment targets
 
+Self-hosted option: [ZIMAOS_DEPLOYMENT.md](ZIMAOS_DEPLOYMENT.md) runs the whole stack on one ZimaOS server with Docker Compose.
+
 - Frontend: Vercel or Netlify
 - API: Render, Railway, DigitalOcean App Platform, Azure App Service, or a managed Node host
 - Database: Neon, Supabase Postgres, Azure Database for PostgreSQL, or another managed PostgreSQL service

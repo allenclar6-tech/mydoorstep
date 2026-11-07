@@ -24,7 +24,8 @@ export function useDeliveryTracking(deliveryId) {
     let retryTimer
     let retryCount = 0
     let lastActive = false
-    const endpoint = apiBase || import.meta.env.VITE_API_BASE_URL || 'https://mydoorstep-api.onrender.com'
+    // Same-origin when nothing else is configured: the DOORSTEP web server forwards /api (and this WebSocket).
+    const endpoint = apiBase || import.meta.env.VITE_API_BASE_URL || globalThis.location?.origin || ''
 
     const markFinished = (status) => {
       if (!TERMINAL.has(status)) return

@@ -1,0 +1,113 @@
+# DOORSTEP on ZimaOS. Run from this folder:  docker compose up -d --build
+# Settings and secrets come from ./.env (copy zimaos.env.example to .env; never commit it).
+# Full runbook: docs/ZIMAOS_DEPLOYMENT.md
+name: doorstep
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+services:
+  # ---------------------------------------------------------------- PostgreSQL (internal network only)
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: doorstep
+      POSTGRES_USER: doorstep
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - ${DOORSTEP_DATA:?Set DOORSTEP_DATA in .env}/postgres:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doorstep -d doorstep"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+    logging: *logging
+    # No "ports": the database is never reachable from outside Docker.
+
+  # ---------------------------------------------------------------- Express API (single instance)
+  # Keep exactly one: dispatch, payout and push loops run inside it, and uploads are on a local disk.
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: doorstep-api:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: "4000"
+      DATABASE_URL: postgresql://doorstep:${POSTGRES_PASSWORD}@db:5432/doorstep?schema=public
+      PRIVATE_UPLOAD_DIR: /data/private-uploads
+    volumes:
+      - ${DOORSTEP_DATA}/private-uploads:/data/private-uploads
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend, frontend]
+    logging: *logging
+    # No "ports": reached through the web container (both mydoorstep.com.co/api and api.mydoorstep.com.co).
+
+  # ---------------------------------------------------------------- Website + /api proxy (nginx)
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.mydoorstep.com.co}
+        VITE_MAP_PUBLIC_TOKEN: ${VITE_MAP_PUBLIC_TOKEN:-}
+    image: doorstep-web:local
+    restart: unless-stopped
+    environment:
+      TRUST_CLOUDFLARE_IP: ${TRUST_CLOUDFLARE_IP:-off}
+    ports:
+      # Nginx Proxy Manager (or a LAN browser) connects here. Not forwarded on the router.
+      - "${WEB_HOST_PORT:-8090}:80"
+    depends_on: [api]
+    networks: [frontend]
+    logging: *logging
+
+  # ---------------------------------------------------------------- Nightly backups (database + uploads)
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: doorstep
+      PGDATABASE: doorstep
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_HOUR: ${BACKUP_HOUR:-2}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      TZ: Africa/Lagos
+    volumes:
+      - ./scripts/backup-loop.sh:/backup-loop.sh:ro
+      - ${DOORSTEP_DATA}/private-uploads:/uploads:ro
+      - ${DOORSTEP_BACKUPS:-${DOORSTEP_DATA}/backups}:/backups
+    entrypoint: ["sh", "/backup-loop.sh"]
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend]
+    logging: *logging
+
+  # ---------------------------------------------------------------- Optional: Cloudflare Tunnel
+  # Only with:  docker compose --profile tunnel up -d   (and CLOUDFLARE_TUNNEL_TOKEN in .env).
+  # Use this instead of router port forwarding when the internet line has no public IP (CGNAT).
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on: [web]
+    networks: [frontend]
+    logging: *logging
+
+networks:
+  backend:
+    internal: true   # database traffic never leaves Docker
+  frontend: {}
