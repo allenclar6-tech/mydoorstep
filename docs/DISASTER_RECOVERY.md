@@ -1,6 +1,6 @@
 # DOORSTEP Disaster Recovery
 
-This document is a preparation runbook; backups and restoration have not been verified yet.
+Production runs on the ZimaOS server: nightly database dumps and upload archives are automatic, and the restore script and whole-server recovery are in [ZIMAOS_DEPLOYMENT.md](ZIMAOS_DEPLOYMENT.md) section 7. Still to do: an off-server backup copy and a timed restore drill. The list below is the general runbook.
 
 ## Protect
 

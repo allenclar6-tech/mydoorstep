@@ -17,7 +17,7 @@ DOORSTEP is a production-oriented food delivery marketplace for Sapele, Delta St
 - Database: PostgreSQL with Prisma ORM
 - Auth: scrypt password hashing and opaque session tokens
 - Payments: Paystack-first provider adapter with server-side verification
-- Storage: authenticated private uploads stored on a persistent Render disk in production
+- Storage: authenticated private uploads on the production server's persistent disk (ZimaOS), backed up nightly
 - Domain: role-based access across customer, restaurant, rider, and admin flows
 
 ## Project docs
@@ -59,7 +59,8 @@ The project includes the required documentation set:
 
 - Managed PostgreSQL deployment and migrations
 - Real operating secrets in environment management
-- A persistent Render disk is configured for private uploads; migrate to managed object storage before multi-instance scaling
+- Private uploads live on the ZimaOS server's local disk; move them to object storage before running more than one API instance
+- Nightly backups sit on the same server disk; an off-server copy and a restore drill are still to be set up
 - Full email/SMS/push notification providers
 - Live admin and finance operations UI connected to all APIs
 - Final legal copy and owner-specific business setup
@@ -103,7 +104,7 @@ Keep all secrets server-side. Never expose private provider keys in the frontend
 
 ### Private upload persistence
 
-Production profile photos and application documents must use durable storage. The Render Blueprint mounts a persistent disk at `/var/data` and sets `PRIVATE_UPLOAD_DIR=/var/data/private-uploads`. Do not use `/tmp` for production uploads: Render clears it whenever the API service restarts or redeploys. A service with a persistent disk must run as a single instance; use managed private object storage before enabling horizontal scaling.
+Production profile photos and application documents must use durable storage. In production (ZimaOS, see [docs/ZIMAOS_DEPLOYMENT.md](docs/ZIMAOS_DEPLOYMENT.md)) the API container mounts `/DATA/AppData/doorstep/data/private-uploads` at `PRIVATE_UPLOAD_DIR=/data/private-uploads`, and the backup container archives it nightly. Never use `/tmp` or the container's own filesystem for uploads: both are wiped when the container is rebuilt. With uploads on a local disk the API must run as a single instance; use managed private object storage before scaling out.
 
 ### Customer verification email
 
@@ -117,7 +118,7 @@ The purchased domain plan is documented for `mydoorstep.com.co`:
 - Admin: `https://mydoorstep.com.co/admin/login`
 - API: `https://api.mydoorstep.com.co`
 
-See [docs/DOMAIN_SETUP.md](docs/DOMAIN_SETUP.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [.env.cloudflare.example](.env.cloudflare.example).
+All three are served by the ZimaOS server through a Cloudflare Tunnel since 2026-11-08. See [docs/ZIMAOS_DEPLOYMENT.md](docs/ZIMAOS_DEPLOYMENT.md) and [docs/DOMAIN_SETUP.md](docs/DOMAIN_SETUP.md).
 
 ## Database setup
 
@@ -175,7 +176,7 @@ npx vite build
 
 Use a managed PostgreSQL provider, a managed Node runtime for the API, and a production secret manager. The deployment guide covers the recommended production architecture in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-Self-hosting on your own server (ZimaOS, Docker Compose: PostgreSQL, API, website, nightly backups, persistent uploads): [docs/ZIMAOS_DEPLOYMENT.md](docs/ZIMAOS_DEPLOYMENT.md).
+**Production runs on the owner's ZimaOS server** (Docker Compose: PostgreSQL, API, website, Cloudflare Tunnel, nightly backups): [docs/ZIMAOS_DEPLOYMENT.md](docs/ZIMAOS_DEPLOYMENT.md) covers operating, updating, backups and falling back. The Render and Cloudflare Worker setup below is the previous host, kept only as an emergency fallback.
 
 ## Payment setup
 

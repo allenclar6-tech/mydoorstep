@@ -23,7 +23,7 @@ The logo uses the existing owner's profile-photo field and private photo route.
 Menu images use the existing menu image field; no migration is needed.
 JPEG, PNG and WebP inputs are limited to 5 MB and 25 megapixels. Sharp decodes,
 auto-orients, resizes to at most 1600 pixels and strips original metadata.
-Keep `PRIVATE_UPLOAD_DIR` on the persistent Render disk mounted at `/var/data`.
+Keep `PRIVATE_UPLOAD_DIR` on persistent storage (production: the ZimaOS uploads folder, see ZIMAOS_DEPLOYMENT.md).
 Run `npm ci` to install Sharp and `node --test tests/partnerMedia.test.js`.
 
 ## Production requirements
@@ -38,7 +38,7 @@ Run `npm ci` to install Sharp and `node --test tests/partnerMedia.test.js`.
 
 ## Recommended deployment targets
 
-Self-hosted option: [ZIMAOS_DEPLOYMENT.md](ZIMAOS_DEPLOYMENT.md) runs the whole stack on one ZimaOS server with Docker Compose.
+**Current production (since 2026-11-08):** the whole stack runs on the owner's ZimaOS server with Docker Compose and a Cloudflare Tunnel; see [ZIMAOS_DEPLOYMENT.md](ZIMAOS_DEPLOYMENT.md). The targets below are alternatives for the future.
 
 - Frontend: Vercel or Netlify
 - API: Render, Railway, DigitalOcean App Platform, Azure App Service, or a managed Node host
@@ -50,11 +50,10 @@ Self-hosted option: [ZIMAOS_DEPLOYMENT.md](ZIMAOS_DEPLOYMENT.md) runs the whole 
 - Public website: `https://mydoorstep.com.co`
 - Admin: `https://mydoorstep.com.co/admin/login`
 - API: `https://api.mydoorstep.com.co`
-- Cloudflare Worker asset directory: `dist`
-- SPA fallback: `wrangler.jsonc` with `assets.not_found_handling="single-page-application"`
-- Cloudflare redeploy command: `npm.cmd run cloudflare:deploy`
+- Served by the ZimaOS web container (nginx, `deploy/zimaos/nginx/`) through the `doorstep-zimaos` Cloudflare Tunnel
+- Update command (on the server): `git pull` then `docker compose --profile tunnel up -d --build` in `deploy/zimaos`
 
-Cloudflare Workers serves the Vite build from its bound static assets and proxies `/api/*` to the Render API. The Express/Prisma API must run on a Node-capable service with managed PostgreSQL; it should not be deployed as static assets. Build the frontend with `npm.cmd run build` before deploying the Worker.
+Previous setup, kept only as a fallback: Cloudflare Workers served the Vite build from its bound static assets and proxies `/api/*` to the Render API. The Express/Prisma API must run on a Node-capable service with managed PostgreSQL; it should not be deployed as static assets. Build the frontend with `npm.cmd run build` before deploying the Worker.
 
 ## API deployment blueprint
 
@@ -113,7 +112,7 @@ The repository contains seven tracked Prisma migrations: the existing-schema bas
 
 Use `npm.cmd run db:push` only for disposable local development databases.
 
-## Production release status (2026-10-15)
+## Production release status (2026-10-15, historical: before the move to ZimaOS)
 
 - Promoted `9c625ee` to `main`; Render auto-deployed the API and the guarded migration runner completed successfully (`migrations_ready`). The Prisma security fix is live in API deployment `dep-db8gbte0tbcc738btihg`, commit `15c2263`.
 - Production checks returned `{"service":"doorstep-api","status":"ok","environment":"production"}` from `/api/health` and `{"service":"doorstep-api","status":"ready","database":"ok"}` from `/api/ready`. The same-origin `/api/ready` route through `https://mydoorstep.com.co` also returned ready.

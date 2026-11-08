@@ -13,7 +13,7 @@
 
 - Configure `PAYSTACK_SECRET_KEY` in the **API service** environment, never in Vite/browser variables. Use either an `sk_test_` key or an `sk_live_` key with the matching Paystack account mode; never mix modes.
 - Set `PAYMENT_CALLBACK_URL` in the API host environment and configure the Paystack webhook to `https://<api-host>/api/payments/webhook`.
-- In Render, open the `mydoorstep-api` service, add `PAYSTACK_SECRET_KEY` under Environment, save it, and redeploy the API. The `sync: false` entry in [render.yaml](../render.yaml) deliberately declares the required secret without storing it in source control.
+- Production keeps `PAYSTACK_SECRET_KEY` / `PAYSTACK_PUBLIC_KEY` in the ZimaOS server's `deploy/zimaos/.env` (never in git). After changing them, run `docker compose --profile tunnel up -d`. Live webhook: `https://api.mydoorstep.com.co/api/payments/webhook`; callback: `https://mydoorstep.com.co/payment/callback`.
 - `PAYSTACK_PUBLIC_KEY` is not required for the server-redirect checkout and is not returned by the payment configuration endpoint.
 - Direct Doorstep Bank Transfer is separately configured by an administrator in **Admin Dashboard → Finance**. It uses manual verification by default: an authorized administrator must reconcile a reliable bank record, enter its transaction identifier and note, and the action is audited.
 - Automatic direct-bank-transfer verification remains unavailable until a supported, transaction-specific provider integration is implemented and configured. Enabling it without that integration is intentionally rejected.
