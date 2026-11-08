@@ -55,7 +55,7 @@ if [ "$MODE" = render ]; then
 fi
 
 [ -s "$FILE" ] || { echo "Dump file $FILE is missing or empty."; exit 1; }
-sha256sum "$FILE" | tee "$FILE.sha256"
+(cd "$(dirname "$FILE")" && sha256sum "$(basename "$FILE")" | tee "$(basename "$FILE").sha256")   # name only: checkable anywhere
 
 echo "Restoring into the new database ..."
 case "$FILE" in
