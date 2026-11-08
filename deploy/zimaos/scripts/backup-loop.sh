@@ -7,10 +7,16 @@
 set -eu
 HOUR="${BACKUP_HOUR:-2}"
 KEEP="${BACKUP_KEEP_DAYS:-14}"
-mkdir -p /backups/db /backups/uploads
+mkdir -p /backups/db /backups/uploads 2>/dev/null || true
 umask 077
 
 run_backup() {
+  # Backups belong on a different disk from the data. The target folder carries this marker file; if it is
+  # missing, the disk isn't mounted and Docker is showing an empty folder on the system disk instead.
+  if [ ! -e /backups/.doorstep-backup-target ]; then
+    echo "[backup] FAILED: /backups/.doorstep-backup-target missing - is the backup disk mounted?" >&2
+    return 1
+  fi
   stamp=$(date +%Y%m%d-%H%M)
   db="/backups/db/doorstep-$stamp.dump"
   up="/backups/uploads/uploads-$stamp.tar.gz"

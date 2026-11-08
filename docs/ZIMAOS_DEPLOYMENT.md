@@ -40,7 +40,8 @@ it, and how to fall back. Files live in [deploy/zimaos/](../deploy/zimaos/).
 | Machine | ZimaOS 1.8.0, x86_64, 12 CPUs, 15.6 GB RAM, 1.8 TB data disk (`/DATA`) |
 | Code | `/DATA/AppData/doorstep/src` (git checkout of branch `deploy/zimaos-2026-11-07`) |
 | Settings | `/DATA/AppData/doorstep/src/deploy/zimaos/.env` (root-only; `.env.bak-*` are earlier copies) |
-| Data | `/DATA/AppData/doorstep/data/` → `postgres/`, `private-uploads/`, `backups/` |
+| Data | `/DATA/AppData/doorstep/data/` → `postgres/`, `private-uploads/` (data disk sda) |
+| Backups | `/media/HDD-Storage/DOORSTEP-Backups/` (second disk sdb) |
 | Web port on the LAN | `8090` (for checks from the home network; not opened on the router) |
 | Other apps (untouched) | Nginx Proxy Manager (8080/4443/81), "Webserver" nginx (82), Portainer (9000/9443), an older `cloudflared-web` tunnel that belongs to a *different* Cloudflare account and can't serve this domain |
 
@@ -126,16 +127,18 @@ existing admin accounts came across with the data.
 ## 7. Backups and recovery
 
 - The `backup` container writes a database dump and an uploads archive **every night at 02:00 (Lagos)** to
-  `/DATA/AppData/doorstep/data/backups/{db,uploads}/`, checks each dump is readable, writes `.sha256` files and keeps
-  14 days. Run one now: `docker compose exec backup sh /backup-loop.sh now`.
-- Cut-over copies are kept in `backups/import/` (the final Render export) and `backups/pre-switch/`.
-- **A backup on the same disk is not a backup.** Set `DOORSTEP_BACKUPS` in `.env` to a second drive, and copy the
+  `/media/HDD-Storage/DOORSTEP-Backups/{db,uploads}/` on the **second disk** (sdb, 932 GB), checks each dump is
+  readable, writes `.sha256` files and keeps 14 days. Run one now: `docker compose exec backup sh /backup-loop.sh now`.
+- If the second disk is not mounted, the job logs `FAILED ... is the backup disk mounted?` and skips (it looks for the
+  marker file `.doorstep-backup-target` in that folder). Check with `docker compose logs backup`.
+- Cut-over copies are kept in `import/` (the final Render export) and `pre-switch/` in the same folder.
+- The second disk protects against the data disk failing, not against theft, fire or a power surge. Also copy the
   folder off the server weekly (ZimaOS Backup app, or to your PC / Google Drive). Keep a copy of `.env` in a password
   manager: without `CARD_TOKEN_ENCRYPTION_KEY` and `POSTGRES_PASSWORD` a restore is much harder.
 - **Restore** (replaces the current data; asks you to type RESTORE and saves the current state first):
   ```sh
-  bash scripts/restore-backup.sh /DATA/AppData/doorstep/data/backups/db/doorstep-YYYYMMDD-HHMM.dump \
-                                 /DATA/AppData/doorstep/data/backups/uploads/uploads-YYYYMMDD-HHMM.tar.gz
+  bash scripts/restore-backup.sh /media/HDD-Storage/DOORSTEP-Backups/db/doorstep-YYYYMMDD-HHMM.dump \
+                                 /media/HDD-Storage/DOORSTEP-Backups/uploads/uploads-YYYYMMDD-HHMM.tar.gz
   ```
 - **Test a restore once a month** on a copy: in a separate folder with `DOORSTEP_DATA=/DATA/AppData/doorstep-restore-test`,
   another `WEB_HOST_PORT`, no tunnel, and `docker compose -p doorstep-test ...`; delete the copy afterwards.
