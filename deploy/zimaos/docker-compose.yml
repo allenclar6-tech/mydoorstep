@@ -8,9 +8,10 @@ x-logging: &logging
   options: { max-size: "10m", max-file: "5" }
 
 services:
-  # ---------------------------------------------------------------- PostgreSQL (internal network only)
+  # ---------------------------------------------------------------- PostgreSQL 18 (same major version as Render; internal network only)
+  # 18+ images keep data in /var/lib/postgresql/18/docker, so the volume mounts one level up.
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: doorstep
@@ -18,7 +19,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     volumes:
-      - ${DOORSTEP_DATA:?Set DOORSTEP_DATA in .env}/postgres:/var/lib/postgresql/data
+      - ${DOORSTEP_DATA:?Set DOORSTEP_DATA in .env}/postgres:/var/lib/postgresql
     shm_size: 256mb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U doorstep -d doorstep"]
@@ -73,7 +74,7 @@ services:
 
   # ---------------------------------------------------------------- Nightly backups (database + uploads)
   backup:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       PGHOST: db

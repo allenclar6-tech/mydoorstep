@@ -49,7 +49,7 @@ if [ "$MODE" = render ]; then
   FILE="$BACKUPS/import/render-$(date +%Y%m%d-%H%M).dump"
   echo "Dumping from Render (read-only) to $FILE ..."
   # A throwaway client container on the normal network; the URL goes in through the environment, not argv.
-  docker run --rm -e SRC_URL="$RENDER_URL" postgres:17-alpine sh -c 'pg_dump "$SRC_URL" --format=custom --no-owner --no-acl' > "$FILE.partial"
+  docker run --rm -e SRC_URL="$RENDER_URL" postgres:18-alpine sh -c 'pg_dump "$SRC_URL" --format=custom --no-owner --no-acl' > "$FILE.partial"
   mv "$FILE.partial" "$FILE"
   unset RENDER_URL
 fi

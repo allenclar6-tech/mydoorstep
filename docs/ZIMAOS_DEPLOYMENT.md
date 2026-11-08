@@ -17,7 +17,7 @@ and how to run, back up and restore it afterwards. Files live in [deploy/zimaos/
                                       api  (Express + Prisma, port 4000, ONE instance)
                                             │  uploads: $DOORSTEP_DATA/private-uploads
                                             ▼
-                                      db   (PostgreSQL 17, internal network only, no port)
+                                      db   (PostgreSQL 18, internal network only, no port)
                                       backup (nightly pg_dump + uploads archive)
 ```
 
