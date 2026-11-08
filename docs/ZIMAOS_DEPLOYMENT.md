@@ -32,6 +32,35 @@ and how to run, back up and restore it afterwards. Files live in [deploy/zimaos/
 - Optional **Cloudflare Tunnel** (`--profile tunnel`) replaces router port forwarding when your internet line has
   no public IP (common on Nigerian ISPs: CGNAT).
 
+## 1a. What is deployed on the DOORSTEP ZimaOS server (2026-11-08)
+
+- Code: `/DATA/AppData/doorstep/src` (branch `deploy/zimaos-2026-11-07`), settings `deploy/zimaos/.env` (root-only).
+- Data: `/DATA/AppData/doorstep/data` (PostgreSQL 18, uploads, backups). `/DATA/AppData/doorstep/staging` is the
+  first empty validation run (PostgreSQL 17 files, unused; safe to delete after cut-over).
+- Public access: a **dedicated tunnel `doorstep-zimaos`** in the Cloudflare account that owns mydoorstep.com.co, run
+  by the stack's own `cloudflared` service (`--profile tunnel`, `TRUST_CLOUDFLARE_IP=on`). The server's older
+  `cloudflared-web` tunnel belongs to a different Cloudflare account and can't serve this domain; it is left alone.
+  Routes: `staging.` and `api.mydoorstep.com.co` → `http://web:80`. No router ports are opened.
+- Managed through Portainer (`https://<server>:9443`) because SSH logins aren't set up; every `docker compose`
+  command in this guide can be run from a `docker:27.5-cli` container with the Docker socket and
+  `/DATA/AppData/doorstep` mounted at the same path.
+
+**Rehearsal mode until cut-over** (`.env`): `DISPATCH_SWEEP=off`, `PAYOUT_SWEEP=off`, `PUSH_SWEEP=off`,
+`PAYMENT_CALLBACK_URL=https://staging.mydoorstep.com.co/payment/callback`, Paystack **test** keys. The database is a
+copy of Render's; with the loops on, both servers would message the same customers and riders.
+
+**Cut-over on this server** (in this order, in a quiet hour):
+1. Pause new orders on Render (maintenance notice), then take a fresh dump of Render's database and copy the
+   uploads again (they may have changed since the rehearsal).
+2. Replace the rehearsal database with that dump (`scripts/restore-backup.sh`, which saves the current state first)
+   and the uploads folder with the fresh copy.
+3. In `.env`: remove the three `*_SWEEP=off` lines, set `PAYMENT_CALLBACK_URL=https://mydoorstep.com.co/payment/callback`,
+   put the **live** Paystack keys in, then `docker compose --profile tunnel up -d`.
+4. Tunnel routes: add `mydoorstep.com.co` and `www.mydoorstep.com.co` → `http://web:80`; remove the Worker custom
+   domain for mydoorstep.com.co; DNS `mydoorstep.com.co` and `www` → CNAME `<tunnel-id>.cfargotunnel.com` (proxied).
+5. Paystack webhook → `https://api.mydoorstep.com.co/api/payments/webhook`; callback → `https://mydoorstep.com.co/payment/callback`.
+6. Suspend (don't delete) the Render API so it stops its own dispatch/payout loops; keep it and the database a week.
+
 ## 2. One-time server preparation (you, on the ZimaOS dashboard)
 
 1. **Turn on SSH**: ZimaOS dashboard → Settings → General → *Developer mode* → enable **SSH**. Note the user
