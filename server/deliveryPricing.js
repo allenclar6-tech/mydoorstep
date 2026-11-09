@@ -39,8 +39,8 @@ export const defaultDeliveryPricing = Object.freeze({
   routeRules: [],
   surcharges: { remoteMinor: 0, weekend: { active: false, minor: 0 } },
   freeDelivery: { active: false, thresholdMinor: 0 },
-  precedence: 'AREA_FIRST',
-  manualQuotes: { enabled: true, minConfidence: 'MEDIUM', quoteBeyondMaxDistance: true, maxAutoFeeMinor: null, expiryHours: 24, maxRounds: 3, maxQuoteMinor: 2_000_000 },
+  precedence: 'DISTANCE_FIRST',
+  manualQuotes: { enabled: true, minConfidence: 'MEDIUM', autoPriceExactPins: true, quoteBeyondMaxDistance: true, maxAutoFeeMinor: null, expiryHours: 24, maxRounds: 3, maxQuoteMinor: 2_000_000 },
 })
 
 // A suggested rider rate card for the calculator's "Use starter rates" button. Not an official rate: Sapele has
@@ -146,18 +146,29 @@ const isWeekend = (when) => { const day = new Intl.DateTimeFormat('en-US', { tim
 
 /**
  * Which rule sets the customer fee, in a fixed, documented order (never mixed):
- *   AREA_FIRST (default): fixed area price › agreed area-to-area price › distance formula
- *   ROUTE_FIRST:          agreed area-to-area price › fixed area price › distance formula
+ *   DISTANCE_FIRST (default): an agreed area-to-area route price (a deal made with riders for that pair of areas),
+ *                             otherwise the real kilometres whenever they were measured reliably; a fixed area
+ *                             price only when they weren't (e.g. no exact pins)
+ *   AREA_FIRST:               fixed area price › agreed area-to-area price › distance formula
+ *   ROUTE_FIRST:              agreed area-to-area price › fixed area price › distance formula
  * (An admin-approved quote for one order beats all of these; that's applied when the customer accepts it.)
  */
-export function pricingMethodFor({ rule, dropoffZone, precedence = 'AREA_FIRST' }) {
+export function pricingMethodFor({ rule, dropoffZone, precedence = 'DISTANCE_FIRST', distanceReliable = false }) {
   const area = dropoffZone?.fixedFeeMinor != null ? 'AREA_FIXED' : null
   const route = rule?.customerFeeMinor != null ? 'ROUTE_RULE' : null
+  if (precedence === 'DISTANCE_FIRST') return route || (distanceReliable ? 'DISTANCE' : area) || 'DISTANCE'
   const order = precedence === 'ROUTE_FIRST' ? [route, area] : [area, route]
   return order.find(Boolean) || 'DISTANCE'
 }
 
-export function priceDelivery({ distance, pickupZone = null, dropoffZone = null, subtotalMinor = 0, fulfilment = 'DOORSTEP_RIDER', pricing, finance, now = new Date() }) {
+/** Measured well enough to charge by the kilometre: a road route, or a straight line between two exact pins. */
+export function reliableDistance(distance, { exactPins = false } = {}) {
+  if (!distance || distance.source === 'ASSUMED') return false
+  if (distance.source === 'ROAD' || distance.source === 'ROAD_CAPPED') return true
+  return distance.source === 'ESTIMATE' && exactPins
+}
+
+export function priceDelivery({ distance, pickupZone = null, dropoffZone = null, subtotalMinor = 0, fulfilment = 'DOORSTEP_RIDER', pricing, finance, now = new Date(), exactPins = false }) {
   const warnings = [...(distance.warnings || [])]
   const km = Math.round(distance.meters / 100) / 10
   const rule = findRouteRule(pricing.routeRules, pickupZone?.id, dropoffZone?.id)
@@ -166,7 +177,7 @@ export function priceDelivery({ distance, pickupZone = null, dropoffZone = null,
 
   // Customer delivery fee
   const fromDistance = distanceFee(km, pricing.customerFee)
-  const method = pricingMethodFor({ rule, dropoffZone, precedence: pricing.precedence })
+  const method = pricingMethodFor({ rule, dropoffZone, precedence: pricing.precedence, distanceReliable: reliableDistance(distance, { exactPins }) })
   const ruleFee = method !== 'DISTANCE' // agreed or fixed prices aren't topped up for margin
   const baseFee = method === 'AREA_FIXED' ? dropoffZone.fixedFeeMinor : method === 'ROUTE_RULE' ? rule.customerFeeMinor : fromDistance.feeMinor
   const zoneSurchargeMinor = ruleFee ? 0 : (pickupZone?.customerSurchargeMinor || 0) + (dropoffZone?.customerSurchargeMinor || 0)

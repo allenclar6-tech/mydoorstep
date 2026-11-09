@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BarChart3, Bell, Bike, Calculator, ChefHat, ChevronDown, ClipboardList, CreditCard, Download, FileText, FolderLock, LayoutDashboard, ReceiptText, MapPin, MessageCircle, Package, Settings, Star, Store, Tag, Truck, Users, Wallet } from 'lucide-react'
+import { BarChart3, Bell, Bike, BookOpen, Calculator, ChefHat, ChevronDown, ClipboardList, CreditCard, Download, FileText, FolderLock, LayoutDashboard, ReceiptText, MapPin, MessageCircle, Package, Settings, Star, Store, Tag, Truck, Users, Wallet } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { MapPinArt, MoneyBag, Parcel, PercentTag, Scooter, Storefront } from '../shop/Illustrations'
 import { firstNameOf, go, Hello, naira, Shortcuts, usePolling, WeekChart, WorkspaceFrame } from '../workspace/WorkspaceFrame'
@@ -25,6 +25,7 @@ export const ADMIN_MENU = [
   { group: 'Customers', label: 'Order chats', href: '/admin/chats', icon: MessageCircle },
   { group: 'Customers', label: 'Reviews', href: '/admin/reviews', icon: Star },
   { group: 'Money', label: 'Money & payouts', short: 'Money', href: '/admin/finance', icon: Wallet },
+  { group: 'Money', label: 'Books & statements', href: '/admin/books', icon: BookOpen },
   { group: 'Money', label: 'How customers pay', href: '/admin/payments', icon: CreditCard },
   { group: 'Money', label: 'Promo codes', href: '/admin/promos', icon: Tag },
   { group: 'Delivery setup', label: 'Prices to confirm', href: '/admin/delivery-quotes', icon: ReceiptText },
@@ -37,6 +38,7 @@ const ADMIN_EXTRA = [{ label: 'Notifications', href: '/admin/notifications', ico
 
 /** What each page is for, in one plain sentence, and how to use it in three steps. */
 export const ADMIN_GUIDES = {
+  '/admin/books': { what: 'DOORSTEP’s books: money in, income, payouts and what is owed — with a statement for every rider and business.', steps: ['Pick the period at the top (this month, last month, or your own dates).', 'Riders and Businesses are listed separately with what each is owed now and their unpaid jobs. Tap one for their full statement.', 'Download a statement (CSV) or print it to share. “Full journal” is every money record in the period, for your accountant.', 'Pay people in Money & payouts — this page is the record.'] },
   '/admin/chats': { what: 'Read-only copies of the chats between customers, riders and stores during an order.', steps: ['Open “Reported” first — those messages were flagged by a customer, rider or store.', 'Search an order number to read its whole chat when someone complains.', 'Reply to people through Help messages; you can’t post in order chats.'] },
   '/admin/delivery-quotes': { what: 'Orders whose delivery fee a person must confirm — the map couldn’t place the address or measure the road reliably.', steps: ['Open the oldest request first and read the address, landmark and directions.', 'Check the map pin and the store, then type a fair delivery fee (and a short reason).', 'Send it. The customer accepts and pays, asks for a review, or declines.'] },
   '/admin/deliveries': { what: 'Every delivery happening right now, and orders still waiting for a rider.', steps: ['Look at “Waiting for a rider” first — those customers are waiting.', 'Tap “Send a rider” to give the job to the nearest free rider.', 'Watch it move to “On the way”. Call the rider if it stays stuck.'] },

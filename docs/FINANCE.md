@@ -12,7 +12,8 @@
    - the service fee;
    - the delivery fee, when a DOORSTEP rider delivers.
 4. **Riders.** Each completed delivery records the rider's earning from the Sapele distance rate table, using road distance from pickup to drop-off. Riders are paid from Admin → Money, either by Paystack Transfer or as a recorded bank payment.
-   - **DOORSTEP's rider fee:** DOORSTEP keeps a percentage of each delivery earning (default **6%**, changed in Admin → Money → Commission & rider pay).
+   - **DOORSTEP's rider fee:** DOORSTEP keeps a percentage of each delivery earning (set in Admin → Money → Commission & rider pay).
+     - **Private between DOORSTEP and riders.** Only admins and riders can see the rate and the rider rate card. Businesses and customers never get it from any screen or API: business order lists drop rider pay and DOORSTEP's delivery margin, and a business's Earnings page only shows its own commission.
      - The rider's statement shows the full earning and the fee as separate lines.
      - The fee clears together with its earning, and counts as DOORSTEP income.
      - A rate change applies to deliveries completed afterwards.
@@ -89,3 +90,33 @@ Set separately for businesses and for riders:
    5. Add the transfer events (`transfer.success`, `transfer.failed`, `transfer.reversed`) to the existing webhook URL `https://mydoorstep-api.onrender.com/api/payments/webhook`.
    6. Choose the payout modes in Admin → Money → Payouts. Everything stays manual until you do.
 4. **Database.** Migrations `20261020110000_finance_ledger` and `20261022100000_payout_modes` are additive. Earlier orders keep their recorded commission. New ledger rows start with new payments.
+
+## Books & statements (Admin › Money › Books & statements)
+
+Built from the same ledger and payout records as Money & payouts. Nothing is stored twice, so the books always agree with what's owed.
+
+- **Period:** this month, last month, last 7 days, this year, or any dates (Lagos days, up to about a year).
+- **Summary:**
+  - money in (successful customer payments);
+  - DOORSTEP income by type (commission, delivery fees, service fees, rider fee, cash-out fees, parcels);
+  - paid out (riders, businesses, and businesses paid automatically by Paystack split);
+  - owed now (riders and businesses separately);
+  - customer refunds still to pay, and rider earnings waiting for a price.
+- **Who DOORSTEP owes:** **Riders** and **Businesses** on separate tabs. Each person shows:
+  - their bank (or "no bank account yet");
+  - unpaid jobs;
+  - earned in the period, and paid in the period (with the last payout date);
+  - **owed now**.
+- **Statements:** open anyone for their statement. It shows:
+  - the opening balance;
+  - **one line per job**, with the earning, DOORSTEP's fee and the tip shown underneath;
+  - cash-out fees, payouts (and how they were sent), and shares paid at checkout by Paystack split;
+  - a running balance and the closing balance.
+
+  The closing balance always equals what's owed now: tests check this, including month-to-month continuity. Work still waiting for a price is listed separately and not counted.
+- **Downloads:** each statement as CSV (opens in Excel or Google Sheets), or print it. **Full journal (CSV)** is every ledger line and payout in the period, with names and order numbers, for an accountant. Text cells can't run as spreadsheet formulas. Every admin export is recorded in the Activity log.
+- **Riders and businesses** see their own **Monthly statement** (last 6 months, with CSV download) at the bottom of Earnings.
+
+API: `GET /api/admin/books/summary`, `GET /api/admin/books/payees/rider|business`, `GET /api/admin/books/statement/rider|business/:id[?format=csv]`, `GET /api/admin/books/journal.csv`, `GET /api/finance/statement[?format=csv]`. All of them take `?from=YYYY-MM-DD&to=YYYY-MM-DD`.
+
+Payments are still made in **Money & payouts**. Books & statements is the record.

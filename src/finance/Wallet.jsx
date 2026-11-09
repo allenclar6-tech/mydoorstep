@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDownLeft, BadgeCheck, Banknote, Building2, CalendarClock, CircleAlert, Clock3, Crosshair, HandCoins, Info, Landmark, ShieldCheck, Zap } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { WithdrawCard } from './WithdrawCard'
+import { MyStatement } from './MyStatement'
 
 const readToken = () => { try { return localStorage.getItem('doorstep-token') } catch { return null } }
 async function call(path, { method = 'GET', body } = {}) {
@@ -203,6 +204,7 @@ export function Wallet({ kind }) {
         <span className="wl-st-amount"><b>{money(payout.amountMinor)}</b><span className={`wl-chip is-${payout.status === 'PAID' ? 'done' : payout.status === 'FAILED' || payout.status === 'DISPUTED' ? 'bad' : payout.status === 'AWAITING_CONFIRMATION' ? 'warn' : 'live'}`}>{payout.status === 'PAID' ? 'Received' : payout.status === 'FAILED' ? 'Failed' : payout.status === 'AWAITING_CONFIRMATION' ? 'Confirm' : payout.status === 'DISPUTED' ? 'Being checked' : payout.status === 'REQUESTED' ? 'Requested' : 'Processing'}</span></span>
       </li>)}</ul>
     </section>}
+    <MyStatement />
     <p className="wl-foot"><ShieldCheck size={14} aria-hidden="true" />Payments are processed by Paystack. DOORSTEP stores only the last 4 digits of your account.</p>
   </div>
 }

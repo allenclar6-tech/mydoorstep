@@ -42,11 +42,13 @@ export function riderPosition(rider, latestPing, now = Date.now()) {
  * Ranks riders for one pickup: nearest first (within MAX_DISPATCH_KM), riders without a recent location after
  * them, and the rider who has waited longest since going online breaks ties.
  */
-export function rankRiders(candidates, pickup, { maxKm = MAX_DISPATCH_KM } = {}) {
+export function rankRiders(candidates, pickup, { maxKm = MAX_DISPATCH_KM, preferredRiderId = null } = {}) {
   return candidates
     .map((candidate) => ({ ...candidate, distanceMeters: candidate.position && pickup ? Math.round(haversineMeters(candidate.position, pickup)) : null }))
     .filter((candidate) => candidate.distanceMeters == null || candidate.distanceMeters <= maxKm * 1000)
     .sort((a, b) => {
+      // The rider who agreed this order's delivery price with DOORSTEP gets the first offer (if free and nearby).
+      if (preferredRiderId && (a.riderId === preferredRiderId) !== (b.riderId === preferredRiderId)) return a.riderId === preferredRiderId ? -1 : 1
       if (a.distanceMeters == null && b.distanceMeters != null) return 1
       if (b.distanceMeters == null && a.distanceMeters != null) return -1
       if (a.distanceMeters != null && b.distanceMeters != null && a.distanceMeters !== b.distanceMeters) return a.distanceMeters - b.distanceMeters
@@ -176,7 +178,7 @@ export async function offerToRider(db, deliveryId, riderId, { now = new Date(), 
 export async function dispatchDelivery(db, deliveryId, { now = new Date(), notifyUsers } = {}) {
   const delivery = await db.delivery.findUnique({
     where: { id: deliveryId },
-    include: { order: { select: { id: true, orderNumber: true, status: true, scheduledFor: true, restaurantId: true, addressSnapshot: true, plannedRiderPayMinor: true, deliveryQuote: true, restaurant: { select: { name: true, latitude: true, longitude: true, application: { select: { deliveryPreference: true } } } } } } },
+    include: { order: { select: { id: true, orderNumber: true, status: true, scheduledFor: true, restaurantId: true, addressSnapshot: true, plannedRiderPayMinor: true, agreedRiderId: true, deliveryQuote: true, restaurant: { select: { name: true, latitude: true, longitude: true, application: { select: { deliveryPreference: true } } } } } } },
   })
   if (!delivery?.order || delivery.riderId) return { offered: false, reason: 'NOT_DISPATCHABLE' }
   if (!DISPATCHABLE_ORDER_STATUSES.includes(delivery.order.status)) return { offered: false, reason: 'ORDER_NOT_READY_FOR_DISPATCH' }
@@ -190,7 +192,7 @@ export async function dispatchDelivery(db, deliveryId, { now = new Date(), notif
   const pickup = point(delivery.order.restaurant)
   const ownRiders = delivery.order.restaurant.application?.deliveryPreference === 'OWN_RIDERS'
   let ranked = ownRiders ? rankRiders(await freeOnlineRiders(db, { restaurantId: delivery.order.restaurantId, businessOnly: true, excludeIds, now }), pickup) : []
-  if (!ranked.length) ranked = rankRiders(await freeOnlineRiders(db, { restaurantId: delivery.order.restaurantId, businessOnly: false, excludeIds, now }), pickup)
+  if (!ranked.length) ranked = rankRiders(await freeOnlineRiders(db, { restaurantId: delivery.order.restaurantId, businessOnly: false, excludeIds, now }), pickup, { preferredRiderId: delivery.order.agreedRiderId })
 
   const releaseExpired = () => db.delivery.updateMany({ where: { id: deliveryId, status: 'REQUESTED', riderId: null, requestExpiresAt: { lte: now } }, data: { status: 'AVAILABLE', requestedRiderId: null, requestExpiresAt: null } })
   if (!ranked.length) { await releaseExpired(); return { offered: false, reason: 'NO_FREE_RIDER' } }

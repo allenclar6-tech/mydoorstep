@@ -184,7 +184,7 @@ function EasySetup({ pricing, setP, riderPay, setRiderPay, table, saving, onSave
     </div>
 
     <div className="dp-card dp-easy-save">
-      <div><b>{published ? 'Prices are ON at checkout' : 'Prices are not on yet'}</b><small>{published ? 'Press Save after any change.' : 'Customers still pay the old flat ₦800 until you turn these on.'}</small></div>
+      <div><b>{published ? 'Prices are ON at checkout' : 'Prices are not on yet'}</b><small>{published ? 'Press Save after any change.' : 'Until you turn these on, every delivery waits for you to confirm its price.'}</small></div>
       <button type="button" className="dp-primary" disabled={saving} onClick={() => onSave(true)}>{saving ? 'Saving…' : published ? 'Save changes' : 'Save and turn on'}</button>
     </div>
   </>
@@ -247,7 +247,7 @@ export function DeliveryPricingAdmin() {
       const data = await call('/api/admin/delivery-pricing', { method: 'PUT', body: { pricing: { ...withoutFlags(pricing), published: publish }, riderPay: finance.riderPay } })
       setLoaded((current) => ({ ...current, pricing: data.pricing, finance: data.finance }))
       setPricing(structuredClone(data.pricing)); setRiderPay(structuredClone(data.finance.riderPay))
-      setMessage(publish && !loaded.pricing.published ? 'Published. Checkout now prices delivery by distance.' : !publish && loaded.pricing.published ? 'Unpublished. Checkout is back on the flat ₦800 fee.' : 'Saved.')
+      setMessage(publish && !loaded.pricing.published ? 'Published. Checkout now prices delivery by distance.' : !publish && loaded.pricing.published ? 'Unpublished. Every delivery now waits for you to confirm its price.' : 'Saved.')
     } catch (saveError) { setError(saveError.message) } finally { setSaving(false) }
   }
 
@@ -267,7 +267,7 @@ export function DeliveryPricingAdmin() {
   return <section className="dp">
     <header className="dp-hero">
       <div><span className="dp-kicker">DELIVERY SETUP</span><h1>Delivery prices</h1>
-        <p>{pricing.published ? 'ON: customers pay by how far they are from the shop.' : 'OFF: customers still pay a flat ₦800. Use “Easy setup” to turn on distance prices.'}</p></div>
+        <p>{pricing.published ? 'ON: customers pay by how far they are from the shop.' : 'OFF: every delivery waits for you to confirm its price. Use “Easy setup” to turn on distance prices.'}</p></div>
       <span className={pricing.published ? 'dp-live is-on' : 'dp-live'}>{pricing.published ? <><Check size={14} />ON</> : 'OFF'}</span>
     </header>
 
@@ -363,14 +363,15 @@ export function DeliveryPricingAdmin() {
         <div className="dp-grid">
           <label className="dp-field"><span>Ask for a manual price when distance confidence is below</span><select value={pricing.manualQuotes.minConfidence} onChange={(event) => setP(['manualQuotes', 'minConfidence'], event.target.value)}>
             <option value="HIGH">High — only exact pins with a verified road route are automatic</option>
-            <option value="MEDIUM">Medium — area centres and capped detours are still automatic</option>
+            <option value="MEDIUM">Medium (recommended) — exact pins are charged by the km; unsure places wait for you</option>
             <option value="LOW">Low — only unmapped addresses need a manual price</option>
           </select></label>
           <NairaField label="Ask for a manual price above" minor={pricing.manualQuotes.maxAutoFeeMinor} allowEmpty onChange={(v) => setP(['manualQuotes', 'maxAutoFeeMinor'], v)} hint="Empty = no limit" />
           <NairaField label="Highest price an admin can send" minor={pricing.manualQuotes.maxQuoteMinor} onChange={(v) => setP(['manualQuotes', 'maxQuoteMinor'], v ?? 0)} />
           <NumberField label="Price valid for" value={pricing.manualQuotes.expiryHours} suffix="hours" step="1" onChange={(v) => setP(['manualQuotes', 'expiryHours'], Math.max(1, Math.round(v)))} />
-          <NumberField label="Times a customer can ask for a review" value={pricing.manualQuotes.maxRounds} suffix="times" step="1" onChange={(v) => setP(['manualQuotes', 'maxRounds'], Math.max(0, Math.round(v)))} />
         </div>
+        <Toggle checked={pricing.manualQuotes.autoPriceExactPins !== false} onChange={(v) => setP(['manualQuotes', 'autoPriceExactPins'], v)} label="Charge by the km automatically when the store and the customer both dropped exact map pins (even if road routing is down)" />
+        <p className="dp-muted">Addresses with no map pin are never given a guessed price — they always wait for you to confirm.</p>
         <Toggle checked={pricing.manualQuotes.quoteBeyondMaxDistance} onChange={(v) => setP(['manualQuotes', 'quoteBeyondMaxDistance'], v)} label="Trips beyond the maximum distance get a manual price (instead of being refused)" />
       </div>
 
@@ -382,9 +383,10 @@ export function DeliveryPricingAdmin() {
         </div>
         <Toggle checked={pricing.surcharges.weekend.active} onChange={(v) => setP(['surcharges', 'weekend', 'active'], v)} label="Charge the weekend surcharge on Saturdays and Sundays" />
         <Toggle checked={pricing.freeDelivery.active} onChange={(v) => setP(['freeDelivery', 'active'], v)} label="Free delivery above the amount (DOORSTEP still pays the rider)" />
-        <label className="dp-field"><span>When an area has a fixed price and an agreed route price too</span><select value={pricing.precedence} onChange={(event) => setP(['precedence'], event.target.value)}>
-          <option value="AREA_FIRST">Use the area’s fixed price</option>
-          <option value="ROUTE_FIRST">Use the agreed route price</option>
+        <label className="dp-field"><span>Fixed area prices and agreed route prices</span><select value={pricing.precedence} onChange={(event) => setP(['precedence'], event.target.value)}>
+          <option value="DISTANCE_FIRST">Agreed route prices, otherwise the real km; an area’s fixed price only when the km can’t be measured</option>
+          <option value="AREA_FIRST">Always use the area’s fixed price</option>
+          <option value="ROUTE_FIRST">Always use the agreed route price</option>
         </select></label>
       </div>
     </>}

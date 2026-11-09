@@ -410,6 +410,17 @@ html body .ph-shell .ph-work > * { margin: 0 !important; max-width: none; }
 .dq-more summary { cursor: pointer; font-size: .86rem; font-weight: 800; }
 .dq-more[open] { gap: 10px; }
 .dq-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.dq-ask { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 10px 0; }
+.dq-rider-prices { display: grid; gap: 8px; list-style: none; margin: 12px 0 0; padding: 0; }
+.dq-rider-prices li { align-items: center; border: 1px solid var(--t-line, #e3e8e2); border-radius: 12px; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto auto; padding: 10px 12px; }
+.dq-rider-prices li.is-decline { opacity: .6; }
+.dq-rider-prices li > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.dq-rider-prices small { color: var(--t-muted, #5b6b63); overflow-wrap: anywhere; }
+.dq-rider-answer { display: grid; justify-items: end; }
+.dq-margin { background: var(--t-mint-100, #e6f2eb); border-radius: 10px; font-size: .85rem; margin: 0; padding: 8px 12px; }
+.dq-margin.is-loss { background: #fde7e5; color: #8a1c13; }
+.dq-rider-prices li button { justify-content: center; }
+@media (max-width: 480px) { .dq-rider-prices li { grid-template-columns: minmax(0, 1fr) auto; } .dq-rider-prices li button { grid-column: 1 / -1; } }
 .dq-primary, .dq-ghost { align-items: center; border-radius: 999px; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; gap: 6px; min-height: 46px; padding: 0 18px; }
 .dq-primary { background: #0a7a4f; border: 0; color: #fff; }
 .dq-ghost { background: #fff; border: 1.5px solid #cfd6d2; color: #123d2d; }

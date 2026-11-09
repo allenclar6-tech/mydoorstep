@@ -125,7 +125,11 @@ export function createFinanceRouter({ prisma, requireUser, requireAdmin, verifyP
           cashOut: { enabled: cashOutReady, feeMinor: withdrawals.feeMinor, feePercent: withdrawals.feePercent, minimumMinor: withdrawals.minimumMinor, remainingToday: Math.max(0, withdrawals.perDay - cashOutsToday), feeForAvailableMinor: balance.availableMinor > 0 ? withdrawalFee(balance.availableMinor, withdrawals) : 0 },
         },
         orders,
-        rates: { doorstepRiderPercent: settings.commission.doorstepRiderPercent, ownRiderPercent: settings.commission.ownRiderPercent, riderFeePercent: settings.riderFee?.percent ?? 0, riderPay: settings.riderPay.enabled ? { bands: settings.riderPay.bands, perKmAfterMinor: settings.riderPay.perKmAfterMinor } : null },
+        // Rider pay terms (rate card and DOORSTEP's rider fee) are only between DOORSTEP and riders; a business only
+        // sees its own commission rates.
+        rates: who.kind === 'RIDER'
+          ? { riderFeePercent: settings.riderFee?.percent ?? 0, riderPay: settings.riderPay.enabled ? { bands: settings.riderPay.bands, perKmAfterMinor: settings.riderPay.perKmAfterMinor } : null }
+          : { doorstepRiderPercent: settings.commission.doorstepRiderPercent, ownRiderPercent: settings.commission.ownRiderPercent },
         entries, payouts: payouts.map(({ receiptKey, ...payout }) => ({ ...payout, hasReceipt: Boolean(receiptKey) })),
       })
     } catch (error) { return fail(response, error) }

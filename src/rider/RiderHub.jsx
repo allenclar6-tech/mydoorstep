@@ -31,7 +31,7 @@ export function riderStatus(summary) {
   return { tone: 'closed', label: 'Offline', detail: 'Not getting jobs' }
 }
 
-const PAGE_TITLES = { '/rider/deliveries': 'Find jobs', '/rider/history': 'Trip history', '/rider/earnings': 'Earnings', '/rider/locations': 'Local checks', '/rider/verification': 'Verification', '/rider/account': 'My account', '/rider/settings': 'My account', '/rider/support': 'Help', '/rider/security': 'Sign-in & security', '/rider/notifications': 'Notifications' }
+const PAGE_TITLES = { '/rider/price-checks': 'Price checks', '/rider/deliveries': 'Find jobs', '/rider/history': 'Trip history', '/rider/earnings': 'Earnings', '/rider/locations': 'Local checks', '/rider/verification': 'Verification', '/rider/account': 'My account', '/rider/settings': 'My account', '/rider/support': 'Help', '/rider/security': 'Sign-in & security', '/rider/notifications': 'Notifications' }
 
 export function RiderShell({ path, children }) {
   const data = useRiderData()
@@ -45,7 +45,7 @@ export function RiderShell({ path, children }) {
     { label: 'History', href: '/rider/history', icon: Clock3, active: path === '/rider/history' },
     { label: 'My account', href: '/rider/account', icon: User, active: path === '/rider/account' || path === '/rider/settings' },
   ]
-  const extra = [{ label: 'Local checks', href: '/rider/locations', icon: MapPin }, { label: 'Verification', href: '/rider/verification', icon: ShieldCheck }, { label: 'Notifications', href: '/rider/notifications', icon: Bell }, { label: 'Help chat', href: '/rider/support', icon: MessageCircle }]
+  const extra = [{ label: 'Price checks', href: '/rider/price-checks', icon: WalletIcon }, { label: 'Local checks', href: '/rider/locations', icon: MapPin }, { label: 'Verification', href: '/rider/verification', icon: ShieldCheck }, { label: 'Notifications', href: '/rider/notifications', icon: Bell }, { label: 'Help chat', href: '/rider/support', icon: MessageCircle }]
   return <RiderContext.Provider value={data}>
     <WorkspaceFrame path={path} home="/rider/dashboard" brandSub="Rider" label="Rider" name={name} image={user?.avatarUrl || user?.image || null}
       status={riderStatus(data.summary)} nav={nav} extra={extra} account={{ label: 'My account', href: '/rider/account' }} title={PAGE_TITLES[path]}

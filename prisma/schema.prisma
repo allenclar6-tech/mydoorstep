@@ -574,6 +574,8 @@ model Order {
   partnerShareMinor  Int?
   deliveryDistanceMeters Int?
   plannedRiderPayMinor Int?
+  // Rider who agreed the delivery price with DOORSTEP for this order (offered the job first).
+  agreedRiderId      String?
   deliveryQuote      Json?
   splitSubaccountCode String?
   customerHiddenAt   DateTime?
@@ -1234,10 +1236,15 @@ model DeliveryQuotation {
   pickupSnapshot        Json?
   landmark              String?
   directions            String?
+  // Price check with riders (admin ↔ riders only; customers never negotiate).
+  riderAskAt            DateTime?
+  riderAskPayMinor      Int?
+  riderAskNote          String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   versions              DeliveryQuotationVersion[]
   events                DeliveryQuotationEvent[]
+  riderPrices           RiderPriceSuggestion[]
 
   @@index([status, updatedAt])
   @@index([expiresAt])
@@ -1249,6 +1256,9 @@ model DeliveryQuotationVersion {
   quotation           DeliveryQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   version             Int
   feeMinor            Int
+  // What the rider is paid for this delivery at this price, and the rider who agreed it (gets first offer of the job).
+  riderPayMinor       Int?
+  agreedRiderId       String?
   pricingMethod       String            @default("MANUAL_QUOTE")
   explanation         String?
   internalNote        String?
@@ -1301,4 +1311,20 @@ model OrderChatMessage {
 
   @@index([orderId, channel, createdAt])
   @@index([senderId, createdAt])
+}
+
+// A rider's answer to an admin's price check for an order waiting for a delivery price.
+model RiderPriceSuggestion {
+  id          String            @id @default(cuid())
+  quotationId String
+  quotation   DeliveryQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  riderId     String
+  response    String            // AGREE | COUNTER | DECLINE
+  amountMinor Int?
+  note        String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([quotationId, riderId])
+  @@index([riderId, updatedAt])
 }

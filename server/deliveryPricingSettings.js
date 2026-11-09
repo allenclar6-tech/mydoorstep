@@ -60,18 +60,21 @@ export const deliveryPricingSchema = z.object({
     weekend: z.object({ active: z.boolean(), minor }).strict(),
   }).strict().default({ remoteMinor: 0, weekend: { active: false, minor: 0 } }),
   freeDelivery: z.object({ active: z.boolean(), thresholdMinor: minor }).strict().default({ active: false, thresholdMinor: 0 }),
-  // Which wins when both exist: a fixed area price, or an agreed price between two areas.
-  precedence: z.enum(['AREA_FIRST', 'ROUTE_FIRST']).default('AREA_FIRST'),
+  // DISTANCE_FIRST: agreed route prices, else the measured kilometres whenever they're reliable, and a fixed area
+  // price only when they aren't. AREA_FIRST / ROUTE_FIRST: fixed prices always win (which one first when both exist).
+  precedence: z.enum(['DISTANCE_FIRST', 'AREA_FIRST', 'ROUTE_FIRST']).default('DISTANCE_FIRST'),
   // Manual delivery quotes: when the location or distance isn't reliable, DOORSTEP confirms the fee before payment.
   manualQuotes: z.object({
     enabled: z.boolean(),
     minConfidence: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+    // Charge automatically when both the store and the customer dropped exact pins, even if road routing is down.
+    autoPriceExactPins: z.boolean().default(true),
     quoteBeyondMaxDistance: z.boolean(),
     maxAutoFeeMinor: minor.nullable(),
     expiryHours: z.number().int().min(1).max(168),
     maxRounds: z.number().int().min(0).max(10),
     maxQuoteMinor: minor,
-  }).strict().default({ enabled: true, minConfidence: 'MEDIUM', quoteBeyondMaxDistance: true, maxAutoFeeMinor: null, expiryHours: 24, maxRounds: 3, maxQuoteMinor: 2_000_000 }),
+  }).strict().default({ enabled: true, minConfidence: 'MEDIUM', autoPriceExactPins: true, quoteBeyondMaxDistance: true, maxAutoFeeMinor: null, expiryHours: 24, maxRounds: 3, maxQuoteMinor: 2_000_000 }),
 }).strict().superRefine((value, context) => {
   const zoneIds = new Set()
   for (const [index, entry] of value.zones.entries()) {
@@ -93,7 +96,7 @@ export async function getDeliveryPricing(db) {
   if (!stored) return { ...structuredClone(defaultDeliveryPricing), starter: true }
   const parsed = deliveryPricingSchema.safeParse(stored.value)
   if (!parsed.success) {
-    console.error('[delivery-pricing] stored settings are invalid; checkout falls back to the old flat fee until fixed')
+    console.error('[delivery-pricing] stored settings are invalid; every delivery waits for a confirmed price until fixed')
     return { ...structuredClone(defaultDeliveryPricing), published: false, invalidStoredSettings: true }
   }
   return parsed.data

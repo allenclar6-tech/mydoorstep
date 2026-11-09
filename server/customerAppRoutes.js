@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { authenticateBearerToken } from './auth.js'
 import { deliverability, discoverSections, etaRange, medianItemPrice } from './customerApp.js'
 import { pricingZones, quoteOrderDelivery } from './deliveryQuote.js'
+import { manualQuoteReasons } from './deliveryAssessment.js'
 import { itemStats, PUBLIC_REVIEW_SELECT, publicReview, reviewMentionsItem } from './reviewsPublic.js'
 import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { notifyAdmins } from './notify.js'
@@ -199,9 +200,11 @@ export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, pub
       const restaurant = await prisma.restaurant.findFirst({ where: { slug: request.params.slug, status: 'APPROVED' }, include: { city: { include: { serviceAreas: true } }, application: { select: { deliveryPreference: true } } } })
       if (!restaurant) return response.status(404).json({ error: 'STORE_NOT_FOUND' })
       const destination = { point: latitude != null && longitude != null ? { latitude, longitude } : null, addressLine }
-      // Same price the checkout will charge; until distance pricing is published that is the flat ₦800.
+      // Same price the checkout will charge. Where the distance can't be measured reliably, checkout asks DOORSTEP to
+      // confirm the fee, so the store page says "To be confirmed" instead of showing a guessed price.
       const quote = await quoteOrderDelivery({ db: prisma, restaurant, destination, subtotalMinor: Math.max(subtotalMinor, restaurant.minimumOrderMinor || 0) })
-      if (!quote) return response.json({ feeMinor: 80000, exact: false, basis: 'FLAT' })
+      const pricing = await getDeliveryPricing(prisma)
+      if (manualQuoteReasons(quote, pricing.manualQuotes, { maxDeliveryKm: pricing.distance.maxDeliveryKm }).length) return response.json({ feeMinor: null, toBeConfirmed: true, km: quote && quote.distance?.source !== 'ASSUMED' ? quote.km : null })
       return response.json({ feeMinor: quote.customer.deliveryFeeMinor, km: quote.km, exact: quote.dropoffSource === 'PIN' && quote.distance.source !== 'ASSUMED', basis: quote.dropoffSource })
     } catch (error) {
       if (error?.status) return response.json({ feeMinor: null, problem: error.message })

@@ -40,7 +40,20 @@ test('manual quote triggers: unmapped, unreliable, too far, fee limit; fixed pri
   assert.deepEqual(manualQuoteReasons({ ...roadOk, km: 22 }, manual, { maxDeliveryKm: 15 }), ['BEYOND_NORMAL_DISTANCE'])
   assert.deepEqual(manualQuoteReasons(roadOk, { ...manual, maxAutoFeeMinor: 100_000 }), ['FEE_ABOVE_AUTO_LIMIT'])
   assert.deepEqual(manualQuoteReasons({ ...roadOk, method: 'AREA_FIXED', distance: { source: 'ASSUMED' } }, manual), [], 'a fixed area price needs no map distance')
-  assert.deepEqual(manualQuoteReasons({ ...roadOk, distance: { source: 'ASSUMED' } }, { ...manual, enabled: false }), [])
+  assert.deepEqual(manualQuoteReasons({ ...roadOk, distance: { source: 'ASSUMED' } }, { ...manual, enabled: false }), ['LOCATION_NOT_MAPPED'], 'an unmapped address never gets a guessed price, even with manual prices off')
+  assert.deepEqual(manualQuoteReasons(null, manual), ['PRICING_NOT_PUBLISHED'], 'no flat fee when prices aren’t published')
+})
+
+test('exact pins at both ends are charged by the km even when road routing is down; unsure places wait', () => {
+  const straight = { km: 4.2, method: 'DISTANCE', distance: { source: 'ESTIMATE', meters: 4200, straightMeters: 3100 }, warnings: ['ROUTING_NOT_CONFIGURED'], customer: { deliveryFeeMinor: 110_000 } }
+  const pinned = { ...straight, dropoffSource: 'PIN' }
+  assert.deepEqual(manualQuoteReasons(pinned, manual, { maxDeliveryKm: 15 }), [])
+  assert.equal(locationConfidence(distanceStatus(pinned), pinned), 'MEDIUM')
+  assert.equal(distanceStatus(pinned), 'STRAIGHT_LINE_DISTANCE', 'still recorded honestly as a straight-line estimate')
+  assert.deepEqual(manualQuoteReasons({ ...straight, dropoffSource: 'AREA_CENTRE', warnings: ['AREA_CENTRE'] }, manual), ['DISTANCE_NOT_RELIABLE'], 'customer only picked an area')
+  assert.deepEqual(manualQuoteReasons({ ...pinned, warnings: ['PICKUP_AREA_CENTRE'] }, manual), ['DISTANCE_NOT_RELIABLE'], 'store has no pin')
+  assert.deepEqual(manualQuoteReasons(pinned, { ...manual, autoPriceExactPins: false }), ['DISTANCE_NOT_RELIABLE'], 'admin can switch it off')
+  assert.deepEqual(manualQuoteReasons(pinned, { ...manual, minConfidence: 'HIGH' }), ['DISTANCE_NOT_RELIABLE'])
 })
 
 /* ------------------------------ pricing engine ------------------------------ */
@@ -57,11 +70,17 @@ test('distance formula: base + extra km, minimum, maximum and rounding (₦700 b
   assert.equal(max.customer.deliveryFeeMinor, 500_000)
 })
 
-test('fixed area price wins over distance; precedence between area and agreed route is explicit', () => {
+test('the real km wins by default; fixed area / route prices apply when the km can’t be measured, or always if chosen', () => {
   const zones = [{ id: 'amukpe', name: 'Amukpe', fixedFeeMinor: 150_000, remote: false, active: true }, { id: 'central', name: 'Central', fixedFeeMinor: null, active: true }]
   const rule = { id: 'r1', fromZoneId: 'central', toZoneId: 'amukpe', bothWays: true, customerFeeMinor: 120_000, riderPayMinor: null, active: true }
   const p = pricing({ zones, routeRules: [rule], margin: { protect: false, minimumMinor: 0 } })
-  const areaFirst = priceDelivery({ distance: road(3), pickupZone: zones[1], dropoffZone: zones[0], pricing: p, finance })
+  const noRoute = { ...p, routeRules: [] }
+  assert.equal(priceDelivery({ distance: road(3), pickupZone: zones[1], dropoffZone: zones[0], pricing: noRoute, finance }).method, 'DISTANCE', 'measured road km beat the fixed area price by default')
+  assert.equal(priceDelivery({ distance: { meters: 3000, source: 'ESTIMATE', warnings: [] }, pickupZone: zones[1], dropoffZone: zones[0], pricing: noRoute, finance, exactPins: true }).method, 'DISTANCE')
+  const unsure = priceDelivery({ distance: { meters: 4000, source: 'ASSUMED', warnings: ['ASSUMED_DISTANCE'] }, pickupZone: zones[1], dropoffZone: zones[0], pricing: noRoute, finance })
+  assert.equal(unsure.method, 'AREA_FIXED', 'no reliable km: the fixed area price is used')
+  assert.equal(priceDelivery({ distance: road(3), pickupZone: zones[1], dropoffZone: zones[0], pricing: p, finance }).method, 'ROUTE_RULE', 'an agreed route deal still applies by default')
+  const areaFirst = priceDelivery({ distance: road(3), pickupZone: zones[1], dropoffZone: zones[0], pricing: { ...p, precedence: 'AREA_FIRST' }, finance })
   assert.equal(areaFirst.method, 'AREA_FIXED')
   assert.equal(areaFirst.customer.deliveryFeeMinor, 150_000)
   const routeFirst = priceDelivery({ distance: road(3), pickupZone: zones[1], dropoffZone: zones[0], pricing: { ...p, precedence: 'ROUTE_FIRST' }, finance })
@@ -72,7 +91,7 @@ test('fixed area price wins over distance; precedence between area and agreed ro
 
 test('remote and weekend surcharges, and free delivery over a threshold', () => {
   const zone = { id: 'far', name: 'Far village', fixedFeeMinor: 300_000, remote: true, active: true }
-  const p = pricing({ zones: [zone], surcharges: { remoteMinor: 50_000, weekend: { active: true, minor: 20_000 } }, margin: { protect: false, minimumMinor: 0 } })
+  const p = pricing({ zones: [zone], precedence: 'AREA_FIRST', surcharges: { remoteMinor: 50_000, weekend: { active: true, minor: 20_000 } }, margin: { protect: false, minimumMinor: 0 } })
   const saturday = new Date('2026-11-07T12:00:00+01:00')
   const monday = new Date('2026-11-09T12:00:00+01:00')
   assert.equal(priceDelivery({ distance: road(9), dropoffZone: zone, pricing: p, finance, now: saturday }).customer.deliveryFeeMinor, 370_000)
@@ -88,7 +107,9 @@ test('older saved settings still load: new fields get safe defaults', () => {
   old.zones = old.zones.slice(0, 2).map(({ fixedFeeMinor, remote, ...zone }) => zone)
   const parsed = deliveryPricingSchema.parse(old)
   assert.equal(parsed.manualQuotes.enabled, true)
-  assert.equal(parsed.precedence, 'AREA_FIRST')
+  assert.equal(parsed.precedence, 'DISTANCE_FIRST')
+  const { autoPriceExactPins, ...savedEarlier } = defaultDeliveryPricing.manualQuotes
+  assert.equal(deliveryPricingSchema.parse({ ...old, manualQuotes: savedEarlier }).manualQuotes.autoPriceExactPins, true)
   assert.equal(parsed.zones[0].fixedFeeMinor, null)
   assert.equal(parsed.freeDelivery.active, false)
 })
@@ -103,7 +124,7 @@ test('offer and response rules: versions, expiry, review limits', () => {
   assert.equal(checkResponse(sent, { action: 'ACCEPT', version: 2, maxRounds: 3 }), 'QUOTE_ACCEPTED')
   assert.throws(() => checkResponse(sent, { action: 'ACCEPT', version: 1, maxRounds: 3 }), (error) => error.code === 'QUOTE_CHANGED', 'accepting an old version is refused')
   assert.throws(() => checkResponse({ ...sent, expiresAt: new Date(Date.now() - 1000) }, { action: 'ACCEPT', version: 2, maxRounds: 3 }), (error) => error.code === 'QUOTE_EXPIRED')
-  assert.throws(() => checkResponse({ ...sent, reviewRounds: 3 }, { action: 'REVIEW', version: 2, maxRounds: 3 }), (error) => error.code === 'NO_MORE_REVIEWS')
+  assert.throws(() => checkResponse(sent, { action: 'REVIEW', version: 2, maxRounds: 3 }), (error) => error.code === 'REVIEW_NOT_AVAILABLE', 'customers don’t negotiate the price')
   assert.throws(() => checkResponse({ ...sent, status: 'QUOTE_ACCEPTED' }, { action: 'ACCEPT', version: 2, maxRounds: 3 }), (error) => error.code === 'ALREADY_ACCEPTED')
 })
 
@@ -190,12 +211,12 @@ test('flow: request → price → accept makes the order payable with the agreed
   assert.ok(db.tables.auditLog.some((row) => row.action === 'DELIVERY_QUOTE_ACCEPTED'))
 })
 
-test('flow: review request → revised price needs fresh acceptance; the old version is kept', async () => {
+test('flow: customers can’t negotiate; an admin revision needs fresh acceptance; the old version is kept', async () => {
   const db = fakeDb()
   const { order, quote } = await placeAwaitingOrder(db)
   await sendOffer(db, quote.id, { id: 'admin1' }, { feeMinor: 250_000 })
-  await respondToQuote(db, order.id, { id: 'cust1' }, { action: 'REVIEW', version: 1, message: 'Too high, I’m close to the market' })
-  assert.equal(db.tables.deliveryQuotation[0].status, 'CUSTOMER_REVIEW_REQUESTED')
+  await assert.rejects(respondToQuote(db, order.id, { id: 'cust1' }, { action: 'REVIEW', version: 1, message: 'Too high' }), (error) => error.code === 'REVIEW_NOT_AVAILABLE')
+  assert.equal(db.tables.deliveryQuotation[0].status, 'QUOTE_SENT', 'nothing changed')
   await sendOffer(db, quote.id, { id: 'admin1' }, { feeMinor: 200_000, explanation: 'Reduced', correctedDistanceKm: 4.2, correctionReason: 'Checked with rider' })
   const q = db.tables.deliveryQuotation[0]
   assert.equal(q.status, 'QUOTE_REVISED')
@@ -206,7 +227,7 @@ test('flow: review request → revised price needs fresh acceptance; the old ver
   await assert.rejects(respondToQuote(db, order.id, { id: 'cust1' }, { action: 'ACCEPT', version: 1 }), (error) => error.code === 'QUOTE_CHANGED', 'the earlier answer doesn’t approve the new amount')
   await respondToQuote(db, order.id, { id: 'cust1' }, { action: 'ACCEPT', version: 2 })
   assert.equal(db.tables.order[0].deliveryFeeMinor, 200_000)
-  assert.deepEqual(db.tables.deliveryQuotationEvent.map((event) => event.type), ['REQUESTED', 'QUOTE_SENT', 'CUSTOMER_REVIEW_REQUESTED', 'QUOTE_REVISED', 'DISTANCE_CORRECTED', 'CUSTOMER_ACCEPTED'])
+  assert.deepEqual(db.tables.deliveryQuotationEvent.map((event) => event.type), ['REQUESTED', 'QUOTE_SENT', 'QUOTE_REVISED', 'DISTANCE_CORRECTED', 'CUSTOMER_ACCEPTED'])
 })
 
 test('flow: expired prices can’t be accepted; admin can keep a price or cancel; decline cancels unpaid order', async () => {
@@ -218,7 +239,7 @@ test('flow: expired prices can’t be accepted; admin can keep a price or cancel
   assert.equal(db.tables.deliveryQuotation[0].status, 'QUOTE_EXPIRED')
   assert.equal(db.tables.order[0].status, 'AWAITING_DELIVERY_QUOTE')
   await sendOffer(db, quote.id, { id: 'admin1' }, { feeMinor: 140_000 })
-  await respondToQuote(db, order.id, { id: 'cust1' }, { action: 'REVIEW', version: 2, message: 'please' })
+  db.tables.deliveryQuotation[0].status = 'CUSTOMER_REVIEW_REQUESTED' // an older request saved before this change
   await keepPrice(db, quote.id, { id: 'admin1' }, 'The road there is very bad.')
   assert.equal(db.tables.deliveryQuotation[0].status, 'QUOTE_SENT')
   await respondToQuote(db, order.id, { id: 'cust1' }, { action: 'DECLINE', version: 2 })
@@ -259,4 +280,16 @@ test('flow: if the store moves its pickup point, acceptance is stopped and the p
   assert.equal(db.tables.deliveryQuotation[0].status, 'PENDING_REVIEW')
   assert.equal(db.tables.order[0].status, 'AWAITING_DELIVERY_QUOTE')
   assert.ok(QuoteError)
+})
+
+test('flow: the rider pay agreed with riders is fixed on the order when the customer accepts', async () => {
+  const db = fakeDb()
+  const { order, quote } = await placeAwaitingOrder(db)
+  await sendOffer(db, quote.id, { id: 'admin1' }, { feeMinor: 200_000, riderPayMinor: 150_000, agreedRiderId: 'rider9' })
+  assert.equal(db.tables.deliveryQuotationVersion[0].riderPayMinor, 150_000)
+  assert.equal(db.tables.order[0].plannedRiderPayMinor ?? null, null, 'nothing fixed until the customer accepts')
+  await respondToQuote(db, order.id, { id: 'cust1' }, { action: 'ACCEPT', version: 1 })
+  assert.equal(db.tables.order[0].plannedRiderPayMinor, 150_000)
+  assert.equal(db.tables.order[0].agreedRiderId, 'rider9')
+  assert.equal(db.tables.order[0].deliveryFeeMinor, 200_000)
 })

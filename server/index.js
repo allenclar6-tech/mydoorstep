@@ -51,6 +51,8 @@ import { optionGroupsInputSchema, priceSelections } from './menuOptions.js'
 import { createRefundRouter } from './refundRoutes.js'
 import { createQuotationRouter } from './quotationRoutes.js'
 import { createOrderChatRouter } from './orderChatRoutes.js'
+import { createBookRouter } from './bookRoutes.js'
+import { businessOrderView } from './orderViews.js'
 import { createDocumentArchiveRouter } from './documentArchive.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -110,6 +112,7 @@ app.use('/api', createWithdrawalRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createDeliveryPricingRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createQuotationRouter({ prisma, requireUser, requireAdmin, maxRoundsOf: async () => (await getDeliveryPricing(prisma)).manualQuotes?.maxRounds ?? 3 }))
 app.use('/api', createOrderChatRouter({ prisma, requireUser, requireAdmin }))
+app.use('/api', createBookRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createLocationRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createPushRouter({ prisma, requireUser }))
 app.use('/api', createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant: (restaurant) => publicRestaurant(restaurant), isOpen: (restaurant) => isRestaurantOpen(restaurant) }))
@@ -1223,7 +1226,7 @@ app.post('/api/orders', requireUser, async (request, response) => {
     const finance = await planOrderFinance(quote, { latitude: quote.address?.latitude ?? result.data.latitude, longitude: quote.address?.longitude ?? result.data.longitude })
     // How the fee was set and how reliable the distance was, kept on the order for reporting and audits.
     const awaitingQuote = Boolean(quote.manualQuote)
-    const assessment = quote.delivery ? (() => { const status = distanceStatus(quote.delivery); return { deliveryPricingMethod: awaitingQuote ? 'MANUAL_QUOTE' : quote.delivery.method, distanceStatus: status, locationConfidence: locationConfidence(status) } })() : { deliveryPricingMethod: quote.orderType === 'PICKUP' ? 'PICKUP' : 'FLAT' }
+    const assessment = quote.delivery ? (() => { const status = distanceStatus(quote.delivery); return { deliveryPricingMethod: awaitingQuote ? 'MANUAL_QUOTE' : quote.delivery.method, distanceStatus: status, locationConfidence: locationConfidence(status, quote.delivery) } })() : { deliveryPricingMethod: quote.orderType === 'PICKUP' ? 'PICKUP' : 'MANUAL_QUOTE', ...(awaitingQuote ? { distanceStatus: 'UNAVAILABLE_DISTANCE', locationConfidence: 'UNVERIFIED' } : {}) }
     const order = await prisma.$transaction(async (transaction) => {
       const orderNumber = `DSP-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 6).toUpperCase()}`
       const pickup = quote.orderType === 'PICKUP'
@@ -1690,7 +1693,7 @@ app.get('/api/restaurant/orders', requireUser, async (request, response) => {
     // Orders still waiting for a rider say why: offered to someone, nobody online, or everyone busy.
     const searching = orders.filter((order) => order.delivery && !order.delivery.riderId && DISPATCHABLE_ORDER_STATUSES.includes(order.status))
     const pool = searching.length ? await riderPoolStatus(prisma) : null
-    const withSearch = orders.map((order) => searching.includes(order) ? { ...order, riderSearch: riderSearchState(order.delivery, pool) } : order)
+    const withSearch = orders.map((order) => businessOrderView(searching.includes(order) ? { ...order, riderSearch: riderSearchState(order.delivery, pool) } : order))
     return response.json({ orders: withSearch, nextCursor: hasNextPage ? orders.at(-1)?.id || null : null })
   } catch { return response.status(503).json({ error: 'RESTAURANT_ORDER_SERVICE_UNAVAILABLE' }) }
 })
@@ -1841,7 +1844,7 @@ app.get('/api/restaurant/summary', requireUser, async (request, response) => {
   if (request.user.role !== 'RESTAURANT') return response.status(403).json({ error: 'RESTAURANT_ROLE_REQUIRED' })
   const membership = await prisma.restaurantUser.findFirst({ where: { userId: request.user.id }, select: { restaurantId: true } })
   if (!membership) return response.status(403).json({ error: 'RESTAURANT_ACCESS_REQUIRED' })
-  try { const [orders, payout] = await Promise.all([prisma.order.findMany({ where: { restaurantId: membership.restaurantId }, include: { items: true, customer: { select: { firstName: true, lastName: true } } }, orderBy: { createdAt: 'desc' }, take: 50 }), prisma.restaurantPayout.aggregate({ where: { restaurantId: membership.restaurantId }, _sum: { amountMinor: true } })]); return response.json({ orders, grossMinor: orders.reduce((sum, order) => sum + order.totalMinor, 0), payoutMinor: payout._sum.amountMinor || 0 }) } catch { return response.status(503).json({ error: 'RESTAURANT_SUMMARY_SERVICE_UNAVAILABLE' }) }
+  try { const [orders, payout] = await Promise.all([prisma.order.findMany({ where: { restaurantId: membership.restaurantId }, include: { items: true, customer: { select: { firstName: true, lastName: true } } }, orderBy: { createdAt: 'desc' }, take: 50 }), prisma.restaurantPayout.aggregate({ where: { restaurantId: membership.restaurantId }, _sum: { amountMinor: true } })]); return response.json({ orders: orders.map(businessOrderView), grossMinor: orders.reduce((sum, order) => sum + order.totalMinor, 0), payoutMinor: payout._sum.amountMinor || 0 }) } catch { return response.status(503).json({ error: 'RESTAURANT_SUMMARY_SERVICE_UNAVAILABLE' }) }
 })
 
 app.get('/api/rider/deliveries', requireUser, async (request, response) => {
@@ -2285,16 +2288,17 @@ async function quoteOrder(input) {
   const destination = { point: address?.latitude != null ? { latitude: address.latitude, longitude: address.longitude } : input.latitude != null ? { latitude: input.latitude, longitude: input.longitude } : null, addressLine: address?.addressLine || input.addressLine }
   const delivery = await quoteOrderDelivery({ db: prisma, restaurant, destination, subtotalMinor })
   const serviceFeeMinor = delivery ? delivery.serviceFeeMinor : Math.round(subtotalMinor * 0.03)
-  // When the location or distance isn't reliable, a person confirms the delivery fee before the customer pays.
-  if (delivery) {
-    const pricing = await getDeliveryPricing(prisma)
-    const reasons = manualQuoteReasons(delivery, pricing.manualQuotes, { maxDeliveryKm: pricing.distance.maxDeliveryKm })
-    if (reasons.length) {
-      const manualQuote = { reasons, estimateFeeMinor: delivery.customer.deliveryFeeMinor, landmark: input.landmark || address?.landmark || null, directions: input.deliveryInstructions || null }
-      return { ...base, deliveryFeeMinor: 0, serviceFeeMinor, totalMinor: subtotalMinor + serviceFeeMinor, delivery, manualQuote }
-    }
+  // The fee is worked out from the real kilometres between the store's pin and the customer's pin. When the location
+  // or distance isn't reliable (or prices aren't published yet) a person confirms the fee before the customer pays —
+  // there is no flat or "typical trip" fallback price.
+  const pricing = await getDeliveryPricing(prisma)
+  const reasons = manualQuoteReasons(delivery, pricing.manualQuotes, { maxDeliveryKm: pricing.distance.maxDeliveryKm })
+  if (reasons.length) {
+    const assumed = !delivery || delivery.distance?.source === 'ASSUMED'
+    const manualQuote = { reasons, estimateFeeMinor: assumed ? null : delivery.customer.deliveryFeeMinor, landmark: input.landmark || address?.landmark || null, directions: input.deliveryInstructions || null }
+    return { ...base, deliveryFeeMinor: 0, serviceFeeMinor, totalMinor: subtotalMinor + serviceFeeMinor, delivery, manualQuote }
   }
-  const deliveryFeeMinor = delivery ? delivery.customer.deliveryFeeMinor : 80000
+  const deliveryFeeMinor = delivery.customer.deliveryFeeMinor
   return { ...base, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor, delivery }
 }
 

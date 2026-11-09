@@ -139,6 +139,7 @@ export function StoreFactsRow({ store, orderType, free, fee, reviewCount, onRevi
       <span className="rv-blob is-sun" aria-hidden="true">{pickup ? <MapPin size={24} /> : <Bike size={24} />}</span>
       {pickup ? <><b>No fee</b><small>You collect</small></>
         : free ? <>{feeMinor ? <s className="rv-was">{nairaExact(feeMinor)}</s> : <s className="rv-was">Delivery fee</s>}<span className="rv-free">Free</span></>
+          : fee?.toBeConfirmed ? <><b>To be confirmed</b><small>We’ll confirm the fee before you pay</small></>
           : feeMinor ? <><b>{nairaExact(feeMinor)}</b><small>{fee.exact ? 'Delivery fee' : 'Fee for your area'}</small></>
             : <><b>By distance</b><small>{fee?.problem || 'Set your address'}</small></>}
     </div>

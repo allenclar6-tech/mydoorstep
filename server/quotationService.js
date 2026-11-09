@@ -40,7 +40,7 @@ export async function sendOffer(db, quotationId, admin, input) {
     const expiresAt = new Date(Date.now() + hours * 3_600_000)
     const previous = quote.currentVersion ? await tx.deliveryQuotationVersion.findUnique({ where: { quotationId_version: { quotationId: quote.id, version: quote.currentVersion } } }) : null
     if (previous && previous.status === 'OFFERED') await tx.deliveryQuotationVersion.update({ where: { id: previous.id }, data: { status: 'SUPERSEDED' } })
-    await tx.deliveryQuotationVersion.create({ data: { quotationId: quote.id, version, feeMinor: input.feeMinor, pricingMethod: input.pricingMethod || 'MANUAL_QUOTE', explanation: input.explanation || null, internalNote: input.internalNote || null, expiresAt, proposedById: admin.id } })
+    await tx.deliveryQuotationVersion.create({ data: { quotationId: quote.id, version, feeMinor: input.feeMinor, pricingMethod: input.pricingMethod || 'MANUAL_QUOTE', explanation: input.explanation || null, internalNote: input.internalNote || null, expiresAt, proposedById: admin.id, riderPayMinor: input.riderPayMinor ?? null, agreedRiderId: input.agreedRiderId || null } })
     const correction = input.correctedDistanceKm != null ? { correctedDistanceKm: input.correctedDistanceKm, correctionReason: input.correctionReason || null, correctedById: admin.id, correctedAt: new Date() } : {}
     // Guarded update: if the customer answered at the same moment, this offer doesn't silently overwrite it.
     const changed = await tx.deliveryQuotation.updateMany({ where: { id: quote.id, currentVersion: quote.currentVersion, status: quote.status }, data: { status: nextStatus, currentVersion: version, expiresAt, pickupSnapshot: quote.order.restaurant?.latitude != null ? { latitude: Number(quote.order.restaurant.latitude), longitude: Number(quote.order.restaurant.longitude) } : quote.pickupSnapshot, ...correction } })
@@ -87,7 +87,7 @@ export async function respondToQuote(db, orderId, customer, { action, version, m
     if (action === 'ACCEPT') {
       // The agreed fee becomes the order's delivery fee; the order is now payable (never paid or confirmed here).
       const totals = totalsWithDeliveryFee(order, offer.feeMinor)
-      const moved = await tx.order.updateMany({ where: { id: order.id, status: 'AWAITING_DELIVERY_QUOTE' }, data: { ...totals, status: 'PENDING_PAYMENT', deliveryPricingMethod: offer.pricingMethod } })
+      const moved = await tx.order.updateMany({ where: { id: order.id, status: 'AWAITING_DELIVERY_QUOTE' }, data: { ...totals, status: 'PENDING_PAYMENT', deliveryPricingMethod: offer.pricingMethod, ...(offer.riderPayMinor != null ? { plannedRiderPayMinor: offer.riderPayMinor } : {}), ...(offer.agreedRiderId ? { agreedRiderId: offer.agreedRiderId } : {}) } })
       if (moved.count !== 1) throw new QuoteError('ORDER_STATE_CHANGED', 'This order just changed. Please refresh.')
       if (order.payment) {
         const settings = order.payment.method === 'BANK_TRANSFER' ? await tx.platformSetting.findUnique({ where: { key: 'payment_settings' } }).catch(() => null) : null

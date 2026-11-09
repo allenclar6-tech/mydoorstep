@@ -25,9 +25,21 @@ export function distanceStatus(priced) {
   return 'VERIFIED_ROAD_DISTANCE'
 }
 
-/** HIGH: verified road route between exact pins. MEDIUM: road route with a capped detour or an area centre. LOW: straight-line estimate or unpinned business. UNVERIFIED: nothing measured. */
-export function locationConfidence(status) {
+/**
+ * HIGH: verified road route between exact pins. MEDIUM: road route with a capped detour or an area centre, or a
+ * straight-line measurement between the store's exact pin and the customer's exact pin (when road routing isn't
+ * available; the km is straight line × the detour allowance and is shown as an estimate, never as road distance).
+ * LOW: straight line from an area centre, or an unpinned business. UNVERIFIED: nothing measured.
+ */
+export function locationConfidence(status, priced = null, { trustExactPins = true } = {}) {
+  if (status === 'STRAIGHT_LINE_DISTANCE' && trustExactPins && exactPins(priced)) return 'MEDIUM'
   return { VERIFIED_ROAD_DISTANCE: 'HIGH', ESTIMATED_ROAD_DISTANCE: 'MEDIUM', UNVERIFIED_DISTANCE: 'LOW', STRAIGHT_LINE_DISTANCE: 'LOW', UNAVAILABLE_DISTANCE: 'UNVERIFIED' }[status] || 'UNVERIFIED'
+}
+
+/** Both ends are exact map pins: the store's own pin and the customer's pin (not an area centre or a guess). */
+export function exactPins(priced) {
+  const warnings = priced?.warnings || []
+  return Boolean(priced?.distance) && priced.distance.source !== 'ASSUMED' && priced.dropoffSource === 'PIN' && !warnings.includes('PICKUP_AREA_CENTRE') && !warnings.includes('AREA_CENTRE') && !warnings.includes('PICKUP_NOT_PINNED')
 }
 
 /**
@@ -36,11 +48,15 @@ export function locationConfidence(status) {
  * distance reasons. `settings` is pricing.manualQuotes.
  */
 export function manualQuoteReasons(priced, settings, { maxDeliveryKm } = {}) {
-  if (!priced || !settings?.enabled) return []
-  const reasons = []
+  // No published prices, or nothing could be measured: there is no honest automatic price (no flat or "typical
+  // trip" fee is charged any more), so a person always confirms it — even when manual quotes are switched off.
+  if (!priced) return ['PRICING_NOT_PUBLISHED']
   const fixed = ['AREA_FIXED', 'ROUTE_RULE'].includes(priced.method)
+  if (!fixed && priced.distance?.source === 'ASSUMED') return ['LOCATION_NOT_MAPPED']
+  if (!settings?.enabled) return []
+  const reasons = []
   const status = distanceStatus(priced)
-  if (!fixed && rank(locationConfidence(status)) < rank(settings.minConfidence)) reasons.push(status === 'UNAVAILABLE_DISTANCE' ? 'LOCATION_NOT_MAPPED' : 'DISTANCE_NOT_RELIABLE')
+  if (!fixed && rank(locationConfidence(status, priced, { trustExactPins: settings.autoPriceExactPins !== false })) < rank(settings.minConfidence)) reasons.push(status === 'UNAVAILABLE_DISTANCE' ? 'LOCATION_NOT_MAPPED' : 'DISTANCE_NOT_RELIABLE')
   if (!fixed && settings.quoteBeyondMaxDistance && maxDeliveryKm && priced.km > maxDeliveryKm) reasons.push('BEYOND_NORMAL_DISTANCE')
   if (settings.maxAutoFeeMinor != null && priced.customer?.deliveryFeeMinor > settings.maxAutoFeeMinor) reasons.push('FEE_ABOVE_AUTO_LIMIT')
   return reasons
@@ -51,6 +67,7 @@ export const REASON_TEXT = {
   DISTANCE_NOT_RELIABLE: 'The road distance couldn’t be measured reliably.',
   BEYOND_NORMAL_DISTANCE: 'The address is further than the normal delivery distance.',
   FEE_ABOVE_AUTO_LIMIT: 'The calculated fee is above the limit for automatic prices.',
+  PRICING_NOT_PUBLISHED: 'Delivery prices for this area are being set up.',
 }
 
 /** The distance record kept with every priced order: kilometres, provider, time, both ends, route status. */
@@ -71,7 +88,7 @@ export function distanceRecord(priced, { pickup = null, dropoff = null, provider
     destination: dropoff,
     routeStatus,
     verificationStatus: status,
-    confidence: locationConfidence(status),
+    confidence: locationConfidence(status, priced),
     straightLineKm: priced?.distance?.straightMeters != null ? Math.round(priced.distance.straightMeters / 100) / 10 : null,
     roadKm: priced?.distance?.roadMeters != null ? Math.round(priced.distance.roadMeters / 100) / 10 : null,
   }
@@ -109,7 +126,8 @@ export function checkResponse(quote, { action, version, maxRounds, now = new Dat
   }
   if (version !== quote.currentVersion) throw new QuoteError('QUOTE_CHANGED', 'The delivery price has changed. Please check the new price.')
   if (isExpired(quote, now)) throw new QuoteError('QUOTE_EXPIRED', 'This price has expired. DOORSTEP will send you a new one.')
-  if (action === 'REVIEW' && quote.reviewRounds >= maxRounds) throw new QuoteError('NO_MORE_REVIEWS', 'You can’t ask for another review on this order. Accept the price or decline it.')
+  // Customers don't negotiate: DOORSTEP sets the price with its riders; the customer accepts it or declines it.
+  if (action === 'REVIEW') throw new QuoteError('REVIEW_NOT_AVAILABLE', 'Delivery prices are set by DOORSTEP. Accept the price to continue, or decline it to cancel without paying.')
   return { ACCEPT: 'QUOTE_ACCEPTED', DECLINE: 'QUOTE_DECLINED', REVIEW: 'CUSTOMER_REVIEW_REQUESTED' }[action] || (() => { throw new QuoteError('INVALID_ACTION', 'Unknown answer.', 400) })()
 }
 

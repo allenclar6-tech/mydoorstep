@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { QUOTE_STATUS_TEXT, QuoteError, REASON_TEXT } from './deliveryAssessment.js'
 import { cancelQuote, keepPrice, respondToQuote, sendOffer } from './quotationService.js'
+import { answerCheck, askRiders, checkRiderChoice, openChecksForRider, riderPricesFor } from './riderPriceChecks.js'
 
 // Delivery price quotations: customers see and answer their own; admins manage all of them; businesses see the
 // status for their own orders. Every change goes through quotationService (transactions, history, notifications).
@@ -42,16 +43,15 @@ export function createQuotationRouter({ prisma, requireUser, requireAdmin, maxRo
       if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
       const maxRounds = await maxRoundsOf()
       const quote = customerView(order.deliveryQuotation)
-      return response.json({ quote: quote && { ...quote, canRequestReview: quote.reviewRounds < maxRounds }, order: { status: order.status, subtotalMinor: order.subtotalMinor, serviceFeeMinor: order.serviceFeeMinor, tipMinor: order.tipMinor, discountMinor: order.discountMinor } })
+      return response.json({ quote: quote && { ...quote, canRequestReview: false }, order: { status: order.status, subtotalMinor: order.subtotalMinor, serviceFeeMinor: order.serviceFeeMinor, tipMinor: order.tipMinor, discountMinor: order.discountMinor } })
     } catch (error) { return fail(response, error) }
   })
 
-  const answerSchema = z.object({ action: z.enum(['ACCEPT', 'DECLINE', 'REVIEW']), version: z.number().int().min(1), message: text(500).optional() }).strict()
+  const answerSchema = z.object({ action: z.enum(['ACCEPT', 'DECLINE']), version: z.number().int().min(1), message: text(500).optional() }).strict()
   router.post('/orders/:orderId/delivery-quote/respond', requireUser, async (request, response) => {
     if (request.user.role !== 'CUSTOMER') return response.status(403).json({ error: 'CUSTOMER_ROLE_REQUIRED' })
     const parsed = answerSchema.safeParse(request.body)
     if (!parsed.success) return response.status(400).json({ error: 'INVALID_ANSWER', message: 'Choose accept, decline or review.' })
-    if (parsed.data.action === 'REVIEW' && !parsed.data.message) return response.status(400).json({ error: 'MESSAGE_REQUIRED', message: 'Tell us briefly why the price seems too high.' })
     try { return response.json(await respondToQuote(prisma, request.params.orderId, request.user, parsed.data)) } catch (error) { return fail(response, error) }
   })
 
@@ -111,12 +111,41 @@ export function createQuotationRouter({ prisma, requireUser, requireAdmin, maxRo
     pricingMethod: z.enum(['MANUAL_QUOTE', 'NEGOTIATED', 'FREE_DELIVERY']).default('MANUAL_QUOTE'),
     correctedDistanceKm: z.number().min(0).max(500).optional(),
     correctionReason: text(300).optional(),
+    // What the rider is paid at this price (set with riders, never by the customer), and the rider who agreed it.
+    riderPayMinor: z.number().int().min(0).max(5_000_000).optional(),
+    agreedRiderId: z.string().min(1).max(40).optional(),
   }).strict().refine((value) => value.correctedDistanceKm == null || Boolean(value.correctionReason), { message: 'Say why the distance was corrected.' })
   router.post('/admin/delivery-quotes/:id/offer', requireUser, requireAdmin, async (request, response) => {
     const parsed = offerSchema.safeParse(request.body)
     if (!parsed.success) return response.status(400).json({ error: 'INVALID_OFFER', message: parsed.error.issues[0]?.message || 'Check the price.' })
     const input = parsed.data.pricingMethod === 'FREE_DELIVERY' ? { ...parsed.data, feeMinor: 0 } : parsed.data
-    try { return response.json(await sendOffer(prisma, request.params.id, request.user, input)) } catch (error) { return fail(response, error) }
+    try {
+      await checkRiderChoice(prisma, request.params.id, input)
+      return response.json(await sendOffer(prisma, request.params.id, request.user, input))
+    } catch (error) { return fail(response, error) }
+  })
+
+  /* ---------- price checks: admin ↔ riders ---------- */
+  router.post('/admin/delivery-quotes/:id/ask-riders', requireUser, requireAdmin, async (request, response) => {
+    const parsed = z.object({ suggestedPayMinor: z.number().int().min(0).max(5_000_000).optional(), note: text(200).optional() }).strict().safeParse(request.body || {})
+    if (!parsed.success) return response.status(400).json({ error: 'INVALID_REQUEST', message: 'Check the suggested rider pay.' })
+    try { return response.json(await askRiders(prisma, request.params.id, request.user, { suggestedPayMinor: parsed.data.suggestedPayMinor ?? null, note: parsed.data.note || null })) } catch (error) { return fail(response, error) }
+  })
+  router.get('/admin/delivery-quotes/:id/rider-prices', requireUser, requireAdmin, async (request, response) => {
+    try { return response.json({ prices: await riderPricesFor(prisma, request.params.id) }) } catch (error) { return fail(response, error) }
+  })
+  router.get('/rider/price-checks', requireUser, async (request, response) => {
+    if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDERS_ONLY' })
+    try { return response.json({ checks: await openChecksForRider(prisma, request.user.rider) }) } catch (error) { return fail(response, error) }
+  })
+  router.post('/rider/price-checks/:id', requireUser, async (request, response) => {
+    if (request.user.role !== 'RIDER' || !request.user.rider) return response.status(403).json({ error: 'RIDERS_ONLY' })
+    const parsed = z.object({ response: z.enum(['AGREE', 'COUNTER', 'DECLINE']), amountMinor: z.number().int().optional(), note: text(200).optional() }).strict().safeParse(request.body || {})
+    if (!parsed.success) return response.status(400).json({ error: 'INVALID_ANSWER', message: 'Choose an answer.' })
+    try {
+      const saved = await answerCheck(prisma, { ...request.user.rider, userId: request.user.id }, request.params.id, parsed.data)
+      return response.json({ answer: { response: saved.response, amountMinor: saved.amountMinor, note: saved.note } })
+    } catch (error) { return fail(response, error) }
   })
 
   router.post('/admin/delivery-quotes/:id/keep', requireUser, requireAdmin, async (request, response) => {

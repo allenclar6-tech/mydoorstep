@@ -223,11 +223,9 @@ function useDeliveryQuote(orderId, enabled, stamp) {
   return { ...state, reload: () => setAttempt((value) => value + 1) }
 }
 
-/** Shows the delivery price DOORSTEP proposed, and lets the customer accept it, decline it or ask for a review. */
+/** Shows the delivery price DOORSTEP set, and lets the customer accept it or decline it (no negotiation). */
 function DeliveryQuoteCard({ order, onChanged }) {
   const { loading, quote, error, reload } = useDeliveryQuote(order.id, true, order.status)
-  const [mode, setMode] = useState(null)
-  const [message, setMessage] = useState('')
   const [state, setState] = useState({ busy: false, error: '' })
   if (loading) return <section className="or-card-box"><div className="sp-skeleton" style={{ height: 90, borderRadius: 14 }} role="status" aria-label="Loading the delivery price" /></section>
   if (!quote) return error ? <p className="or-note is-warn">{error}</p> : null
@@ -237,10 +235,10 @@ function DeliveryQuoteCard({ order, onChanged }) {
     if (action === 'DECLINE' && !window.confirm('Decline this delivery price? Your order will be cancelled. You haven’t been charged.')) return
     setState({ busy: true, error: '' })
     try {
-      const response = await fetch(`${apiBase}/api/orders/${encodeURIComponent(order.id)}/delivery-quote/respond`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action, version: current.version, ...(message.trim() ? { message: message.trim() } : {}) }) })
+      const response = await fetch(`${apiBase}/api/orders/${encodeURIComponent(order.id)}/delivery-quote/respond`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action, version: current.version }) })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.message || 'That didn’t work. Please try again.')
-      setMode(null); setMessage(''); setState({ busy: false, error: '' })
+      setState({ busy: false, error: '' })
       reload(); onChanged()
     } catch (problem) { setState({ busy: false, error: problem instanceof TypeError ? 'We can’t reach DOORSTEP. Check your internet and try again.' : problem.message }) }
   }
@@ -257,14 +255,11 @@ function DeliveryQuoteCard({ order, onChanged }) {
         <div><dt>Sent</dt><dd>{new Date(current.sentAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</dd></div>
         {current.expiresAt && <div><dt>Valid until</dt><dd>{new Date(current.expiresAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</dd></div>}
       </dl>
-      {mode === 'review' ? <div className="or-quote-review">
-        <label>Why does the price seem too high?<textarea rows={3} maxLength={500} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="e.g. My street is just after the main market" /></label>
-        <div className="or-quote-actions"><button type="button" className="sp-ghost" onClick={() => setMode(null)} disabled={state.busy}>Back</button><button type="button" className="sp-primary" disabled={state.busy || message.trim().length < 3} onClick={() => answer('REVIEW')}>{state.busy ? 'Sending…' : 'Send request'}</button></div>
-      </div> : <div className="or-quote-actions">
+      <div className="or-quote-actions">
         <button type="button" className="sp-primary is-wide" disabled={state.busy} onClick={() => answer('ACCEPT')}>{state.busy ? 'Saving…' : `Accept ${naira(current.feeMinor)}`}</button>
-        {quote.canRequestReview && <button type="button" className="sp-ghost" disabled={state.busy} onClick={() => setMode('review')}>Ask for a better price</button>}
         <button type="button" className="sp-ghost is-danger" disabled={state.busy} onClick={() => answer('DECLINE')}>Decline</button>
-      </div>}
+      </div>
+      <p className="or-quote-why">Declining cancels the order. You haven’t been charged.</p>
     </>}
     {state.error && <p className="or-note is-warn" role="alert">{state.error}</p>}
     {quote.history.length > 1 && <details className="or-quote-history"><summary>Price history</summary><ul>{quote.history.map((entry) => <li key={entry.version}><b>{naira(entry.feeMinor)}</b><span>{new Date(entry.sentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {entry.customerResponse === 'REVIEW' ? 'you asked for a review' : entry.status === 'SUPERSEDED' ? 'replaced' : entry.status.toLowerCase().replaceAll('_', ' ')}</span></li>)}</ul></details>}

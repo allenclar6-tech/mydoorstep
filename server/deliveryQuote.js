@@ -41,8 +41,8 @@ export function resolveDropoff({ point, addressLine }, zones) {
 }
 
 /**
- * Prices the delivery for a food/grocery order. Returns null when delivery pricing is not published (the caller
- * keeps the old flat fee). Throws DeliveryQuoteError when the trip is beyond the maximum distance.
+ * Prices the delivery for a food/grocery order. Returns null when delivery pricing is not published (the order
+ * then waits for a person to confirm the fee). Throws DeliveryQuoteError when the trip is beyond the maximum distance.
  */
 /**
  * Every area that can affect a price: the Sapele areas an admin placed in Delivery pricing, plus delivery zones
@@ -79,7 +79,8 @@ export async function quoteOrderDelivery({ db, restaurant, destination, subtotal
     if (!pickupPoint) extraWarnings.push('PICKUP_NOT_PINNED')
   }
   distance.warnings = [...distance.warnings, ...extraWarnings]
-  const priced = priceDelivery({ distance, pickupZone, dropoffZone: dropoff.zone, subtotalMinor, fulfilment, pricing, finance: withBusinessCommission(finance, restaurant) })
+  const exactPins = Boolean(pinnedPickup) && dropoff.source === 'PIN'
+  const priced = priceDelivery({ distance, pickupZone, dropoffZone: dropoff.zone, subtotalMinor, fulfilment, pricing, finance: withBusinessCommission(finance, restaurant), exactPins })
   // Further than usual: if manual quotes are on, DOORSTEP confirms a price instead of refusing the order.
   const quoteFarTrips = pricing.manualQuotes?.enabled && pricing.manualQuotes?.quoteBeyondMaxDistance
   if (priced.warnings.includes('BEYOND_MAX_DISTANCE') && distance.source !== 'ASSUMED' && !quoteFarTrips) {
