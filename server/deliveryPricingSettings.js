@@ -13,6 +13,10 @@ const zone = z.object({
   radiusMeters: z.number().int().min(100).max(10_000),
   customerSurchargeMinor: minor,
   riderBonusMinor: minor,
+  // Fixed delivery price for every drop-off in this area (null = priced by distance). Needs no map pin.
+  fixedFeeMinor: minor.nullable().default(null),
+  // Remote / hard-to-reach area: adds the remote-area surcharge.
+  remote: z.boolean().default(false),
   active: z.boolean(),
 }).strict().refine((value) => (value.latitude == null) === (value.longitude == null), { message: 'An area needs both latitude and longitude, or neither.' })
 
@@ -51,6 +55,23 @@ export const deliveryPricingSchema = z.object({
   // When on, checkout refuses addresses outside every approved delivery zone (Admin › Locations).
   coverage: z.object({ requireApprovedZone: z.boolean() }).strict().default({ requireApprovedZone: false }),
   routeRules: z.array(routeRule).max(200),
+  surcharges: z.object({
+    remoteMinor: minor,
+    weekend: z.object({ active: z.boolean(), minor }).strict(),
+  }).strict().default({ remoteMinor: 0, weekend: { active: false, minor: 0 } }),
+  freeDelivery: z.object({ active: z.boolean(), thresholdMinor: minor }).strict().default({ active: false, thresholdMinor: 0 }),
+  // Which wins when both exist: a fixed area price, or an agreed price between two areas.
+  precedence: z.enum(['AREA_FIRST', 'ROUTE_FIRST']).default('AREA_FIRST'),
+  // Manual delivery quotes: when the location or distance isn't reliable, DOORSTEP confirms the fee before payment.
+  manualQuotes: z.object({
+    enabled: z.boolean(),
+    minConfidence: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+    quoteBeyondMaxDistance: z.boolean(),
+    maxAutoFeeMinor: minor.nullable(),
+    expiryHours: z.number().int().min(1).max(168),
+    maxRounds: z.number().int().min(0).max(10),
+    maxQuoteMinor: minor,
+  }).strict().default({ enabled: true, minConfidence: 'MEDIUM', quoteBeyondMaxDistance: true, maxAutoFeeMinor: null, expiryHours: 24, maxRounds: 3, maxQuoteMinor: 2_000_000 }),
 }).strict().superRefine((value, context) => {
   const zoneIds = new Set()
   for (const [index, entry] of value.zones.entries()) {

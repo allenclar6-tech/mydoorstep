@@ -69,6 +69,8 @@ export function CheckoutPage() {
   // Switching to another saved address brings its landmark.
   useEffect(() => { if (address.landmark) setLandmark(address.landmark) }, [address.savedAddressId, address.landmark])
   const [phone, setPhone] = usePhone()
+  // Extra directions for addresses the map can't find (sent with orders whose delivery fee needs confirming).
+  const [directions, setDirections] = useState('')
   const [method, setMethod] = useState('PAYSTACK')
   const [cardChoice, setCardChoice] = useState('NEW')
   const [saveCard, setSaveCard] = useState(false)
@@ -89,7 +91,7 @@ export function CheckoutPage() {
 
   const scheduledFor = when === 'LATER' && slot ? slot.toISOString() : null
   const tipMinor = pickup ? 0 : customTip ? Math.max(0, Math.round(Number(customTip) * 100) || 0) : tip
-  const request = useMemo(() => buildOrderRequest(cart, { orderType: pickup ? 'PICKUP' : 'DELIVERY', address, scheduledFor, tipMinor, promoCode, landmark, phone, paymentMethod: method }), [cart, pickup, address.label, address.point?.latitude, address.point?.longitude, address.savedAddressId, scheduledFor, tipMinor, promoCode, landmark, phone, method])
+  const request = useMemo(() => buildOrderRequest(cart, { orderType: pickup ? 'PICKUP' : 'DELIVERY', address, scheduledFor, tipMinor, promoCode, landmark, phone, paymentMethod: method, deliveryInstructions: directions }), [cart, pickup, address.label, address.point?.latitude, address.point?.longitude, address.savedAddressId, scheduledFor, tipMinor, promoCode, landmark, phone, method])
   const quoteState = useCheckoutQuote(request)
   const quote = quoteState.status === 'ready' ? quoteState.quote : null
 
@@ -103,6 +105,9 @@ export function CheckoutPage() {
   const outside = !pickup && check && check.deliverable === false
   const needsSlot = when === 'LATER' && !slot
   const canPay = signedIn && quote && !busy && !outside && !needsSlot && methods.length > 0 && phone.trim().length >= 7
+  // The delivery fee needs a quick check by DOORSTEP: the order is sent, and paid only after the price is accepted.
+  const confirmFee = Boolean(!pickup && quote?.deliveryQuoteRequired)
+  const payLabel = (prefix) => confirmFee ? 'Send order for a delivery price' : `${prefix}${quote ? ` · ${naira(quote.totalMinor)}` : ''}`
   const choose = (value) => { setOrderType(value); writeOrderType(value) }
   const freeDelivery = quote?.promotion?.type === 'FREE_DELIVERY' && quote.discountMinor >= quote.deliveryFeeMinor && quote.deliveryFeeMinor > 0
 
@@ -192,22 +197,29 @@ export function CheckoutPage() {
         <div className="sp-card-head"><h2>Summary</h2><button type="button" className="sp-link" onClick={() => setSheet('fees')}><Info size={14} aria-hidden="true" />Fees information</button></div>
         <dl>
           <Row label="Products" value={nairaWhole(subtotal)} />
-          {!pickup && <Row label="Delivery" value={quote ? (freeDelivery ? 'Free' : naira(quote.deliveryFeeMinor)) : '…'} strike={freeDelivery ? naira(quote.deliveryFeeMinor) : null} tone={freeDelivery ? 'good' : null} />}
+          {!pickup && confirmFee && <Row label="Delivery" value="To be confirmed" />}
+          {!pickup && !confirmFee && <Row label="Delivery" value={quote ? (freeDelivery ? 'Free' : naira(quote.deliveryFeeMinor)) : '…'} strike={freeDelivery ? naira(quote.deliveryFeeMinor) : null} tone={freeDelivery ? 'good' : null} />}
           <Row label="Services" value={quote ? naira(quote.serviceFeeMinor) : '…'} />
           {quote?.tipMinor > 0 && <Row label="Rider tip" value={naira(quote.tipMinor)} />}
           {quote?.discountMinor > 0 && !freeDelivery && <Row label={quote.promotion?.label || 'Promo'} value={`−${naira(quote.discountMinor)}`} tone="good" />}
           {quote?.discountMinor > 0 && freeDelivery && quote.discountMinor > quote.deliveryFeeMinor && <Row label="Promo" value={`−${naira(quote.discountMinor - quote.deliveryFeeMinor)}`} tone="good" />}
-          <Row label="Total" value={quote ? naira(quote.totalMinor) : '…'} tone="total" />
+          <Row label={confirmFee ? 'Total before delivery' : 'Total'} value={quote ? naira(quote.totalMinor) : '…'} tone="total" />
         </dl>
+        {confirmFee && <div className="sp-confirm-fee" role="status">
+          <b>Your delivery fee is awaiting confirmation</b>
+          <p>{quote.delivery?.message}</p>
+          <label>Directions for the rider (optional)<textarea rows={2} maxLength={300} value={directions} onChange={(event) => setDirections(event.target.value)} placeholder="e.g. After the church, second gate on the left" /></label>
+          <small>You won’t be charged now. You’ll see the delivery price, then accept it and pay — or decline it.</small>
+        </div>}
         {quoteState.status === 'loading' && <p className="sp-note">Updating price…</p>}
         {quoteState.status === 'error' && <p className="sp-error" role="alert">{quoteState.error}</p>}
         {!request && !pickup && <p className="sp-note">Choose your delivery address to see the delivery fee.</p>}
-        <button type="button" className="sp-primary is-wide sp-desktop-pay" disabled={signedIn && !canPay} onClick={signedIn ? submit : () => navigate('/login')}>{busy ? 'Placing your order…' : !signedIn ? 'Sign in to order' : outside ? 'Address outside delivery area' : needsSlot ? 'Choose a time' : phone.trim().length < 7 ? 'Add your phone number' : `Order and pay${quote ? ` · ${naira(quote.totalMinor)}` : ''}`}</button>
+        <button type="button" className="sp-primary is-wide sp-desktop-pay" disabled={signedIn && !canPay} onClick={signedIn ? submit : () => navigate('/login')}>{busy ? (confirmFee ? 'Sending…' : 'Placing your order…') : !signedIn ? 'Sign in to order' : outside ? 'Address outside delivery area' : needsSlot ? 'Choose a time' : phone.trim().length < 7 ? 'Add your phone number' : payLabel('Order and pay')}</button>
       </section>
       {error && <p className="sp-error is-block" role="alert">{error}</p>}
     </main>
     <div className="sp-pay-bar">
-      <button type="button" className="sp-primary is-wide" disabled={signedIn && !canPay} onClick={signedIn ? submit : () => navigate('/login')}>{busy ? 'Placing your order…' : !signedIn ? 'Sign in to order' : outside ? 'Address outside delivery area' : needsSlot ? 'Choose a time' : phone.trim().length < 7 ? 'Add your phone number' : `${method === 'BANK_TRANSFER' ? 'Order and pay by transfer' : 'Order and pay'}${quote ? ` · ${naira(quote.totalMinor)}` : ''}`}</button>
+      <button type="button" className="sp-primary is-wide" disabled={signedIn && !canPay} onClick={signedIn ? submit : () => navigate('/login')}>{busy ? (confirmFee ? 'Sending…' : 'Placing your order…') : !signedIn ? 'Sign in to order' : outside ? 'Address outside delivery area' : needsSlot ? 'Choose a time' : phone.trim().length < 7 ? 'Add your phone number' : payLabel(method === 'BANK_TRANSFER' ? 'Order and pay by transfer' : 'Order and pay')}</button>
       {when === 'LATER' && slot && <small><Clock3 size={12} aria-hidden="true" /> {pickup ? 'Ready to collect' : 'Arrives'} around {timeLabel(slot)}</small>}
     </div>
     {sheet === 'address' && <AddressSheet onClose={() => setSheet(null)} />}

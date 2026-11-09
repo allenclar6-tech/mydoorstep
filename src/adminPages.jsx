@@ -21,6 +21,8 @@ import { ConfirmDeliveredButton, DispatchBoard } from './admin/DispatchBoard'
 import { SessionSignOutButton, SignOutNotice } from './authControls'
 import { apiBase } from './config/apiBase'
 import { AdminSettings } from './admin/AdminSettings'
+import { DeliveryQuotes } from './admin/DeliveryQuotes'
+import { OrderChats } from './admin/OrderChats'
 import { DocumentArchive } from './admin/DocumentArchive'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
@@ -99,6 +101,8 @@ export function AdminPortal({ path, onLogout }) {
   if (path === '/admin/payments') content = <PaymentSettingsAdmin />
   if (path === '/admin/finance') content = <FinanceAdmin />
   if (path === '/admin/pricing') content = <DeliveryPricingAdmin />
+  if (path === '/admin/delivery-quotes') content = <DeliveryQuotes />
+  if (path === '/admin/chats') content = <OrderChats />
   if (path === '/admin/locations') content = <LocationsAdmin />
   if (path === '/admin/promos') content = <PromosAdmin />
   if (path === '/admin/analytics') content = <Finance />

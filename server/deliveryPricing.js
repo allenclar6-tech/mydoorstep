@@ -15,7 +15,7 @@ export const slug = (value) => String(value).toLowerCase().normalize('NFKD').rep
 /** Starter areas: the Sapele LGA master directory (districts, neighbourhoods, rural groups), all unplaced. */
 export function starterZones(names) {
   const seeds = names ? names.map((name) => ({ id: slug(name), name, radiusMeters: 800 })) : directoryZoneSeeds()
-  return seeds.map((seed) => ({ id: seed.id, name: seed.name, latitude: null, longitude: null, radiusMeters: seed.radiusMeters, customerSurchargeMinor: 0, riderBonusMinor: 0, active: true }))
+  return seeds.map((seed) => ({ id: seed.id, name: seed.name, latitude: null, longitude: null, radiusMeters: seed.radiusMeters, customerSurchargeMinor: 0, riderBonusMinor: 0, fixedFeeMinor: null, remote: false, active: true }))
 }
 
 // Starter values are only a starting point for DOORSTEP operations to edit. Nothing changes at checkout until an
@@ -37,6 +37,10 @@ export const defaultDeliveryPricing = Object.freeze({
   zones: starterZones(),
   coverage: { requireApprovedZone: false },
   routeRules: [],
+  surcharges: { remoteMinor: 0, weekend: { active: false, minor: 0 } },
+  freeDelivery: { active: false, thresholdMinor: 0 },
+  precedence: 'AREA_FIRST',
+  manualQuotes: { enabled: true, minConfidence: 'MEDIUM', quoteBeyondMaxDistance: true, maxAutoFeeMinor: null, expiryHours: 24, maxRounds: 3, maxQuoteMinor: 2_000_000 },
 })
 
 // A suggested rider rate card for the calculator's "Use starter rates" button. Not an official rate: Sapele has
@@ -138,7 +142,22 @@ export function serviceFeeFor(subtotalMinor, serviceFee) {
  * Prices one delivery. `distance` comes from chooseDistance (or { meters, source: 'ASSUMED' }).
  * Returns the customer fee, the rider's pay, and what DOORSTEP earns, with every adjustment itemised.
  */
-export function priceDelivery({ distance, pickupZone = null, dropoffZone = null, subtotalMinor = 0, fulfilment = 'DOORSTEP_RIDER', pricing, finance }) {
+const isWeekend = (when) => { const day = new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'short' }).format(when); return day === 'Sat' || day === 'Sun' }
+
+/**
+ * Which rule sets the customer fee, in a fixed, documented order (never mixed):
+ *   AREA_FIRST (default): fixed area price › agreed area-to-area price › distance formula
+ *   ROUTE_FIRST:          agreed area-to-area price › fixed area price › distance formula
+ * (An admin-approved quote for one order beats all of these; that's applied when the customer accepts it.)
+ */
+export function pricingMethodFor({ rule, dropoffZone, precedence = 'AREA_FIRST' }) {
+  const area = dropoffZone?.fixedFeeMinor != null ? 'AREA_FIXED' : null
+  const route = rule?.customerFeeMinor != null ? 'ROUTE_RULE' : null
+  const order = precedence === 'ROUTE_FIRST' ? [route, area] : [area, route]
+  return order.find(Boolean) || 'DISTANCE'
+}
+
+export function priceDelivery({ distance, pickupZone = null, dropoffZone = null, subtotalMinor = 0, fulfilment = 'DOORSTEP_RIDER', pricing, finance, now = new Date() }) {
   const warnings = [...(distance.warnings || [])]
   const km = Math.round(distance.meters / 100) / 10
   const rule = findRouteRule(pricing.routeRules, pickupZone?.id, dropoffZone?.id)
@@ -147,10 +166,14 @@ export function priceDelivery({ distance, pickupZone = null, dropoffZone = null,
 
   // Customer delivery fee
   const fromDistance = distanceFee(km, pricing.customerFee)
-  const ruleFee = rule?.customerFeeMinor != null
+  const method = pricingMethodFor({ rule, dropoffZone, precedence: pricing.precedence })
+  const ruleFee = method !== 'DISTANCE' // agreed or fixed prices aren't topped up for margin
+  const baseFee = method === 'AREA_FIXED' ? dropoffZone.fixedFeeMinor : method === 'ROUTE_RULE' ? rule.customerFeeMinor : fromDistance.feeMinor
   const zoneSurchargeMinor = ruleFee ? 0 : (pickupZone?.customerSurchargeMinor || 0) + (dropoffZone?.customerSurchargeMinor || 0)
   const boostMinor = boost ? boost.customerExtraMinor : 0
-  let fee = (ruleFee ? rule.customerFeeMinor : fromDistance.feeMinor) + zoneSurchargeMinor + boostMinor
+  const remoteMinor = dropoffZone?.remote ? (pricing.surcharges?.remoteMinor || 0) : 0
+  const weekendMinor = pricing.surcharges?.weekend?.active && isWeekend(now) ? pricing.surcharges.weekend.minor : 0
+  let fee = baseFee + zoneSurchargeMinor + boostMinor + remoteMinor + weekendMinor
 
   // Rider pay (business-owned riders are paid by their business, not DOORSTEP)
   let rider = { payMinor: null, bandMinor: null, zoneBonusMinor: 0, boostMinor: 0, fromRule: false, paidBy: businessRider ? 'BUSINESS' : 'DOORSTEP' }
@@ -177,7 +200,10 @@ export function priceDelivery({ distance, pickupZone = null, dropoffZone = null,
   fee += marginTopUpMinor
   const rounded = roundUpTo(fee, pricing.customerFee.roundToMinor)
   const roundingMinor = rounded - fee
-  const deliveryFeeMinor = rounded
+  // Free delivery over a basket amount (DOORSTEP pays the rider as usual).
+  const freeByThreshold = Boolean(pricing.freeDelivery?.active && subtotalMinor >= pricing.freeDelivery.thresholdMinor)
+  const freeDeliveryMinor = freeByThreshold ? rounded : 0
+  const deliveryFeeMinor = rounded - freeDeliveryMinor
   if (!ruleFee && deliveryFeeMinor > pricing.customerFee.maximumMinor) warnings.push('ABOVE_MAXIMUM_FEE')
   if (km > pricing.distance.maxDeliveryKm) warnings.push('BEYOND_MAX_DISTANCE')
 
@@ -192,9 +218,10 @@ export function priceDelivery({ distance, pickupZone = null, dropoffZone = null,
     distance: { meters: distance.meters, source: distance.source, straightMeters: distance.straightMeters ?? null, roadMeters: distance.roadMeters ?? null },
     pickupZone: pickupZone ? { id: pickupZone.id, name: pickupZone.name } : null,
     dropoffZone: dropoffZone ? { id: dropoffZone.id, name: dropoffZone.name } : null,
-    rule: rule ? { id: rule.id, agreedWith: rule.agreedWith || '', note: rule.note || '' } : null,
+    rule: method === 'ROUTE_RULE' ? { id: rule.id, agreedWith: rule.agreedWith || '', note: rule.note || '' } : null,
+    method: freeByThreshold ? 'FREE_THRESHOLD' : method,
     fulfilment,
-    customer: { ...fromDistance, fromRule: ruleFee, ruleFeeMinor: ruleFee ? rule.customerFeeMinor : null, zoneSurchargeMinor, boostMinor, marginTopUpMinor, roundingMinor, deliveryFeeMinor },
+    customer: { ...fromDistance, fromRule: ruleFee, ruleFeeMinor: ruleFee ? baseFee : null, zoneSurchargeMinor, boostMinor, remoteMinor, weekendMinor, marginTopUpMinor, roundingMinor, freeDeliveryMinor, deliveryFeeMinor },
     rider,
     serviceFeeMinor,
     commission: { percent: commissionPercent, minor: commissionMinor },

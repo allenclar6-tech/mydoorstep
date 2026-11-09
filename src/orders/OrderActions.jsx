@@ -4,7 +4,7 @@ import { CreditCard, Trash2, XCircle } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 
 export const ORDER_STATUS_LABELS = {
-  PENDING_PAYMENT: 'Awaiting payment', PAID: 'Paid · waiting for the store', RESTAURANT_ACCEPTED: 'Accepted', PREPARING: 'Being prepared',
+  AWAITING_DELIVERY_QUOTE: 'Waiting for delivery price', PENDING_PAYMENT: 'Awaiting payment', PAID: 'Paid · waiting for the store', RESTAURANT_ACCEPTED: 'Accepted', PREPARING: 'Being prepared',
   READY_FOR_PICKUP: 'Ready for pickup', RIDER_ASSIGNED: 'Rider assigned', PICKED_UP: 'Picked up', OUT_FOR_DELIVERY: 'On the way',
   DELIVERED: 'Delivered', REJECTED: 'Declined', CANCELLED: 'Cancelled', REFUNDED: 'Refunded',
 }

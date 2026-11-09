@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bike, CalendarClock, Check, ChefHat, Clock3, HandHeart, PackageCheck, Phone, ShoppingBag, X } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
+import { OrderChatButton } from '../chat/OrderChat'
 import { formatNaira } from '../data'
 import { playAlert } from '../notifications/sound'
 
@@ -26,6 +27,9 @@ const agoText = (value) => {
   if (minutes < 7 * 24 * 60) { const days = Math.round(minutes / 1440); return `${days} day${days === 1 ? '' : 's'} ago` }
   return new Date(value).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
 }
+
+// A chat notification links to /restaurant/orders?chat=<order number> so the right chat opens.
+const chatRequested = (orderNumber) => { try { return new URLSearchParams(window.location.search).get('chat') === orderNumber } catch { return false } }
 
 function riderLine(order) {
   const delivery = order.delivery
@@ -82,6 +86,7 @@ function OrderCard({ order, onChanged }) {
       <button type="button" className="rb-clear" disabled={Boolean(busy)} onClick={() => act('hide', `/api/restaurant/orders/${order.id}/hide`, {})}><X size={14} aria-hidden="true" />{busy === 'hide' ? 'Clearing…' : 'Clear'}</button>
     </div>}
     {rider && <p className={`rb-rider is-${rider.tone}`}><Bike size={15} aria-hidden="true" />{rider.text}{rider.phone && <a href={`tel:${rider.phone}`} aria-label="Call rider"><Phone size={14} /></a>}</p>}
+    {order.delivery?.riderId && order.orderType !== 'PICKUP' && !finished && ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'].includes(order.delivery.status) && <OrderChatButton orderRef={order.orderNumber} channel="STORE_RIDER" label="Chat with the rider" phone={rider?.phone} className="rb-chat" autoOpen={chatRequested(order.orderNumber)} />}
     {error && <p className="rb-error" role="alert">{error}</p>}
     {order.status === 'PAID' && !declining && <div className="rb-actions">
       <button type="button" className="rb-ghost" disabled={Boolean(busy)} onClick={() => setDeclining(true)}><X size={16} />Decline</button>
@@ -101,6 +106,24 @@ function OrderCard({ order, onChanged }) {
 }
 
 /** Live order board for businesses: accept or decline, cook, mark ready — with the rider's progress shown. */
+/** Orders whose delivery fee DOORSTEP is confirming with the customer. They reach the board only once paid. */
+function DeliveryPriceStatus() {
+  const [quotes, setQuotes] = useState([])
+  useEffect(() => {
+    let active = true
+    const load = () => fetch(`${apiBase}/api/restaurant/delivery-quotes`, { headers: authHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => { if (active && body) setQuotes(body.quotes || []) }).catch(() => undefined)
+    load()
+    const timer = window.setInterval(load, 60_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [])
+  const waiting = quotes.filter((quote) => quote.orderStatus === 'AWAITING_DELIVERY_QUOTE')
+  if (!waiting.length) return null
+  return <details className="rb-quotes"><summary>{waiting.length} order{waiting.length > 1 ? 's' : ''} waiting for a delivery price</summary>
+    <p>DOORSTEP is confirming the delivery fee with these customers. Don’t prepare them yet — they appear in New orders once paid.</p>
+    <ul>{waiting.map((quote) => <li key={quote.orderNumber}><b>{quote.orderNumber}</b><span>{formatNaira(quote.subtotalMinor / 100)} food · {quote.statusText}</span></li>)}</ul>
+  </details>
+}
+
 export function RestaurantOrderBoard() {
   const [orders, setOrders] = useState(null)
   const [tab, setTab] = useState('new')
@@ -111,7 +134,7 @@ export function RestaurantOrderBoard() {
       const response = await fetch(`${apiBase}/api/restaurant/orders?limit=100`, { headers: authHeaders() })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.message || 'Could not load your orders.')
-      const list = (body.orders || []).filter((order) => order.status !== 'PENDING_PAYMENT')
+      const list = (body.orders || []).filter((order) => !['PENDING_PAYMENT', 'AWAITING_DELIVERY_QUOTE'].includes(order.status))
       const newest = list.filter((order) => order.status === 'PAID').map((order) => order.id).join(',')
       if (lastNew.current !== null && newest && newest !== lastNew.current) playAlert('order')
       lastNew.current = newest
@@ -147,6 +170,7 @@ export function RestaurantOrderBoard() {
   return <section className="rb">
     <div className="rb-head"><div><span className="rb-kicker">LIVE ORDERS</span><h2>{counts.new ? `${counts.new} new order${counts.new > 1 ? 's' : ''} waiting` : 'You’re all caught up'}</h2><p>Accept quickly — DOORSTEP sends the nearest rider as soon as you accept.</p></div></div>
     <nav className="rb-tabs" aria-label="Order stages">{TABS.map(([key, label]) => <button type="button" key={key} className={tab === key ? 'is-on' : ''} onClick={() => setTab(key)}>{label}{counts[key] > 0 && <b>{counts[key]}</b>}</button>)}</nav>
+    <DeliveryPriceStatus />
     {error && <p className="rb-error" role="alert">{error}</p>}
     {!orders && !error && <p className="rb-empty">Loading orders…</p>}
     {tab === 'done' && counts.done > 0 && <div className="rb-clear-all">

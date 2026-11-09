@@ -66,6 +66,7 @@ enum RestaurantMemberRole {
 }
 
 enum OrderStatus {
+  AWAITING_DELIVERY_QUOTE
   PENDING_PAYMENT
   PAID
   RESTAURANT_ACCEPTED
@@ -557,6 +558,13 @@ model Order {
   items              OrderItem[]
   delivery           Delivery?
   payment            Payment?
+  deliveryQuotation  DeliveryQuotation?
+  chatMessages       OrderChatMessage[]
+  // How the delivery fee was set (DISTANCE, AREA_FIXED, ROUTE_RULE, FREE_THRESHOLD, MANUAL_QUOTE, FLAT) and how
+  // trustworthy the distance was (see server/deliveryAssessment.js). Kept for reporting and audits.
+  deliveryPricingMethod String?
+  distanceStatus        String?
+  locationConfidence    String?
   commission         Commission?
   reviews            Review[]
   restaurantPayout   RestaurantPayout?
@@ -1199,4 +1207,98 @@ model PushSubscription {
   lastUsedAt DateTime?
 
   @@index([userId])
+}
+
+// Manual / negotiated delivery price for one order (the order keeps its own id and lifecycle). Every offer is a new
+// version; older ones are kept. The order can only be paid after the customer accepts the current version.
+model DeliveryQuotation {
+  id                    String   @id @default(cuid())
+  orderId               String   @unique
+  order                 Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status                String   @default("PENDING_REVIEW")
+  reasons               String[] @default([])
+  currentVersion        Int      @default(0)
+  acceptedVersion       Int?
+  acceptedFeeMinor      Int?
+  expiresAt             DateTime?
+  reviewRounds          Int      @default(0)
+  // What the system worked out when the order was placed (never overwritten).
+  estimateFeeMinor      Int?
+  originalDistance      Json?
+  // Admin correction, kept separately from the original routing result.
+  correctedDistanceKm   Decimal? @db.Decimal(8, 2)
+  correctionReason      String?
+  correctedById         String?
+  correctedAt           DateTime?
+  // Where the price was measured from (if the business moves its pin, the price must be confirmed again).
+  pickupSnapshot        Json?
+  landmark              String?
+  directions            String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  versions              DeliveryQuotationVersion[]
+  events                DeliveryQuotationEvent[]
+
+  @@index([status, updatedAt])
+  @@index([expiresAt])
+}
+
+model DeliveryQuotationVersion {
+  id                  String            @id @default(cuid())
+  quotationId         String
+  quotation           DeliveryQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  version             Int
+  feeMinor            Int
+  pricingMethod       String            @default("MANUAL_QUOTE")
+  explanation         String?
+  internalNote        String?
+  expiresAt           DateTime?
+  status              String            @default("OFFERED")
+  proposedById        String
+  customerResponse    String?
+  customerMessage     String?
+  respondedAt         DateTime?
+  createdAt           DateTime          @default(now())
+
+  @@unique([quotationId, version])
+}
+
+// Full history: offers, customer answers, review requests, corrections, expiry. Never edited or deleted.
+model DeliveryQuotationEvent {
+  id            String            @id @default(cuid())
+  quotationId   String
+  quotation     DeliveryQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  type          String
+  actorId       String?
+  actorRole     String
+  fromFeeMinor  Int?
+  toFeeMinor    Int?
+  version       Int?
+  message       String?
+  createdAt     DateTime          @default(now())
+
+  @@index([quotationId, createdAt])
+}
+
+// Order chat: customer ↔ rider and business ↔ rider, only while the rider is on the order (see server/orderChat.js).
+// Messages are kept after the chat closes so complaints can be checked; they're never edited.
+model OrderChatMessage {
+  id          String    @id @default(cuid())
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel     String
+  senderId    String?
+  senderRole  String
+  kind        String    @default("TEXT")
+  body        String
+  latitude    Decimal?  @db.Decimal(10, 7)
+  longitude   Decimal?  @db.Decimal(10, 7)
+  hidden      String[]  @default([])
+  readAt      DateTime?
+  reportedAt  DateTime?
+  reportReason String?
+  createdAt   DateTime  @default(now())
+
+  @@index([orderId, channel, createdAt])
+  @@index([senderId, createdAt])
 }

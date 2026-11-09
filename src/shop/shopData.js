@@ -226,18 +226,18 @@ export const savedTip = () => Number(read('doorstep-saved-tip', '0')) || 0
 export const saveTip = (minor) => write('doorstep-saved-tip', minor ? String(minor) : null)
 
 // Checkout quote -----------------------------------------------------------------------------------------------------
-export function buildOrderRequest(cart, { orderType, address, scheduledFor, tipMinor, promoCode, landmark, phone, paymentMethod = 'PAYSTACK' }) {
+export function buildOrderRequest(cart, { orderType, address, scheduledFor, tipMinor, promoCode, landmark, phone, paymentMethod = 'PAYSTACK', deliveryInstructions = '' }) {
   if (!cart.length) return null
   const base = { restaurantId: String(cart[0].restaurantId), items: cart.map((item) => ({ menuItemId: item.id, quantity: item.quantity, ...(item.instructions ? { instructions: item.instructions } : {}), ...(item.options?.length ? { options: item.options.map((option) => option.id) } : {}) })), paymentMethod, orderType, tipMinor: orderType === 'PICKUP' ? 0 : tipMinor || 0, ...(scheduledFor ? { scheduledFor } : {}), ...(promoCode ? { promoCode } : {}), ...(phone ? { phone } : {}), ...(landmark ? { landmark } : {}) }
   if (orderType === 'PICKUP') return base
   const line = String(address.label || '').trim()
   if (!address.point && line.length < 5) return null
-  return { ...base, ...(address.savedAddressId && !address.point ? { addressId: address.savedAddressId } : {}), ...(line.length >= 5 ? { addressLine: line.slice(0, 240) } : {}), ...(address.point ? { latitude: Number(address.point.latitude), longitude: Number(address.point.longitude) } : {}) }
+  return { ...base, ...(address.savedAddressId && !address.point ? { addressId: address.savedAddressId } : {}), ...(line.length >= 5 ? { addressLine: line.slice(0, 240) } : {}), ...(address.point ? { latitude: Number(address.point.latitude), longitude: Number(address.point.longitude) } : {}) , ...(deliveryInstructions.trim() ? { deliveryInstructions: deliveryInstructions.trim().slice(0, 300) } : {}) }
 }
 
 export function useCheckoutQuote(request) {
   const [state, setState] = useState({ status: 'idle', quote: null, error: '' })
-  const key = useMemo(() => request ? JSON.stringify({ ...request, phone: undefined, landmark: undefined, paymentMethod: undefined }) : '', [request])
+  const key = useMemo(() => request ? JSON.stringify({ ...request, phone: undefined, landmark: undefined, paymentMethod: undefined, deliveryInstructions: undefined }) : '', [request])
   useEffect(() => {
     if (!request) { setState({ status: 'idle', quote: null, error: '' }); return undefined }
     if (!token()) { setState({ status: 'signed-out', quote: null, error: '' }); return undefined }
@@ -264,6 +264,8 @@ export async function placeOrder(request, { idempotencyKey, savedCardId, saveCar
   const orderBody = await orderResponse.json().catch(() => ({}))
   if (!orderResponse.ok) throw new Error(orderBody.message || 'We couldn’t place your order. Check the details and try again.')
   const orderId = orderBody.order.id
+  // The delivery fee needs confirming first: nothing is charged now; the customer follows the price in Orders.
+  if (orderBody.order.status === 'AWAITING_DELIVERY_QUOTE') { clearCart(); return { orderId, next: `/account/orders/${orderId}` } }
   if (request.paymentMethod === 'PAYSTACK' && savedCardId) {
     const charge = await fetch(`${apiBase}/api/payments/charge-saved-card`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ kind: 'order', id: orderId, cardId: savedCardId }) })
     const chargeBody = await charge.json().catch(() => ({}))

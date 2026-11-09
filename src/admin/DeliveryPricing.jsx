@@ -59,11 +59,14 @@ function Breakdown({ quote, warningText }) {
     ['Base fee', c.fromRule ? null : c.baseMinor],
     [`Distance (${quote.km} km)`, c.fromRule ? null : c.distanceMinor],
     ['Minimum / maximum adjustment', c.clampAdjustMinor || null],
-    ['Agreed route price', c.fromRule ? c.ruleFeeMinor : null],
+    [quote.method === 'AREA_FIXED' ? 'Fixed area price' : 'Agreed route price', c.fromRule ? c.ruleFeeMinor : null],
     ['Area surcharge', c.zoneSurchargeMinor || null],
     ['Busy-time boost', c.boostMinor || null],
+    ['Remote-area surcharge', c.remoteMinor || null],
+    ['Weekend surcharge', c.weekendMinor || null],
     ['Margin protection top-up', c.marginTopUpMinor || null],
     ['Rounding', c.roundingMinor || null],
+    ['Free delivery', c.freeDeliveryMinor ? -c.freeDeliveryMinor : null],
   ].filter(([, value]) => value != null)
   const riderLines = r.paidBy === 'BUSINESS' ? [] : [
     ['Agreed route amount', r.fromRule ? r.payMinor - r.boostMinor : null],
@@ -258,7 +261,7 @@ export function DeliveryPricingAdmin() {
     if (clean.length < 2) return
     let id = slug(clean); let n = 2
     while (pricing.zones.some((zone) => zone.id === id)) id = `${slug(clean).slice(0, 36)}-${n++}`
-    setP(['zones'], [...pricing.zones, { id, name: clean, latitude: null, longitude: null, radiusMeters: 800, customerSurchargeMinor: 0, riderBonusMinor: 0, active: true }])
+    setP(['zones'], [...pricing.zones, { id, name: clean, latitude: null, longitude: null, radiusMeters: 800, customerSurchargeMinor: 0, riderBonusMinor: 0, fixedFeeMinor: null, remote: false, active: true }])
   }
 
   return <section className="dp">
@@ -353,6 +356,37 @@ export function DeliveryPricingAdmin() {
           <NumberField label="Assumed trip when a pin is missing" value={pricing.distance.assumedKm} suffix="km" step="0.5" onChange={(v) => setP(['distance', 'assumedKm'], v)} />
         </div>
       </div>
+
+      <div className="dp-card"><h2><Handshake size={18} aria-hidden="true" />Prices DOORSTEP confirms by hand</h2>
+        <p className="dp-muted">When an address can’t be placed on the map, or the road distance isn’t reliable, the customer sends the order and you set the delivery fee in <b>Prices to confirm</b>. They pay only after accepting it.</p>
+        <Toggle checked={pricing.manualQuotes.enabled} onChange={(v) => setP(['manualQuotes', 'enabled'], v)} label={pricing.manualQuotes.enabled ? 'Manual prices are ON' : 'Manual prices are off (unreliable distances are estimated instead)'} />
+        <div className="dp-grid">
+          <label className="dp-field"><span>Ask for a manual price when distance confidence is below</span><select value={pricing.manualQuotes.minConfidence} onChange={(event) => setP(['manualQuotes', 'minConfidence'], event.target.value)}>
+            <option value="HIGH">High — only exact pins with a verified road route are automatic</option>
+            <option value="MEDIUM">Medium — area centres and capped detours are still automatic</option>
+            <option value="LOW">Low — only unmapped addresses need a manual price</option>
+          </select></label>
+          <NairaField label="Ask for a manual price above" minor={pricing.manualQuotes.maxAutoFeeMinor} allowEmpty onChange={(v) => setP(['manualQuotes', 'maxAutoFeeMinor'], v)} hint="Empty = no limit" />
+          <NairaField label="Highest price an admin can send" minor={pricing.manualQuotes.maxQuoteMinor} onChange={(v) => setP(['manualQuotes', 'maxQuoteMinor'], v ?? 0)} />
+          <NumberField label="Price valid for" value={pricing.manualQuotes.expiryHours} suffix="hours" step="1" onChange={(v) => setP(['manualQuotes', 'expiryHours'], Math.max(1, Math.round(v)))} />
+          <NumberField label="Times a customer can ask for a review" value={pricing.manualQuotes.maxRounds} suffix="times" step="1" onChange={(v) => setP(['manualQuotes', 'maxRounds'], Math.max(0, Math.round(v)))} />
+        </div>
+        <Toggle checked={pricing.manualQuotes.quoteBeyondMaxDistance} onChange={(v) => setP(['manualQuotes', 'quoteBeyondMaxDistance'], v)} label="Trips beyond the maximum distance get a manual price (instead of being refused)" />
+      </div>
+
+      <div className="dp-card"><h2><Scale size={18} aria-hidden="true" />Extras and free delivery</h2>
+        <div className="dp-grid">
+          <NairaField label="Remote-area surcharge" minor={pricing.surcharges.remoteMinor} onChange={(v) => setP(['surcharges', 'remoteMinor'], v ?? 0)} hint="For areas marked remote" />
+          <NairaField label="Weekend surcharge" minor={pricing.surcharges.weekend.minor} onChange={(v) => setP(['surcharges', 'weekend', 'minor'], v ?? 0)} />
+          <NairaField label="Free delivery when the food costs at least" minor={pricing.freeDelivery.thresholdMinor} onChange={(v) => setP(['freeDelivery', 'thresholdMinor'], v ?? 0)} />
+        </div>
+        <Toggle checked={pricing.surcharges.weekend.active} onChange={(v) => setP(['surcharges', 'weekend', 'active'], v)} label="Charge the weekend surcharge on Saturdays and Sundays" />
+        <Toggle checked={pricing.freeDelivery.active} onChange={(v) => setP(['freeDelivery', 'active'], v)} label="Free delivery above the amount (DOORSTEP still pays the rider)" />
+        <label className="dp-field"><span>When an area has a fixed price and an agreed route price too</span><select value={pricing.precedence} onChange={(event) => setP(['precedence'], event.target.value)}>
+          <option value="AREA_FIRST">Use the area’s fixed price</option>
+          <option value="ROUTE_FIRST">Use the agreed route price</option>
+        </select></label>
+      </div>
     </>}
 
     {tab === 'areas' && <>
@@ -365,7 +399,9 @@ export function DeliveryPricingAdmin() {
             <NumberField label="Radius" value={zone.radiusMeters} suffix="m" step="50" onChange={(v) => setP(['zones', index, 'radiusMeters'], Math.round(v))} />
             <NairaField label="Customer surcharge" minor={zone.customerSurchargeMinor} onChange={(v) => setP(['zones', index, 'customerSurchargeMinor'], v ?? 0)} />
             <NairaField label="Rider bonus" minor={zone.riderBonusMinor} onChange={(v) => setP(['zones', index, 'riderBonusMinor'], v ?? 0)} />
+            <NairaField label="Fixed delivery price" minor={zone.fixedFeeMinor ?? null} allowEmpty onChange={(v) => setP(['zones', index, 'fixedFeeMinor'], v)} hint="Leave empty to price by distance. Works without a map pin." />
           </div>
+          <Toggle checked={Boolean(zone.remote)} onChange={(v) => setP(['zones', index, 'remote'], v)} label="Remote / hard-to-reach area (adds the remote surcharge)" />
           <div className="dp-row-actions"><Toggle checked={zone.active} onChange={(v) => setP(['zones', index], { ...zone, active: v })} label="Active" />
             <button type="button" className="dp-icon" aria-label={`Delete ${zone.name}`} onClick={() => { if (pricing.routeRules.some((rule) => rule.fromZoneId === zone.id || rule.toZoneId === zone.id)) return setError(`${zone.name} is used by an agreed price. Remove that first.`); setP(['zones'], pricing.zones.filter((_, i) => i !== index)) }}><Trash2 size={16} /></button></div>
         </li>)}</ul>

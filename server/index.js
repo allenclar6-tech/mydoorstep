@@ -44,9 +44,13 @@ import { dailySeries, localDay, pausedNow } from './partnerToday.js'
 import { createPushRouter } from './pushRoutes.js'
 import { remindUnpaidOrders, sendPendingPushes } from './push.js'
 import { parsePrepRange } from './customerApp.js'
+import { distanceStatus, locationConfidence, manualQuoteReasons, REASON_TEXT } from './deliveryAssessment.js'
+import { closeQuotation, expireQuotes, openDeliveryQuotation } from './quotationService.js'
 import { COVERAGE_BOUNDS, COVERAGE_LABEL, isCoveredPoint } from './coverage.js'
 import { optionGroupsInputSchema, priceSelections } from './menuOptions.js'
 import { createRefundRouter } from './refundRoutes.js'
+import { createQuotationRouter } from './quotationRoutes.js'
+import { createOrderChatRouter } from './orderChatRoutes.js'
 import { createDocumentArchiveRouter } from './documentArchive.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -104,6 +108,8 @@ app.use('/api', createVerificationRouter({ prisma, requireUser, requireAdmin, up
 app.use('/api', createFinanceRouter({ prisma, requireUser, requireAdmin, verifyPassword }))
 app.use('/api', createWithdrawalRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createDeliveryPricingRouter({ prisma, requireUser, requireAdmin }))
+app.use('/api', createQuotationRouter({ prisma, requireUser, requireAdmin, maxRoundsOf: async () => (await getDeliveryPricing(prisma)).manualQuotes?.maxRounds ?? 3 }))
+app.use('/api', createOrderChatRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createLocationRouter({ prisma, requireUser, requireAdmin }))
 app.use('/api', createPushRouter({ prisma, requireUser }))
 app.use('/api', createCustomerAppRouter({ prisma, requireUser, requireAdmin, publicRestaurant: (restaurant) => publicRestaurant(restaurant), isOpen: (restaurant) => isRestaurantOpen(restaurant) }))
@@ -449,7 +455,7 @@ const customerRegistrationSchema = credentialsSchema.extend({
   termsAccepted: z.literal(true),
   password: z.string().min(10).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/),
 })
-export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional(), options: z.array(z.string().min(1).max(60)).max(40).optional() })).min(1).max(60), paymentMethod: z.enum(['PAYSTACK', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']).default('PAYSTACK'), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), orderType: z.enum(['DELIVERY', 'PICKUP']).default('DELIVERY'), scheduledFor: z.string().max(40).optional().nullable(), tipMinor: z.number().int().min(0).max(500_000).optional(), promoCode: z.string().trim().max(40).optional().nullable() }).superRefine((value, context) => {
+export const orderSchema = z.object({ restaurantId: z.string().min(1), items: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().positive().max(50), instructions: z.string().max(500).optional(), options: z.array(z.string().min(1).max(60)).max(40).optional() })).min(1).max(60), paymentMethod: z.enum(['PAYSTACK', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']).default('PAYSTACK'), addressId: z.string().min(1).optional(), addressLine: z.string().min(5).max(240).optional(), phone: z.string().min(7).max(30).optional(), landmark: z.string().max(200).optional(), deliveryInstructions: z.string().trim().max(300).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), orderType: z.enum(['DELIVERY', 'PICKUP']).default('DELIVERY'), scheduledFor: z.string().max(40).optional().nullable(), tipMinor: z.number().int().min(0).max(500_000).optional(), promoCode: z.string().trim().max(40).optional().nullable() }).superRefine((value, context) => {
   if ((value.latitude == null) !== (value.longitude == null)) context.addIssue({ code: 'custom', path: [value.latitude == null ? 'latitude' : 'longitude'], message: 'Both destination coordinates are required.' })
 })
 export const addressSchema = z.object({ label: z.string().min(1).max(40), addressLine: z.string().min(5).max(240), landmark: z.string().max(200).optional(), latitude: z.number().gte(-90).lte(90).optional(), longitude: z.number().gte(-180).lte(180).optional(), cityId: z.string().min(1).optional() }).superRefine((value, context) => {
@@ -1102,6 +1108,7 @@ app.post('/api/orders/:orderId/cancel', requireUser, rateLimit({ windowMs: 60_00
       if (changed.count !== 1) return false
       await transaction.delivery.updateMany({ where: { orderId: order.id, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'CANCELLED' } })
       if (!paid && order.payment && ['PENDING', 'PENDING_VERIFICATION'].includes(order.payment.status)) await transaction.payment.update({ where: { id: order.payment.id }, data: { status: 'ABANDONED' } })
+      if (!paid) await closeQuotation(transaction, order.id, request.user.id, reason)
       if (!paid) await retireOrderNotifications(transaction, order, cancelledAt)
       if (paid) {
         await voidOrderMoney(transaction, order, 'customer cancelled before the business accepted')
@@ -1176,18 +1183,19 @@ app.post('/api/orders/:orderId/remove', requireUser, async (request, response) =
     if (!order) return response.status(404).json({ error: 'ORDER_NOT_FOUND' })
     if (!orderActions(order).canRemove) return response.status(409).json({ error: 'ORDER_CANNOT_BE_REMOVED', message: 'Active orders can’t be removed. Cancel it first, or wait until it’s delivered.' })
     await prisma.$transaction(async (transaction) => {
-      if (order.status === 'PENDING_PAYMENT') {
+      if (['PENDING_PAYMENT', 'AWAITING_DELIVERY_QUOTE'].includes(order.status)) {
         // An unpaid order is cancelled as it is removed, so it can no longer be paid.
-        const changed = await transaction.order.updateMany({ where: { id: order.id, status: 'PENDING_PAYMENT' }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: 'Removed by the customer before payment' } })
+        const changed = await transaction.order.updateMany({ where: { id: order.id, status: order.status }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: 'Removed by the customer before payment' } })
         if (changed.count !== 1) throw Object.assign(new Error('changed'), { code: 'ORDER_STATE_CHANGED', status: 409 })
         if (order.payment && ['PENDING', 'PENDING_VERIFICATION'].includes(order.payment.status)) await transaction.payment.update({ where: { id: order.payment.id }, data: { status: 'ABANDONED' } })
         await transaction.delivery.updateMany({ where: { orderId: order.id, status: { in: ['AVAILABLE', 'REQUESTED'] } }, data: { status: 'CANCELLED' } })
+        await closeQuotation(transaction, order.id, request.user.id, 'Order removed by the customer')
       }
       await transaction.order.update({ where: { id: order.id }, data: { customerHiddenAt: new Date() } })
       // The order's notifications leave the customer's inbox with it; if it was cancelled here, other people's
       // unread alerts about it are retired too.
       await removeOrderNotifications(transaction, order, request.user.id)
-      if (order.status === 'PENDING_PAYMENT') await retireOrderNotifications(transaction, order, new Date())
+      if (['PENDING_PAYMENT', 'AWAITING_DELIVERY_QUOTE'].includes(order.status)) await retireOrderNotifications(transaction, order, new Date())
     })
     return response.json({ removed: true })
   } catch (error) {
@@ -1213,14 +1221,18 @@ app.post('/api/orders', requireUser, async (request, response) => {
     if (result.data.paymentMethod === 'CASH_ON_DELIVERY') return response.status(409).json({ error: 'CASH_ON_DELIVERY_UNSUPPORTED' })
     if (result.data.paymentMethod === 'PAYSTACK' && !process.env.PAYSTACK_SECRET_KEY) return response.status(503).json({ error: 'PAYMENT_PROVIDER_NOT_CONFIGURED', message: 'Paystack is not configured. Choose another available payment method or contact support.' })
     const finance = await planOrderFinance(quote, { latitude: quote.address?.latitude ?? result.data.latitude, longitude: quote.address?.longitude ?? result.data.longitude })
+    // How the fee was set and how reliable the distance was, kept on the order for reporting and audits.
+    const awaitingQuote = Boolean(quote.manualQuote)
+    const assessment = quote.delivery ? (() => { const status = distanceStatus(quote.delivery); return { deliveryPricingMethod: awaitingQuote ? 'MANUAL_QUOTE' : quote.delivery.method, distanceStatus: status, locationConfidence: locationConfidence(status) } })() : { deliveryPricingMethod: quote.orderType === 'PICKUP' ? 'PICKUP' : 'FLAT' }
     const order = await prisma.$transaction(async (transaction) => {
       const orderNumber = `DSP-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 6).toUpperCase()}`
       const pickup = quote.orderType === 'PICKUP'
       const address = quote.address || (pickup ? { addressLine: `Pickup at ${quote.storeAddress}`, landmark: null, latitude: null, longitude: null } : null) || await transaction.address.create({ data: { userId: request.user.id, cityId: quote.serviceAreaCityId, label: 'Checkout address', addressLine: result.data.addressLine, landmark: result.data.landmark, latitude: result.data.latitude, longitude: result.data.longitude } })
-      const transferExpiry = result.data.paymentMethod === 'BANK_TRANSFER' && paymentSettings.bankTransfer.expiryMinutes ? new Date(Date.now() + paymentSettings.bankTransfer.expiryMinutes * 60_000) : null
+      const transferExpiry = !awaitingQuote && result.data.paymentMethod === 'BANK_TRANSFER' && paymentSettings.bankTransfer.expiryMinutes ? new Date(Date.now() + paymentSettings.bankTransfer.expiryMinutes * 60_000) : null
       const transferInstructions = result.data.paymentMethod === 'BANK_TRANSFER' ? { bankName: paymentSettings.bankTransfer.bankName, accountName: paymentSettings.bankTransfer.accountName, accountNumber: paymentSettings.bankTransfer.accountNumber, message: paymentSettings.bankTransfer.instructions } : null
-      const created = await transaction.order.create({ data: { ...finance, orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, tipMinor: quote.tipMinor, discountMinor: quote.discountMinor, promotionId: quote.promotion?.id || null, promoCode: quote.promotion?.code || null, orderType: quote.orderType, scheduledFor: quote.scheduledFor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions, ...(item.options?.length ? { optionsSnapshot: item.options } : {}) })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
-      if (created.payment.method === 'BANK_TRANSFER') await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Bank transfer to confirm', body: `Order ${created.orderNumber} (${'₦'}${(created.totalMinor / 100).toLocaleString('en-NG')}) will be paid by bank transfer, reference ${created.payment.reference}. Confirm it once the money arrives.`, link: '/admin/payments' })
+      const created = await transaction.order.create({ data: { ...finance, ...assessment, ...(awaitingQuote ? { status: 'AWAITING_DELIVERY_QUOTE' } : {}), orderNumber, idempotencyKey, customerId: request.user.id, restaurantId: quote.restaurantId, addressSnapshot: address.addressLine, landmarkSnapshot: result.data.landmark || address.landmark, latitude: address.latitude, longitude: address.longitude, subtotalMinor: quote.subtotalMinor, deliveryFeeMinor: quote.deliveryFeeMinor, serviceFeeMinor: quote.serviceFeeMinor, tipMinor: quote.tipMinor, discountMinor: quote.discountMinor, promotionId: quote.promotion?.id || null, promoCode: quote.promotion?.code || null, orderType: quote.orderType, scheduledFor: quote.scheduledFor, totalMinor: quote.totalMinor, items: { create: quote.items.map((item) => ({ menuItemId: item.menuItemId, nameSnapshot: item.name, unitPriceMinor: item.unitPriceMinor, quantity: item.quantity, instructions: item.instructions, ...(item.options?.length ? { optionsSnapshot: item.options } : {}) })) }, payment: { create: { provider: result.data.paymentMethod === 'PAYSTACK' ? 'paystack' : 'doorstep', method: result.data.paymentMethod, reference: result.data.paymentMethod === 'BANK_TRANSFER' ? `DSPTRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}` : `pending_${randomUUID()}`, amountMinor: quote.totalMinor, status: result.data.paymentMethod === 'BANK_TRANSFER' && !awaitingQuote ? 'PENDING_VERIFICATION' : 'PENDING', verificationMethod: result.data.paymentMethod === 'BANK_TRANSFER' ? 'MANUAL' : null, expiresAt: transferExpiry, instructionsSnapshot: transferInstructions } } }, include: { items: true, payment: true } })
+      if (awaitingQuote) await openDeliveryQuotation(transaction, created, quote, { customerId: request.user.id })
+      if (created.payment.method === 'BANK_TRANSFER' && !awaitingQuote) await notifyAdmins(transaction, { type: 'PAYMENT', title: 'Bank transfer to confirm', body: `Order ${created.orderNumber} (${'₦'}${(created.totalMinor / 100).toLocaleString('en-NG')}) will be paid by bank transfer, reference ${created.payment.reference}. Confirm it once the money arrives.`, link: '/admin/payments' })
       return created
     })
     return response.status(201).json({ order: customerOrderView(order) })
@@ -2186,8 +2198,9 @@ function customerOrderView(order) {
 
 /** Checkout preview: totals plus the distance explanation the customer needs, nothing about DOORSTEP's margins. */
 function customerQuote(quote) {
-  const { delivery, storeAddress, ...rest } = quote
+  const { delivery, storeAddress, manualQuote, ...rest } = quote
   if (quote.orderType === 'PICKUP') return { ...rest, pickupAddress: storeAddress, delivery: { pricing: 'PICKUP' } }
+  if (manualQuote) return { ...rest, deliveryQuoteRequired: true, delivery: { pricing: 'TO_BE_CONFIRMED', reasons: manualQuote.reasons.map((code) => REASON_TEXT[code]).filter(Boolean), message: 'Your delivery location requires manual pricing confirmation. Please submit your order details. DOORSTEP will review your location and confirm the delivery fee before payment.' } }
   if (!delivery) return { ...rest, delivery: { pricing: 'FLAT' } }
   const source = delivery.distance.source
   return {
@@ -2271,8 +2284,17 @@ async function quoteOrder(input) {
   }
   const destination = { point: address?.latitude != null ? { latitude: address.latitude, longitude: address.longitude } : input.latitude != null ? { latitude: input.latitude, longitude: input.longitude } : null, addressLine: address?.addressLine || input.addressLine }
   const delivery = await quoteOrderDelivery({ db: prisma, restaurant, destination, subtotalMinor })
-  const deliveryFeeMinor = delivery ? delivery.customer.deliveryFeeMinor : 80000
   const serviceFeeMinor = delivery ? delivery.serviceFeeMinor : Math.round(subtotalMinor * 0.03)
+  // When the location or distance isn't reliable, a person confirms the delivery fee before the customer pays.
+  if (delivery) {
+    const pricing = await getDeliveryPricing(prisma)
+    const reasons = manualQuoteReasons(delivery, pricing.manualQuotes, { maxDeliveryKm: pricing.distance.maxDeliveryKm })
+    if (reasons.length) {
+      const manualQuote = { reasons, estimateFeeMinor: delivery.customer.deliveryFeeMinor, landmark: input.landmark || address?.landmark || null, directions: input.deliveryInstructions || null }
+      return { ...base, deliveryFeeMinor: 0, serviceFeeMinor, totalMinor: subtotalMinor + serviceFeeMinor, delivery, manualQuote }
+    }
+  }
+  const deliveryFeeMinor = delivery ? delivery.customer.deliveryFeeMinor : 80000
   return { ...base, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor, delivery }
 }
 
@@ -2346,6 +2368,8 @@ if (process.env.NODE_ENV !== 'test') {
   deliveryRealtime.attach(server)
   if (process.env.DISPATCH_SWEEP !== 'off') setInterval(runDispatchSweep, 10_000).unref()
   if (process.env.PAYOUT_SWEEP !== 'off') setInterval(runPayoutLoop, 60_000).unref()
+  // Delivery prices nobody answered in time expire (so they can never be paid) and admins are told.
+  setInterval(() => expireQuotes(prisma).catch((error) => console.error('[quotes] expiry sweep failed', error?.message)), 2 * 60_000).unref()
   // Phone notifications: push every new alert, and remind customers once about orders left unpaid.
   if (process.env.PUSH_SWEEP !== 'off') {
     let pushing = false

@@ -18,6 +18,7 @@ import { OpenJobs } from './live/OpenJobs'
 import { AlertSoundControl } from './live/AlertSoundControl'
 import { firstNameOf, Hello, naira, Shortcuts, WeekChart } from './workspace/WorkspaceFrame'
 import { OnlineHero, RiderShell, riderShortcuts, useRider } from './rider/RiderHub'
+import { OrderChatButton } from './chat/OrderChat'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
 
@@ -94,6 +95,9 @@ function RiderLocationSharing({ deliveryId, active }) {
 
 const STAGE_ACTION = { GOING_TO_RESTAURANT: 'Head to the store', ARRIVED_AT_RESTAURANT: 'I’m at the store', PICKED_UP: 'Order picked up', GOING_TO_CUSTOMER: 'Head to the customer', DELIVERED: 'Delivered — enter code' }
 
+// Chat notifications link to /rider/dashboard?chat=<order number>&channel=<channel>.
+const chatRequested = (orderNumber, channel) => { try { const query = new URLSearchParams(window.location.search); return query.get('chat') === orderNumber && (query.get('channel') || 'CUSTOMER_RIDER') === channel } catch { return false } }
+
 function CurrentDelivery({ delivery, setDelivery }) {
   const stage = stages.indexOf(delivery.status)
   const next = stages[stage + 1]
@@ -111,7 +115,7 @@ function CurrentDelivery({ delivery, setDelivery }) {
     if (next === 'DELIVERED') { setCodeOpen(true); return }
     try { await send({ status: next }) } catch (sendError) { setError(sendError.message) }
   }
-  return <section className="rider-delivery-card"><div className="delivery-card-head"><div><span className="section-kicker">ACTIVE DELIVERY</span><h3>{delivery.order}</h3></div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span></div><div className="delivery-route"><div><Store size={17} /><span><small>Pickup</small><strong>{delivery.restaurant}</strong><em>{delivery.pickup}</em></span></div><div className="route-line" /><div><MapPin size={17} /><span><small>Drop-off</small><strong>{delivery.customer}</strong><em>{delivery.dropoff}</em>{delivery.landmark && <em className="rider-landmark">Landmark: {delivery.landmark}</em>}{delivery.destination ? <a className="rider-nav-link" href={`https://www.google.com/maps/dir/?api=1&destination=${delivery.destination.latitude},${delivery.destination.longitude}&travelmode=driving`} target="_blank" rel="noreferrer">Navigate to the customer’s pin</a> : <em className="rider-landmark">No exact pin from the customer — use the address and landmark, and call if unsure.</em>}</span></div></div><RiderLocationSharing deliveryId={delivery.id} active={active} />{error && <p className="rider-status-alert is-error" role="alert">{error}</p>}{next ? <button className="portal-primary" onClick={advance}>{next === 'DELIVERED' ? <Check size={16} /> : <ArrowRight size={16} />} {STAGE_ACTION[next] || next.replaceAll('_', ' ')}</button> : <div className="delivered-label"><Check size={17} /> Delivery completed</div>}{codeOpen && <DeliveryCodeSheet orderNumber={delivery.order} onClose={() => setCodeOpen(false)} onSubmit={async (code) => { await send({ status: 'DELIVERED', code }); setCodeOpen(false) }} />}</section>
+  return <section className="rider-delivery-card"><div className="delivery-card-head"><div><span className="section-kicker">ACTIVE DELIVERY</span><h3>{delivery.order}</h3></div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span></div><div className="delivery-route"><div><Store size={17} /><span><small>Pickup</small><strong>{delivery.restaurant}</strong><em>{delivery.pickup}</em></span></div><div className="route-line" /><div><MapPin size={17} /><span><small>Drop-off</small><strong>{delivery.customer}</strong><em>{delivery.dropoff}</em>{delivery.landmark && <em className="rider-landmark">Landmark: {delivery.landmark}</em>}{delivery.destination ? <a className="rider-nav-link" href={`https://www.google.com/maps/dir/?api=1&destination=${delivery.destination.latitude},${delivery.destination.longitude}&travelmode=driving`} target="_blank" rel="noreferrer">Navigate to the customer’s pin</a> : <em className="rider-landmark">No exact pin from the customer — use the address and landmark, and call if unsure.</em>}</span></div></div><RiderLocationSharing deliveryId={delivery.id} active={active} /><div className="rider-chats">{!['PICKED_UP', 'GOING_TO_CUSTOMER', 'DELIVERED'].includes(delivery.status) && <OrderChatButton orderRef={delivery.order} channel="STORE_RIDER" label="Chat with the store" phone={delivery.storePhone} autoOpen={chatRequested(delivery.order, 'STORE_RIDER')} />}<OrderChatButton orderRef={delivery.order} channel="CUSTOMER_RIDER" label="Chat with the customer" autoOpen={chatRequested(delivery.order, 'CUSTOMER_RIDER')} /></div>{error && <p className="rider-status-alert is-error" role="alert">{error}</p>}{next ? <button className="portal-primary" onClick={advance}>{next === 'DELIVERED' ? <Check size={16} /> : <ArrowRight size={16} />} {STAGE_ACTION[next] || next.replaceAll('_', ' ')}</button> : <div className="delivered-label"><Check size={17} /> Delivery completed</div>}{codeOpen && <DeliveryCodeSheet orderNumber={delivery.order} onClose={() => setCodeOpen(false)} onSubmit={async (code) => { await send({ status: 'DELIVERED', code }); setCodeOpen(false) }} />}</section>
 }
 
 function RiderDashboard() {
@@ -128,7 +132,7 @@ function RiderDashboard() {
   useEffect(() => { if (summary && !switching) { setOnline(summary.availability === 'ONLINE'); setOnlineSince(summary.onlineSince || null) } }, [summary, switching])
   const loadActive = () => fetch(`${apiBase}/api/rider/deliveries`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((body) => {
     const active = body.deliveries?.find((item) => item.riderId && item.order)
-    setDelivery(active ? { id: active.id, order: active.order.orderNumber, restaurant: active.order.restaurant.name, pickup: active.order.restaurant.address, customer: 'Customer', dropoff: active.order.addressSnapshot, landmark: active.order.landmarkSnapshot || null, destination: active.order.latitude != null && active.order.longitude != null ? { latitude: Number(active.order.latitude), longitude: Number(active.order.longitude) } : null, status: active.status } : null)
+    setDelivery(active ? { id: active.id, order: active.order.orderNumber, restaurant: active.order.restaurant.name, pickup: active.order.restaurant.address, storePhone: active.order.restaurant.phone || null, customer: 'Customer', dropoff: active.order.addressSnapshot, landmark: active.order.landmarkSnapshot || null, destination: active.order.latitude != null && active.order.longitude != null ? { latitude: Number(active.order.latitude), longitude: Number(active.order.longitude) } : null, status: active.status } : null)
   }).catch(() => undefined)
   useEffect(() => { loadActive() }, [token])
   const toggleOnline = async () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BarChart3, Bell, Bike, Calculator, ChefHat, ChevronDown, ClipboardList, CreditCard, Download, FileText, FolderLock, LayoutDashboard, MapPin, MessageCircle, Package, Settings, Star, Store, Tag, Truck, Users, Wallet } from 'lucide-react'
+import { BarChart3, Bell, Bike, Calculator, ChefHat, ChevronDown, ClipboardList, CreditCard, Download, FileText, FolderLock, LayoutDashboard, ReceiptText, MapPin, MessageCircle, Package, Settings, Star, Store, Tag, Truck, Users, Wallet } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
 import { MapPinArt, MoneyBag, Parcel, PercentTag, Scooter, Storefront } from '../shop/Illustrations'
 import { firstNameOf, go, Hello, naira, Shortcuts, usePolling, WeekChart, WorkspaceFrame } from '../workspace/WorkspaceFrame'
@@ -22,10 +22,12 @@ export const ADMIN_MENU = [
   { group: 'Approve new partners', label: 'Documents', href: '/admin/documents', icon: FolderLock },
   { group: 'Customers', label: 'Customers', href: '/admin/customers', icon: Users },
   { group: 'Customers', label: 'Help messages', href: '/admin/support', icon: MessageCircle },
+  { group: 'Customers', label: 'Order chats', href: '/admin/chats', icon: MessageCircle },
   { group: 'Customers', label: 'Reviews', href: '/admin/reviews', icon: Star },
   { group: 'Money', label: 'Money & payouts', short: 'Money', href: '/admin/finance', icon: Wallet },
   { group: 'Money', label: 'How customers pay', href: '/admin/payments', icon: CreditCard },
   { group: 'Money', label: 'Promo codes', href: '/admin/promos', icon: Tag },
+  { group: 'Delivery setup', label: 'Prices to confirm', href: '/admin/delivery-quotes', icon: ReceiptText },
   { group: 'Delivery setup', label: 'Delivery prices', href: '/admin/pricing', icon: Calculator },
   { group: 'Delivery setup', label: 'Places & areas', href: '/admin/locations', icon: MapPin },
   { group: 'Reports', label: 'Sales report', href: '/admin/analytics', icon: BarChart3 },
@@ -35,6 +37,8 @@ const ADMIN_EXTRA = [{ label: 'Notifications', href: '/admin/notifications', ico
 
 /** What each page is for, in one plain sentence, and how to use it in three steps. */
 export const ADMIN_GUIDES = {
+  '/admin/chats': { what: 'Read-only copies of the chats between customers, riders and stores during an order.', steps: ['Open “Reported” first — those messages were flagged by a customer, rider or store.', 'Search an order number to read its whole chat when someone complains.', 'Reply to people through Help messages; you can’t post in order chats.'] },
+  '/admin/delivery-quotes': { what: 'Orders whose delivery fee a person must confirm — the map couldn’t place the address or measure the road reliably.', steps: ['Open the oldest request first and read the address, landmark and directions.', 'Check the map pin and the store, then type a fair delivery fee (and a short reason).', 'Send it. The customer accepts and pays, asks for a review, or declines.'] },
   '/admin/deliveries': { what: 'Every delivery happening right now, and orders still waiting for a rider.', steps: ['Look at “Waiting for a rider” first — those customers are waiting.', 'Tap “Send a rider” to give the job to the nearest free rider.', 'Watch it move to “On the way”. Call the rider if it stays stuck.'] },
   '/admin/orders': { what: 'All customer orders, newest first.', steps: ['Find an order by its number or the customer’s name.', 'Open it to see the items, the payment and where it is now.', 'If a customer complains, check the status here before you reply.'] },
   '/admin/parcels': { what: 'Packages customers asked DOORSTEP to pick up and drop off.', steps: ['Check new bookings and that each one is paid.', 'Make sure a rider has taken each paid booking.', 'Use the price button to change package delivery prices.'] },

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Bike, Check, ChefHat, ChevronRight, Clock3, HelpCircle, MapPin, Phone, ReceiptText, RefreshCw, ShoppingBag, Star, Store } from 'lucide-react'
 import { apiBase } from '../config/apiBase'
+import { OrderChatButton } from '../chat/OrderChat'
 import { LiveOrderCard } from '../live/LiveOrderCard'
 import { OrderActionButtons, ORDER_STATUS_LABELS } from '../orders/OrderActions'
 import { useDeliveryTracking } from '../tracking/useDeliveryTracking'
@@ -32,6 +33,7 @@ const stepsFor = (order) => (order?.orderType === 'PICKUP' ? PICKUP_STEPS : DELI
 export const stepIndex = (order) => stepsFor(order).findIndex((step) => step.statuses.includes(order?.status))
 
 const HEADLINE = {
+  AWAITING_DELIVERY_QUOTE: 'Your delivery fee is awaiting confirmation',
   PENDING_PAYMENT: 'Waiting for your payment',
   PAID: 'Waiting for the store to accept',
   RESTAURANT_ACCEPTED: 'The store accepted your order',
@@ -46,7 +48,7 @@ const HEADLINE = {
   REFUNDED: 'This order was refunded',
 }
 const headlineFor = (order) => order.orderType === 'PICKUP' && order.status === 'READY_FOR_PICKUP' ? 'Ready to collect' : order.orderType === 'PICKUP' && order.status === 'DELIVERED' ? 'Collected. Enjoy!' : HEADLINE[order.status] || ORDER_STATUS_LABELS[order.status] || order.status
-const tone = (status) => ACTIVE_ORDER_STATUSES.includes(status) ? 'live' : status === 'DELIVERED' ? 'done' : status === 'PENDING_PAYMENT' ? 'wait' : 'stop'
+const tone = (status) => ACTIVE_ORDER_STATUSES.includes(status) ? 'live' : status === 'DELIVERED' ? 'done' : ['PENDING_PAYMENT', 'AWAITING_DELIVERY_QUOTE'].includes(status) ? 'wait' : 'stop'
 const when = (iso) => {
   const date = new Date(iso)
   const today = new Date()
@@ -107,7 +109,7 @@ function OrderCard({ order }) {
 export function OrdersPage() {
   const { loading, orders, error, retry } = useOrders()
   useEffect(() => { const again = () => retry(); window.addEventListener('doorstep-orders-changed', again); return () => window.removeEventListener('doorstep-orders-changed', again) }, [retry])
-  const active = orders.filter((order) => ACTIVE_ORDER_STATUSES.includes(order.status) || order.status === 'PENDING_PAYMENT')
+  const active = orders.filter((order) => ACTIVE_ORDER_STATUSES.includes(order.status) || ['PENDING_PAYMENT', 'AWAITING_DELIVERY_QUOTE'].includes(order.status))
   const past = orders.filter((order) => !active.includes(order))
   let body
   if (!token()) body = <EmptyState icon={ReceiptText} title="Sign in to see your orders" body="Your orders, receipts and live tracking are saved to your DOORSTEP account." action={<button type="button" className="sp-primary" onClick={() => navigate('/login?return=/account/orders')}>Sign in</button>} />
@@ -155,7 +157,7 @@ function useTracking(orderId) {
 }
 
 /** The receipt (items and totals) comes from the order list, which has the full breakdown. */
-function useReceipt(orderId) {
+function useReceipt(orderId, stamp) {
   const [receipt, setReceipt] = useState(null)
   useEffect(() => {
     if (!token()) return undefined
@@ -164,7 +166,7 @@ function useReceipt(orderId) {
       if (active) setReceipt(body?.orders?.find((order) => order.id === orderId) || null)
     }).catch(() => undefined)
     return () => { active = false }
-  }, [orderId])
+  }, [orderId, stamp])
   return receipt
 }
 
@@ -204,10 +206,78 @@ function Rating({ orderId, storeName }) {
   </form>
 }
 
+/* ------------------------------ delivery price (manual quote) ------------------------------ */
+function useDeliveryQuote(orderId, enabled, stamp) {
+  const [state, setState] = useState({ loading: true, quote: null, error: '' })
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    if (!enabled) return undefined
+    let active = true
+    fetch(`${apiBase}/api/orders/${encodeURIComponent(orderId)}/delivery-quote`, { headers: authHeaders() }).then(async (response) => {
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.message || 'Couldn’t load the delivery price.')
+      if (active) setState({ loading: false, quote: body.quote, error: '' })
+    }).catch((error) => { if (active) setState((current) => ({ ...current, loading: false, error: error instanceof TypeError ? 'We can’t reach DOORSTEP. Check your internet.' : error.message })) })
+    return () => { active = false }
+  }, [orderId, enabled, stamp, attempt])
+  return { ...state, reload: () => setAttempt((value) => value + 1) }
+}
+
+/** Shows the delivery price DOORSTEP proposed, and lets the customer accept it, decline it or ask for a review. */
+function DeliveryQuoteCard({ order, onChanged }) {
+  const { loading, quote, error, reload } = useDeliveryQuote(order.id, true, order.status)
+  const [mode, setMode] = useState(null)
+  const [message, setMessage] = useState('')
+  const [state, setState] = useState({ busy: false, error: '' })
+  if (loading) return <section className="or-card-box"><div className="sp-skeleton" style={{ height: 90, borderRadius: 14 }} role="status" aria-label="Loading the delivery price" /></section>
+  if (!quote) return error ? <p className="or-note is-warn">{error}</p> : null
+  const current = quote.current
+  const waiting = ['QUOTE_SENT', 'QUOTE_REVISED'].includes(quote.status) && current
+  const answer = async (action) => {
+    if (action === 'DECLINE' && !window.confirm('Decline this delivery price? Your order will be cancelled. You haven’t been charged.')) return
+    setState({ busy: true, error: '' })
+    try {
+      const response = await fetch(`${apiBase}/api/orders/${encodeURIComponent(order.id)}/delivery-quote/respond`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action, version: current.version, ...(message.trim() ? { message: message.trim() } : {}) }) })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.message || 'That didn’t work. Please try again.')
+      setMode(null); setMessage(''); setState({ busy: false, error: '' })
+      reload(); onChanged()
+    } catch (problem) { setState({ busy: false, error: problem instanceof TypeError ? 'We can’t reach DOORSTEP. Check your internet and try again.' : problem.message }) }
+  }
+  const total = current ? order.subtotalMinor + current.feeMinor + order.serviceFeeMinor + (order.tipMinor || 0) - (order.discountMinor || 0) : null
+  return <section className={`or-card-box or-quote is-${quote.status.toLowerCase()}`} aria-labelledby="or-quote-title">
+    <h3 id="or-quote-title">Delivery price</h3>
+    <p className="or-quote-status">{quote.statusText}</p>
+    {quote.status === 'PENDING_REVIEW' && quote.reasons.length > 0 && <ul className="or-quote-reasons">{quote.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
+    {waiting && <>
+      <div className="or-quote-price"><span>Delivery</span><b>{naira(current.feeMinor)}</b></div>
+      {current.explanation && <p className="or-quote-why">“{current.explanation}”</p>}
+      <dl className="or-quote-facts">
+        <div><dt>New total</dt><dd>{naira(Math.max(0, total))}</dd></div>
+        <div><dt>Sent</dt><dd>{new Date(current.sentAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</dd></div>
+        {current.expiresAt && <div><dt>Valid until</dt><dd>{new Date(current.expiresAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</dd></div>}
+      </dl>
+      {mode === 'review' ? <div className="or-quote-review">
+        <label>Why does the price seem too high?<textarea rows={3} maxLength={500} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="e.g. My street is just after the main market" /></label>
+        <div className="or-quote-actions"><button type="button" className="sp-ghost" onClick={() => setMode(null)} disabled={state.busy}>Back</button><button type="button" className="sp-primary" disabled={state.busy || message.trim().length < 3} onClick={() => answer('REVIEW')}>{state.busy ? 'Sending…' : 'Send request'}</button></div>
+      </div> : <div className="or-quote-actions">
+        <button type="button" className="sp-primary is-wide" disabled={state.busy} onClick={() => answer('ACCEPT')}>{state.busy ? 'Saving…' : `Accept ${naira(current.feeMinor)}`}</button>
+        {quote.canRequestReview && <button type="button" className="sp-ghost" disabled={state.busy} onClick={() => setMode('review')}>Ask for a better price</button>}
+        <button type="button" className="sp-ghost is-danger" disabled={state.busy} onClick={() => answer('DECLINE')}>Decline</button>
+      </div>}
+    </>}
+    {state.error && <p className="or-note is-warn" role="alert">{state.error}</p>}
+    {quote.history.length > 1 && <details className="or-quote-history"><summary>Price history</summary><ul>{quote.history.map((entry) => <li key={entry.version}><b>{naira(entry.feeMinor)}</b><span>{new Date(entry.sentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {entry.customerResponse === 'REVIEW' ? 'you asked for a review' : entry.status === 'SUPERSEDED' ? 'replaced' : entry.status.toLowerCase().replaceAll('_', ' ')}</span></li>)}</ul></details>}
+  </section>
+}
+
 /** /account/orders/:id — live tracking and receipt. */
+// A chat notification links to /account/orders/<id>?chat=1, which opens the chat straight away.
+const chatRequested = () => { try { return new URLSearchParams(window.location.search).get('chat') === '1' } catch { return false } }
+
 export function OrderTrackPage({ orderId }) {
   const { loading, order, error, retry } = useTracking(orderId)
-  const receipt = useReceipt(orderId)
+  const receipt = useReceipt(orderId, order?.status)
   const tracking = useDeliveryTracking(order?.delivery?.id)
   const header = <ShopHeader title={order?.orderNumber || receipt?.orderNumber || 'Your order'} back="/account/orders" />
   if (!order) return <div className="sp-screen or-page">{header}<main className="sp-body">{loading ? <SkeletonList rows={3} /> : <EmptyState icon={ReceiptText} title="Order not available" body={error || 'This order couldn’t be found.'} action={<div className="or-empty-actions"><button type="button" className="sp-primary" onClick={retry}>Try again</button><button type="button" className="sp-ghost" onClick={() => navigate('/account/orders')}>All orders</button></div>} />}</main></div>
@@ -227,6 +297,7 @@ export function OrderTrackPage({ orderId }) {
       </section>
       {error && <p className="or-note is-warn" role="status">{error}</p>}
 
+      {(order.status === 'AWAITING_DELIVERY_QUOTE' || receipt?.deliveryPricingMethod === 'MANUAL_QUOTE') && receipt && <DeliveryQuoteCard order={{ ...receipt, status: order.status }} onChanged={retry} />}
       {live && !pickup && <LiveOrderCard order={order} />}
       {tracking.snapshot && <section className="or-map" aria-label="Live delivery map"><Suspense fallback={<div className="sp-skeleton or-map-skeleton" role="status" aria-label="Loading the map" />}><DeliveryTrackingMap tracking={tracking.snapshot} connection={tracking.connection} /></Suspense></section>}
 
@@ -237,6 +308,8 @@ export function OrderTrackPage({ orderId }) {
         {rider.callAllowed && rider.phone && <a className="or-call" href={`tel:${rider.phone}`} aria-label={`Call ${rider.name}`}><Phone size={18} /></a>}
       </section>}
 
+      {!pickup && live && <OrderChatButton orderRef={order.id} channel="CUSTOMER_RIDER" phone={rider?.callAllowed ? rider.phone : null} className="is-block or-chat" autoOpen={chatRequested()} />}
+
       {order.actions && <OrderActionButtons order={{ ...order, restaurant: { name: order.restaurant } }} onChanged={(done) => done === 'remove' ? navigate('/account/orders') : retry()} />}
 
       {order.status === 'DELIVERED' && <Rating orderId={order.id} storeName={order.restaurant} />}
@@ -246,7 +319,7 @@ export function OrderTrackPage({ orderId }) {
         {items.length ? <ul>{items.map((item) => <li key={item.id}><span className="or-qty">{item.quantity}×</span><span>{item.nameSnapshot}{Array.isArray(item.optionsSnapshot) && item.optionsSnapshot.length > 0 && <small>{item.optionsSnapshot.map((option) => option.name).join(', ')}</small>}{item.instructions && <small>{item.instructions}</small>}</span><b>{naira(item.unitPriceMinor * item.quantity)}</b></li>)}</ul> : <p className="or-note">{receipt === null ? 'Loading items…' : ''}</p>}
         {receipt && <dl>
           <div><dt>Items</dt><dd>{naira(receipt.subtotalMinor)}</dd></div>
-          {!pickup && <div><dt>Delivery</dt><dd>{receipt.deliveryFeeMinor ? naira(receipt.deliveryFeeMinor) : 'Free'}</dd></div>}
+          {!pickup && <div><dt>Delivery</dt><dd>{order.status === 'AWAITING_DELIVERY_QUOTE' ? 'To be confirmed' : receipt.deliveryFeeMinor ? naira(receipt.deliveryFeeMinor) : 'Free'}</dd></div>}
           <div><dt>Service fee</dt><dd>{naira(receipt.serviceFeeMinor)}</dd></div>
           {receipt.tipMinor > 0 && <div><dt>Rider tip</dt><dd>{naira(receipt.tipMinor)}</dd></div>}
           {receipt.discountMinor > 0 && <div className="is-saving"><dt>Discount{receipt.promoCode ? ` (${receipt.promoCode})` : ''}</dt><dd>−{naira(receipt.discountMinor)}</dd></div>}

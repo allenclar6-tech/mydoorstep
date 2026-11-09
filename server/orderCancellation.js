@@ -2,7 +2,7 @@
 // Orders are never erased from the database: payments, commission and tax records must be kept, so "delete"
 // hides the order from the customer's own list.
 
-export const CANCELLABLE_BEFORE_PAYMENT = ['PENDING_PAYMENT']
+export const CANCELLABLE_BEFORE_PAYMENT = ['PENDING_PAYMENT', 'AWAITING_DELIVERY_QUOTE']
 // Once paid, the customer can still cancel until the business accepts the order.
 export const CANCELLABLE_AFTER_PAYMENT = ['PAID']
 export const REMOVABLE_FROM_HISTORY = ['CANCELLED', 'DELIVERED', 'REJECTED', 'REFUNDED']
@@ -19,7 +19,8 @@ export function orderActions(order) {
     cancelNeedsRefund: CANCELLABLE_AFTER_PAYMENT.includes(order.status),
     canRemove: unpaid || REMOVABLE_FROM_HISTORY.includes(order.status),
     // Unpaid orders can be paid (again) — e.g. after a declined card or an OPay "denied by fraud system".
-    canPay: unpaid,
+    // An order waiting for its delivery price can't be paid until the customer accepts the price.
+    canPay: order.status === 'PENDING_PAYMENT',
   }
 }
 

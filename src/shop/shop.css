@@ -1503,3 +1503,38 @@ html[data-shop-theme='dark'] .or-rate textarea { background: rgba(255, 255, 255,
 .sp-suggest-list li { align-items: center; background: var(--sp-card); border: 1px solid var(--sp-line); border-radius: 999px; display: inline-flex; }
 .sp-suggest-chip { background: none; border: 0; color: var(--sp-ink); cursor: pointer; font: inherit; font-size: .86rem; font-weight: 700; padding: 8px 14px; }
 .sp-suggest-x { align-items: center; background: none; border: 0; color: var(--sp-muted); cursor: pointer; display: inline-flex; margin-left: -8px; padding: 8px 10px 8px 2px; }
+
+/* Checkout: delivery fee awaiting confirmation (manual quote) */
+.sp-confirm-fee { background: #fff3d1; border-radius: 16px; color: #5c4300; display: grid; gap: 8px; margin-top: 12px; padding: 14px; }
+.sp-confirm-fee b { color: #3d2c00; font-size: .95rem; }
+.sp-confirm-fee p { font-size: .86rem; line-height: 1.5; margin: 0; }
+.sp-confirm-fee label { color: #3d2c00; display: grid; font-size: .82rem; font-weight: 800; gap: 6px; }
+.sp-confirm-fee textarea { background: #fff; border: 1px solid #f0d58a; border-radius: 12px; font: inherit; font-weight: 500; padding: 10px; resize: vertical; }
+.sp-confirm-fee small { font-size: .78rem; }
+html[data-shop-theme='dark'] .sp-confirm-fee { background: rgba(255, 194, 68, .14); color: var(--sp-ink); }
+html[data-shop-theme='dark'] .sp-confirm-fee b, html[data-shop-theme='dark'] .sp-confirm-fee label { color: var(--sp-ink); }
+
+/* Order screen: delivery price to accept */
+.or-quote { border: 2px solid #ffd77a; display: grid; gap: 10px; }
+.or-quote.is-quote_accepted { border-color: #9fd3bd; }
+.or-quote h3 { margin: 0; }
+.or-quote-status { color: var(--sp-ink); font-weight: 800; margin: 0; }
+.or-quote-reasons { color: var(--sp-soft); font-size: .84rem; margin: 0; padding-left: 18px; }
+.or-quote-price { align-items: baseline; display: flex; justify-content: space-between; }
+.or-quote-price span { color: var(--sp-soft); font-weight: 700; }
+.or-quote-price b { color: var(--sp-ink); font-size: 1.7rem; font-weight: 900; letter-spacing: -.02em; }
+.or-quote-why { background: #f6f6f2; border-radius: 12px; color: var(--sp-soft); font-size: .88rem; margin: 0; padding: 10px 12px; }
+.or-quote-facts { display: grid; gap: 6px; margin: 0; }
+.or-quote-facts div { display: flex; font-size: .86rem; justify-content: space-between; }
+.or-quote-facts dt { color: var(--sp-muted); } .or-quote-facts dd { font-weight: 800; margin: 0; }
+.or-quote-actions { display: grid; gap: 8px; }
+.or-quote-actions .sp-ghost.is-danger { color: #b42318; }
+.or-quote-review { display: grid; gap: 8px; }
+.or-quote-review label { display: grid; font-size: .86rem; font-weight: 800; gap: 6px; }
+.or-quote-review textarea { background: #f7f7f7; border: 1px solid #e3e3e3; border-radius: 12px; font: inherit; padding: 10px; }
+.or-quote-review .or-quote-actions { grid-template-columns: auto 1fr; }
+.or-quote-history summary { cursor: pointer; font-size: .84rem; font-weight: 800; }
+.or-quote-history ul { display: grid; gap: 6px; list-style: none; margin: 8px 0 0; padding: 0; }
+.or-quote-history li { display: flex; font-size: .84rem; gap: 10px; justify-content: space-between; }
+.or-quote-history li span { color: var(--sp-muted); }
+html[data-shop-theme='dark'] .or-quote-why { background: rgba(255, 255, 255, .06); }

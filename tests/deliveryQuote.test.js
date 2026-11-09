@@ -74,11 +74,17 @@ test('missing pins use the assumed distance and leave the rider pay for review',
   assert.equal(orderPricingSnapshot(result).plannedRiderPayMinor, null)
 })
 
-test('trips beyond the maximum distance are refused with a clear message', async () => {
+test('trips beyond the maximum distance are refused when manual prices for far trips are off', async () => {
+  const pricing = { ...published(), manualQuotes: { ...published().manualQuotes, quoteBeyondMaxDistance: false } }
   await assert.rejects(
-    quoteOrderDelivery({ db: null, restaurant, destination: { point: { latitude: 6.05, longitude: 5.6846 } }, subtotalMinor: 500_000, pricing: published(), finance, fetchImpl: mapbox([21_000]) }),
+    quoteOrderDelivery({ db: null, restaurant, destination: { point: { latitude: 6.05, longitude: 5.6846 } }, subtotalMinor: 500_000, pricing, finance, fetchImpl: mapbox([21_000]) }),
     (error) => error.code === 'DELIVERY_TOO_FAR' && /15 km/.test(error.message),
   )
+})
+
+test('with manual prices on (default), a far trip is priced and flagged for a person to confirm', async () => {
+  const priced = await quoteOrderDelivery({ db: null, restaurant, destination: { point: { latitude: 6.05, longitude: 5.6846 } }, subtotalMinor: 500_000, pricing: published(), finance, fetchImpl: mapbox([21_000]) })
+  assert.ok(priced.warnings.includes('BEYOND_MAX_DISTANCE'))
 })
 
 test('a routing outage still prices the order from an estimate instead of failing checkout', async () => {

@@ -250,7 +250,7 @@ export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, pub
   router.get('/admin/todo', requireUser, requireAdmin, async (_request, response) => {
     try {
       const safe = (promise) => promise.catch(() => 0)
-      const [businesses, riders, transfers, withdrawals, waiting, tickets, unpinned, pricing, refunds, toPrice, disputed] = await Promise.all([
+      const [businesses, riders, transfers, withdrawals, waiting, tickets, unpinned, pricing, refunds, toPrice, disputed, quotes] = await Promise.all([
         safe(prisma.restaurantApplication.count({ where: { status: 'PENDING_APPROVAL' } })),
         safe(prisma.riderApplication.count({ where: { status: 'PENDING_APPROVAL' } })),
         safe(prisma.payment.count({ where: { method: 'BANK_TRANSFER', status: 'PENDING_VERIFICATION' } })),
@@ -262,8 +262,10 @@ export function createCustomerAppRouter({ prisma, requireUser, requireAdmin, pub
         safe(countOpenRefunds(prisma)),
         safe(prisma.ledgerEntry.count({ where: { status: 'NEEDS_REVIEW' } })),
         safe(prisma.payout.count({ where: { status: 'DISPUTED' } })),
+        safe(prisma.deliveryQuotation.count({ where: { status: { in: ['PENDING_REVIEW', 'CUSTOMER_REVIEW_REQUESTED', 'QUOTE_EXPIRED'] } } })),
       ])
       const items = [
+        { key: 'quotes', count: quotes, urgent: true, text: quotes === 1 ? '1 customer is waiting for a delivery price' : `${quotes} customers are waiting for a delivery price`, href: '/admin/delivery-quotes', action: 'Set prices' },
         { key: 'refunds', count: refunds, urgent: true, text: refunds === 1 ? '1 customer is waiting for a refund' : `${refunds} customers are waiting for a refund`, href: '/admin/finance', action: 'Send refunds' },
         { key: 'disputed', count: disputed, urgent: true, text: disputed === 1 ? '1 partner says a payout never arrived' : `${disputed} partners say a payout never arrived`, href: '/admin/finance', action: 'Check payouts' },
         { key: 'waiting', count: waiting, urgent: true, text: waiting === 1 ? '1 order is waiting for a rider' : `${waiting} orders are waiting for a rider`, href: '/admin/deliveries', action: 'Send a rider' },

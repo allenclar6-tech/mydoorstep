@@ -80,10 +80,12 @@ export async function quoteOrderDelivery({ db, restaurant, destination, subtotal
   }
   distance.warnings = [...distance.warnings, ...extraWarnings]
   const priced = priceDelivery({ distance, pickupZone, dropoffZone: dropoff.zone, subtotalMinor, fulfilment, pricing, finance: withBusinessCommission(finance, restaurant) })
-  if (priced.warnings.includes('BEYOND_MAX_DISTANCE') && distance.source !== 'ASSUMED') {
+  // Further than usual: if manual quotes are on, DOORSTEP confirms a price instead of refusing the order.
+  const quoteFarTrips = pricing.manualQuotes?.enabled && pricing.manualQuotes?.quoteBeyondMaxDistance
+  if (priced.warnings.includes('BEYOND_MAX_DISTANCE') && distance.source !== 'ASSUMED' && !quoteFarTrips) {
     throw new DeliveryQuoteError('DELIVERY_TOO_FAR', `This address is about ${priced.km} km from the store. DOORSTEP delivers up to ${pricing.distance.maxDeliveryKm} km from the store.`, 422)
   }
-  return { ...priced, dropoffSource: dropoff.source, pricedAt: new Date().toISOString() }
+  return { ...priced, dropoffSource: dropoff.source, pricedAt: new Date().toISOString(), pickupPoint, dropoffPoint: dropoff.point }
 }
 
 /** What gets stored on the order so later rate changes never rewrite it. */
@@ -94,7 +96,7 @@ export function orderPricingSnapshot(priced) {
     deliveryDistanceMeters: priced.distance.source === 'ASSUMED' ? null : priced.distance.meters,
     plannedRiderPayMinor: riderPayKnown ? priced.rider.payMinor : null,
     deliveryQuote: {
-      km: priced.km, distance: priced.distance, dropoffSource: priced.dropoffSource, pickupZone: priced.pickupZone, dropoffZone: priced.dropoffZone,
+      km: priced.km, distance: priced.distance, dropoffSource: priced.dropoffSource, pickupZone: priced.pickupZone, dropoffZone: priced.dropoffZone, method: priced.method,
       rule: priced.rule, customer: priced.customer, rider: priced.rider, commission: priced.commission, serviceFeeMinor: priced.serviceFeeMinor,
       deliveryMarginMinor: priced.deliveryMarginMinor, doorstepRevenueMinor: priced.doorstepRevenueMinor, warnings: priced.warnings, pricedAt: priced.pricedAt,
     },
