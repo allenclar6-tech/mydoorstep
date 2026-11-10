@@ -2,7 +2,7 @@
 // the safe seed of the 36 candidate locations. Pure functions are exported for tests; database helpers take `db`.
 import { CANDIDATES, CHECKED_ON, SOURCES } from './locationCandidates.js'
 import { isCoveredPoint } from './coverage.js'
-import { can } from './staff.js'
+import { can } from './staffRoles.js'
 
 // 'incomplete' = a record still missing basics (usually its map pin). "Inactive" is shown for isActive = false.
 export const VERIFICATION_STATUSES = ['pending', 'incomplete', 'needs_review', 'needs_local_verification', 'verified', 'rejected']
