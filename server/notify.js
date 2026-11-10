@@ -1,6 +1,8 @@
 // In-app notifications. Every helper takes a Prisma client or transaction so a notification
 // is only written when the change it describes is committed.
 
+import { areaForPath, can } from './staff.js'
+
 const MAX_TITLE = 120
 const MAX_BODY = 500
 
@@ -19,13 +21,20 @@ export async function notifyUsers(db, userIds, notification) {
   return result.count
 }
 
-export async function adminIds(db) {
-  const admins = await db.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, select: { id: true }, take: 50 })
-  return admins.map((admin) => admin.id)
+/** Active staff; with `area`, only staff whose role covers it (e.g. 'finance'). */
+export async function adminIds(db, area = null) {
+  const admins = await db.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, select: { id: true, role: true, adminRole: true }, take: 50 })
+  return admins.filter((admin) => !area || can({ ...admin, role: 'ADMIN' }, area)).map((admin) => admin.id)
 }
 
+/**
+ * Tells staff about something that needs them. It goes to the staff whose role covers the page it links to
+ * (a road report reaches delivery managers, a payout reaches finance), so nobody is alerted about a page they
+ * can't open. Alerts without an admin link go to every admin.
+ */
 export async function notifyAdmins(db, notification) {
-  return notifyUsers(db, await adminIds(db), notification)
+  const link = typeof notification?.link === 'string' ? notification.link : ''
+  return notifyUsers(db, await adminIds(db, link.startsWith('/admin/') ? areaForPath(link) : null), notification)
 }
 
 export async function restaurantTeamIds(db, restaurantId) {

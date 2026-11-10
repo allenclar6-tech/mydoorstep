@@ -41,7 +41,7 @@ export function MyStatement() {
       document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (downloadError) { setError(downloadError.message) } finally { setBusy(false) }
   }
-  return <section className="wl-card bk-mine" aria-labelledby="bk-mine-title">
+  return <>{data?.kind === 'RESTAURANT' && <MyDeliveryDeal />}<section className="wl-card bk-mine" aria-labelledby="bk-mine-title">
     <header className="bk-card-head">
       <h3 id="bk-mine-title"><FileText size={17} aria-hidden="true" /> Monthly statement</h3>
       <label className="bk-dates"><span className="bk-sr">Month</span><select value={month.key} onChange={(event) => setMonth(options.find((option) => option.key === event.target.value))}>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>
@@ -58,5 +58,17 @@ export function MyStatement() {
       </dl>
       <button type="button" className="bk-btn" onClick={download} disabled={busy}><Download size={16} />{busy ? 'Preparing…' : 'Download statement (CSV)'}</button>
     </>}
+  </section></>
+}
+
+/** Businesses: the delivery deal DOORSTEP set for them (read-only). */
+function MyDeliveryDeal() {
+  const [deal, setDeal] = useState(null)
+  useEffect(() => { fetch(`${apiBase}/api/restaurant/delivery-deal`, { headers: { Authorization: `Bearer ${readToken()}` } }).then((response) => response.ok ? response.json() : null).then((body) => setDeal(body?.deal || null)).catch(() => setDeal(null)) }, [])
+  if (!deal) return null
+  return <section className="wl-card bk-mine" aria-label="Your delivery deal">
+    <h3>Your delivery deal</h3>
+    <p className="bk-muted">{deal.text}{deal.mode !== 'STANDARD' && !deal.active ? ' (not active right now)' : ''}{deal.endsAt ? ` · until ${new Date(deal.endsAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</p>
+    {deal.mode !== 'STANDARD' && <p className="bk-muted">Your part of each delivery is taken from your share of that order and listed on your statement. To change the deal, contact DOORSTEP.</p>}
   </section>
 }

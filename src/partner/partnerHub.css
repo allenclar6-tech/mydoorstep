@@ -433,3 +433,8 @@ html body .ph-shell .ph-work > * { margin: 0 !important; max-width: none; }
 .dq-page, .dq-page > *, .dq-detail > * { min-width: 0; }
 .dq-search input { width: 100%; }
 .dq-overview { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+
+.dq-hints { display: grid; gap: 8px; list-style: none; margin: 10px 0 0; padding: 0; }
+.dq-hints li { border-left: 3px solid var(--t-forest-700, #1d5c43); color: var(--t-ink, #14231d); font-size: .88rem; line-height: 1.45; padding: 4px 0 4px 10px; }
+.dq-hints li.is-stale { border-left-color: var(--t-line-strong, #cfd9d2); color: var(--t-muted, #5b6b63); }
+.dq-hints small { color: var(--t-muted, #5b6b63); display: block; font-size: .78rem; }

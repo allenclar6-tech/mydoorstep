@@ -13,6 +13,7 @@ const adminHeaders = () => { let token = null; try { token = localStorage.getIte
 /** Admin menu: plain words, grouped like a delivery company’s back office. */
 export const ADMIN_MENU = [
   { group: 'Today', label: 'Home', href: '/admin/dashboard', icon: LayoutDashboard },
+  { group: 'Today', label: 'Delivery overview', href: '/admin/delivery-overview', icon: BarChart3 },
   { group: 'Today', label: 'Live deliveries', short: 'Live', href: '/admin/deliveries', icon: MapPin },
   { group: 'Today', label: 'Orders', href: '/admin/orders', icon: ClipboardList },
   { group: 'Today', label: 'Package deliveries', href: '/admin/parcels', icon: Truck },
@@ -31,13 +32,20 @@ export const ADMIN_MENU = [
   { group: 'Delivery setup', label: 'Prices to confirm', href: '/admin/delivery-quotes', icon: ReceiptText },
   { group: 'Delivery setup', label: 'Delivery prices', href: '/admin/pricing', icon: Calculator },
   { group: 'Delivery setup', label: 'Places & areas', href: '/admin/locations', icon: MapPin },
+  { group: 'Delivery setup', label: 'Business delivery deals', href: '/admin/merchant-deals', icon: Store },
+  { group: 'Delivery setup', label: 'Road reports', href: '/admin/road-reports', icon: Truck },
   { group: 'Reports', label: 'Sales report', href: '/admin/analytics', icon: BarChart3 },
   { group: 'Reports', label: 'Activity log', href: '/admin/audit-logs', icon: FileText },
+  { group: 'Reports', label: 'Staff & roles', href: '/admin/staff', icon: Users },
 ]
 const ADMIN_EXTRA = [{ label: 'Notifications', href: '/admin/notifications', icon: Bell }, { label: 'Download the app', href: '/admin/download', icon: Download }, { label: 'Settings', href: '/admin/settings', icon: Settings }]
 
 /** What each page is for, in one plain sentence, and how to use it in three steps. */
 export const ADMIN_GUIDES = {
+  '/admin/staff': { what: 'Who works in the DOORSTEP control centre, and what each person can do.', steps: ['Tap “Add staff”, enter their name and work email, and pick a role.', 'They set their own password with “Forgot password” on the admin sign-in page.', 'Change a role or suspend someone at any time. There must always be at least one Super admin.'] },
+  '/admin/merchant-deals': { what: 'Who pays delivery for each business’s orders: the customer, the business, both, or DOORSTEP.', steps: ['Find the business and pick who pays.', 'Check the example split at the bottom before saving.', 'Add start and end dates for trials. The business sees its deal but can’t change it; riders are paid the same either way.'] },
+  '/admin/delivery-overview': { what: 'How deliveries are going: what needs you now, the numbers for a period, and each rider’s performance.', steps: ['Red and yellow boxes at the top need someone now. Tap one to go there.', 'Switch between today, 7, 30 and 90 days to compare.', 'Check riders with many failed jobs or a low “accepts jobs” rate.'] },
+  '/admin/road-reports': { what: 'What riders report about roads, access, real distances and landmarks.', steps: ['Read each report; call the rider if something isn’t clear.', 'Approve what you trust. Reject guesses or duplicates, with a short note.', 'Approved reports are suggestions when you set prices; after 90 days they’re marked as old.'] },
   '/admin/books': { what: 'DOORSTEP’s books: money in, income, payouts and what is owed — with a statement for every rider and business.', steps: ['Pick the period at the top (this month, last month, or your own dates).', 'Riders and Businesses are listed separately with what each is owed now and their unpaid jobs. Tap one for their full statement.', 'Download a statement (CSV) or print it to share. “Full journal” is every money record in the period, for your accountant.', 'Pay people in Money & payouts — this page is the record.'] },
   '/admin/chats': { what: 'Read-only copies of the chats between customers, riders and stores during an order.', steps: ['Open “Reported” first — those messages were flagged by a customer, rider or store.', 'Search an order number to read its whole chat when someone complains.', 'Reply to people through Help messages; you can’t post in order chats.'] },
   '/admin/delivery-quotes': { what: 'Orders whose delivery fee a person must confirm — the map couldn’t place the address or measure the road reliably.', steps: ['Open the oldest request first and read the address, landmark and directions.', 'Check the map pin and the store, then type a fair delivery fee (and a short reason).', 'Send it. The customer accepts and pays, asks for a review, or declines.'] },
@@ -98,20 +106,31 @@ export function useAdminSummary() {
   return { summary, error }
 }
 
+/** The signed-in staff member's role and the admin pages they may open (decided by the server). */
+export function useAdminAccess() {
+  const [access, setAccess] = useState(null)
+  useEffect(() => { fetch(`${apiBase}/api/admin/me`, { headers: adminHeaders() }).then((response) => response.ok ? response.json() : null).then(setAccess).catch(() => setAccess(null)) }, [])
+  return access
+}
+const segmentOf = (href) => `/admin/${String(href).replace(/^\/admin\/?/, '').split(/[/?#]/)[0]}`
+export const canOpen = (access, href) => !access || access.pages.includes(segmentOf(href))
+
 export function AdminShell({ path, children }) {
   const { summary } = useAdminSummary()
+  const access = useAdminAccess()
   const [user, setUser] = useState(null)
   useEffect(() => { fetch(`${apiBase}/api/auth/me`, { headers: adminHeaders() }).then((response) => response.ok ? response.json() : null).then((body) => { if (body?.user) setUser(body.user) }).catch(() => undefined) }, [])
   const isHome = path === '/admin/dashboard' || path === '/admin' || path === '/admin/'
-  const nav = ADMIN_MENU.map((item) => ({ ...item, active: item.href === '/admin/dashboard' ? isHome : path === item.href, count: item.href === '/admin/deliveries' ? summary?.live?.waitingRider || 0 : 0 }))
+  const nav = ADMIN_MENU.filter((item) => canOpen(access, item.href)).map((item) => ({ ...item, active: item.href === '/admin/dashboard' ? isHome : path === item.href, count: item.href === '/admin/deliveries' ? summary?.live?.waitingRider || 0 : 0 }))
   const current = [...ADMIN_MENU, ...ADMIN_EXTRA].find((item) => item.href === path)
-  const status = summary ? { tone: 'open', label: 'Owner', detail: `${summary.ridersOnline ?? 0} rider${summary.ridersOnline === 1 ? '' : 's'} online` } : { tone: 'muted', label: 'Owner', detail: '' }
+  const roleLabel = access?.roleName || 'Owner'
+  const status = summary ? { tone: 'open', label: roleLabel, detail: `${summary.ridersOnline ?? 0} rider${summary.ridersOnline === 1 ? '' : 's'} online` } : { tone: 'muted', label: roleLabel, detail: '' }
   return <WorkspaceFrame path={path} home="/admin/dashboard" brandSub="Control centre" label="Admin" admin bellTokenKey="doorstep-admin-token"
     name={user ? `${firstNameOf(user)} ${user.lastName || ''}`.trim() : 'DOORSTEP owner'} image={null} status={status}
-    nav={nav} extra={ADMIN_EXTRA} account={{ label: 'Settings', href: '/admin/settings' }} title={current?.label} greetingName={firstNameOf(user)}
-    withdrawHref={null} isHome={isHome} tabs={['/admin/dashboard', '/admin/orders', '/admin/deliveries', '/admin/finance']}>
+    nav={nav} extra={ADMIN_EXTRA.filter((item) => canOpen(access, item.href))} account={{ label: 'Settings', href: '/admin/settings' }} title={current?.label} greetingName={firstNameOf(user)}
+    withdrawHref={null} isHome={isHome} tabs={['/admin/dashboard', '/admin/orders', '/admin/deliveries', '/admin/finance'].filter((href) => canOpen(access, href))}>
     {!isHome && <PageGuide path={path} />}
-    {children}
+    {access && !isHome && !canOpen(access, path) ? <section className="ad-guide"><b>This page isn’t part of your role ({access.roleName}).</b><p>Ask a Super admin if you need it.</p></section> : children}
   </WorkspaceFrame>
 }
 

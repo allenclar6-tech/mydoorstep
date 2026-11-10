@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { notifyAdmins, notifyUsers } from './notify.js'
 import { supportReply } from './supportAssistant.js'
 import { isOwnPrivateKey } from './uploadService.js'
+import { can } from './staff.js'
 
 // Help chat between customers (and partners/riders) and DOORSTEP agents.
 // Ticket status: OPEN (assistant answering) → WAITING_AGENT (person requested) → WITH_AGENT (an agent replied) → RESOLVED.
@@ -16,7 +17,8 @@ const attachmentList = z.array(z.string().startsWith('private/').max(500)).max(3
 export function createSupportRouter({ prisma, requireUser, readPrivateDocument }) {
   const router = Router()
   const postLimiter = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false, handler: (_request, response) => response.status(429).json({ error: 'SUPPORT_RATE_LIMITED', message: 'You are sending messages very quickly. Wait a moment.' }) })
-  const isAdmin = (user) => user.role === 'ADMIN'
+  // Staff who handle customer help (Super admin, Delivery manager, Dispatch operator).
+  const isAdmin = (user) => user.role === 'ADMIN' && can(user, 'support')
   const fail = (response, error) => {
     if (error?.status && error?.code) return response.status(error.status).json({ error: error.code, message: error.message })
     console.error('[support] unexpected_failure', JSON.stringify({ name: error?.name, code: error?.code }))

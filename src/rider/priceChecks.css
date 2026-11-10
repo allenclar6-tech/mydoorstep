@@ -53,3 +53,7 @@
 .pc-skeleton span { animation: pc-pulse 1.4s ease-in-out infinite; background: var(--t-mint-100); border-radius: 16px; height: 190px; }
 @keyframes pc-pulse { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .pc-skeleton span { animation: none; } }
+.pc-form select { background: var(--t-surface); border: 1px solid var(--t-line-strong); border-radius: 10px; color: var(--t-ink); font: inherit; font-size: 1rem; min-height: 44px; padding: 0 10px; }
+.pc-form select:focus { border-color: var(--t-green-600); box-shadow: 0 0 0 3px var(--t-mint-200); outline: none; }
+.pc-route-text { color: var(--t-ink-soft); font-size: .9rem; line-height: 1.5; margin: 0; }
+.pc-route-text b { color: var(--t-ink); }

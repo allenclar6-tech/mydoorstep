@@ -23,11 +23,20 @@ export function cachedRoutes(fetchImpl) {
     const hit = routeCache.get(cacheKey)
     if (hit && hit.expires > Date.now()) return hit.routes
     const routes = await fetchRoadRoutes(pickup, dropoff, { alternatives: true, ...(fetchImpl ? { fetchImpl } : {}) })
-    const slim = routes.map((route) => ({ distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds }))
+    const slim = routes.map((route) => ({ distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds, provider: route.provider }))
     routeCache.set(cacheKey, { routes: slim, expires: Date.now() + ROUTE_CACHE_MS })
     if (routeCache.size > 500) routeCache.delete(routeCache.keys().next().value)
     return slim
   }
+}
+
+/** Orders waiting for a rider and free online DOORSTEP riders right now (for demand pricing, if switched on). */
+export async function demandNow(db) {
+  const [waiting, freeRiders] = await Promise.all([
+    db.delivery.count({ where: { riderId: null, orderId: { not: null }, status: { in: ['AVAILABLE', 'REQUESTED'] } } }),
+    db.rider.count({ where: { status: 'APPROVED', network: 'DOORSTEP_POOL', availability: 'ONLINE', deliveries: { none: { status: { in: ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } } } } }),
+  ])
+  return { waiting, freeRiders }
 }
 
 /** Where the customer is: exact pin → saved address pin → named Sapele area's centre → unknown. */
@@ -80,7 +89,9 @@ export async function quoteOrderDelivery({ db, restaurant, destination, subtotal
   }
   distance.warnings = [...distance.warnings, ...extraWarnings]
   const exactPins = Boolean(pinnedPickup) && dropoff.source === 'PIN'
-  const priced = priceDelivery({ distance, pickupZone, dropoffZone: dropoff.zone, subtotalMinor, fulfilment, pricing, finance: withBusinessCommission(finance, restaurant), exactPins })
+  // Demand snapshot only when the owner has switched demand pricing on (it's off at launch).
+  const demandSnapshot = pricing.demand?.enabled ? await demandNow(db) : null
+  const priced = priceDelivery({ distance, pickupZone, dropoffZone: dropoff.zone, subtotalMinor, fulfilment, pricing, finance: withBusinessCommission(finance, restaurant), exactPins, demandSnapshot })
   // Further than usual: if manual quotes are on, DOORSTEP confirms a price instead of refusing the order.
   const quoteFarTrips = pricing.manualQuotes?.enabled && pricing.manualQuotes?.quoteBeyondMaxDistance
   if (priced.warnings.includes('BEYOND_MAX_DISTANCE') && distance.source !== 'ASSUMED' && !quoteFarTrips) {

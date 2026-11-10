@@ -139,6 +139,9 @@ model User {
   phone             String?          @unique
   passwordHash      String?
   role              UserRole
+  // Staff role for ADMIN accounts (SUPER_ADMIN, DELIVERY_MANAGER, PRICING_MANAGER, FINANCE_ADMIN, DISPATCH_OPERATOR).
+  // Empty on admin accounts made before staff roles existed: they keep full access (Super admin).
+  adminRole         String?
   status            UserStatus       @default(ACTIVE)
   firstName         String
   lastName          String
@@ -217,6 +220,8 @@ model Restaurant {
   /// Negotiated commission for this business (null = the platform rate in Admin → Money).
   commissionDoorstepRiderPercent Decimal?   @db.Decimal(5, 2)
   commissionOwnRiderPercent      Decimal?   @db.Decimal(5, 2)
+  // Delivery deal set by DOORSTEP (who pays delivery for this business’s orders). Null = customer pays.
+  deliveryDeal                   Json?
   storeType         StoreType                @default(RESTAURANT)
   /// Customer-app section: FOOD, GROCERIES, SHOPS or PHARMACY_BEAUTY (null = from storeType).
   vertical          String?
@@ -576,6 +581,8 @@ model Order {
   plannedRiderPayMinor Int?
   // Rider who agreed the delivery price with DOORSTEP for this order (offered the job first).
   agreedRiderId      String?
+  // Delivery deal split for this order (null = customer paid the whole fee).
+  deliveryFunding    Json?
   deliveryQuote      Json?
   splitSubaccountCode String?
   customerHiddenAt   DateTime?
@@ -647,6 +654,12 @@ model Delivery {
   pickedUpAt  DateTime?
   deliveredAt DateTime?
   cancelledAt DateTime?
+  // Rider tapped “I've arrived” at the customer (waiting time starts here).
+  arrivedAtCustomerAt DateTime?
+  // Delivery that couldn't be completed after pickup (admin decision).
+  failedAt      DateTime?
+  failureReason String?
+  failureNote   String?
   codeAttempts   Int       @default(0)
   proofMethod    String?
   stuckAlertedAt DateTime?
@@ -1259,6 +1272,8 @@ model DeliveryQuotationVersion {
   // What the rider is paid for this delivery at this price, and the rider who agreed it (gets first offer of the job).
   riderPayMinor       Int?
   agreedRiderId       String?
+  // Who pays this price under the business's delivery deal: { feeMinor, customerMinor, merchantMinor, platformMinor, mode }.
+  funding             Json?
   pricingMethod       String            @default("MANUAL_QUOTE")
   explanation         String?
   internalNote        String?
@@ -1327,4 +1342,30 @@ model RiderPriceSuggestion {
 
   @@unique([quotationId, riderId])
   @@index([riderId, updatedAt])
+}
+
+// Riders report what the map doesn't know (bad roads, closures, access, real distances, landmarks). An admin
+// approves or rejects each one; approved reports are suggestions with a date and a confidence level — never
+// treated as permanently true (they go stale after 90 days).
+model RoadReport {
+  id               String    @id @default(cuid())
+  riderId          String
+  orderId          String?
+  kind             String    // ROAD_CONDITION | CLOSURE | ACCESS | DISTANCE | LANDMARK | EXTRA_CHARGE
+  area             String
+  latitude         Decimal?  @db.Decimal(10, 7)
+  longitude        Decimal?  @db.Decimal(10, 7)
+  distanceKm       Decimal?  @db.Decimal(6, 2)
+  extraChargeMinor Int?
+  note             String
+  status           String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedById     String?
+  reviewedAt       DateTime?
+  reviewNote       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([riderId, createdAt])
+  @@index([area, status])
 }

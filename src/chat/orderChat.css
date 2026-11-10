@@ -69,3 +69,10 @@
 .rider-chats .oc-open { flex: 1 1 180px; justify-content: center; }
 .rb-card .rb-chat { margin: 8px 0 4px; min-height: 40px; padding: 6px 14px; }
 .or-chat { margin: 4px 0 12px; }
+
+/* Rider: "I've arrived" */
+.rider-arrived { display: grid; gap: 4px; margin: 12px 0 0; }
+.rider-arrived button { background: var(--t-gold-500, #e0a526); border: 0; border-radius: 12px; color: var(--t-ink, #14231d); cursor: pointer; font: inherit; font-size: 1rem; font-weight: 800; min-height: 48px; padding: 0 16px; }
+.rider-arrived button:disabled { opacity: .6; }
+.rider-arrived small { color: #8a2a1d; font-size: .82rem; }
+.rider-arrived.is-done { background: var(--t-mint-100, #e6f2eb); border-radius: 12px; color: var(--t-forest-800, #123d2d); font-weight: 700; margin: 12px 0 0; padding: 12px 14px; }

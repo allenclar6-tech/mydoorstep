@@ -82,7 +82,7 @@ export function distanceRecord(priced, { pickup = null, dropoff = null, provider
               : (priced.warnings || []).includes('ROUTE_SHORTER_THAN_STRAIGHT_LINE') ? 'SUSPICIOUS_ROUTE' : 'NO_ROUTE'
   return {
     km: status === 'UNAVAILABLE_DISTANCE' ? null : priced.km,
-    provider: priced?.distance?.roadMeters != null ? provider : 'none',
+    provider: priced?.distance?.roadMeters != null ? (priced.distance.provider || provider) : 'none',
     calculatedAt: at.toISOString(),
     origin: pickup,
     destination: dropoff,

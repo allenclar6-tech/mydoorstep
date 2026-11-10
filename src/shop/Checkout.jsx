@@ -198,7 +198,7 @@ export function CheckoutPage() {
         <dl>
           <Row label="Products" value={nairaWhole(subtotal)} />
           {!pickup && confirmFee && <Row label="Delivery" value="To be confirmed" />}
-          {!pickup && !confirmFee && <Row label="Delivery" value={quote ? (freeDelivery ? 'Free' : naira(quote.deliveryFeeMinor)) : '…'} strike={freeDelivery ? naira(quote.deliveryFeeMinor) : null} tone={freeDelivery ? 'good' : null} />}
+          {!pickup && !confirmFee && <Row label="Delivery" value={quote ? (freeDelivery || (quote.dealNote && quote.deliveryFeeMinor === 0) ? 'Free' : naira(quote.deliveryFeeMinor)) : '…'} strike={freeDelivery ? naira(quote.deliveryFeeMinor) : quote?.dealNote ? naira(quote.deliveryFeeMinor + quote.dealNote.savedMinor) : null} tone={freeDelivery || quote?.dealNote ? 'good' : null} hint={[quote?.dealNote?.text, quote?.delivery?.charges?.length ? `Includes ${quote.delivery.charges.map((charge) => `${charge.label.toLowerCase()} ${naira(charge.amountMinor)}`).join(', ')}` : null].filter(Boolean).join(' · ') || undefined} />}
           <Row label="Services" value={quote ? naira(quote.serviceFeeMinor) : '…'} />
           {quote?.tipMinor > 0 && <Row label="Rider tip" value={naira(quote.tipMinor)} />}
           {quote?.discountMinor > 0 && !freeDelivery && <Row label={quote.promotion?.label || 'Promo'} value={`−${naira(quote.discountMinor)}`} tone="good" />}

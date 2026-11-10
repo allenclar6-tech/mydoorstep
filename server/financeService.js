@@ -82,12 +82,17 @@ export function paystackSplit({ subaccountCode, partnerShareMinor }, settings) {
 /** Ledger rows written when an order is paid. `splitSettled` = Paystack confirmed the business share went to its subaccount. */
 export function orderPaidEntries(order, shares, { splitSettled }) {
   const base = { orderId: order.id }
+  const contribution = Math.max(0, Number(order.deliveryFunding?.merchantMinor) || 0)
+  const subsidy = Math.max(0, Number(order.deliveryFunding?.platformMinor) || 0)
   return [
     { ...base, party: 'PLATFORM', type: 'ORDER_COMMISSION', amountMinor: shares.commissionMinor, status: 'RETAINED', description: `${shares.commissionPercent}% commission on ${order.orderNumber}`, dedupeKey: `ORDER_COMMISSION:${order.id}` },
     { ...base, party: 'PLATFORM', type: 'SERVICE_FEE', amountMinor: shares.serviceFeeMinor, status: 'RETAINED', description: `Service fee on ${order.orderNumber}`, dedupeKey: `SERVICE_FEE:${order.id}` },
     ...(shares.deliveryFeeToPlatformMinor ? [{ ...base, party: 'PLATFORM', type: 'DELIVERY_FEE', amountMinor: shares.deliveryFeeToPlatformMinor, status: 'RETAINED', description: `Delivery fee on ${order.orderNumber}`, dedupeKey: `DELIVERY_FEE:${order.id}` }] : []),
     ...(shares.discountMinor ? [{ ...base, party: 'PLATFORM', type: 'PROMO_DISCOUNT', amountMinor: -shares.discountMinor, status: 'RETAINED', description: `Promo paid by DOORSTEP on ${order.orderNumber}${order.promoCode ? ` (${order.promoCode})` : ''}`, dedupeKey: `PROMO_DISCOUNT:${order.id}` }] : []),
-    { ...base, party: 'RESTAURANT', restaurantId: order.restaurantId, type: 'PARTNER_SHARE', amountMinor: shares.partnerShareMinor, status: splitSettled ? 'SETTLED_BY_SPLIT' : 'DUE', description: splitSettled ? `Paid to your bank by Paystack for ${order.orderNumber}` : `Your share of ${order.orderNumber}`, dedupeKey: `PARTNER_SHARE:${order.id}` },
+    { ...base, party: 'RESTAURANT', restaurantId: order.restaurantId, type: 'PARTNER_SHARE', amountMinor: shares.partnerShareMinor + contribution, status: splitSettled ? 'SETTLED_BY_SPLIT' : 'DUE', description: splitSettled ? `Paid to your bank by Paystack for ${order.orderNumber}` : `Your share of ${order.orderNumber}`, dedupeKey: `PARTNER_SHARE:${order.id}` },
+    // Business delivery deal: the business's contribution (out of its share) and any DOORSTEP subsidy, as separate lines.
+    ...(contribution ? [{ ...base, party: 'RESTAURANT', restaurantId: order.restaurantId, type: 'DELIVERY_CONTRIBUTION', amountMinor: -contribution, status: splitSettled ? 'SETTLED_BY_SPLIT' : 'DUE', description: `Your delivery contribution on ${order.orderNumber} (delivery deal)`, dedupeKey: `DELIVERY_CONTRIBUTION_RESTAURANT:${order.id}` }, { ...base, party: 'PLATFORM', type: 'DELIVERY_CONTRIBUTION', amountMinor: contribution, status: 'RETAINED', description: `Business delivery contribution on ${order.orderNumber}`, dedupeKey: `DELIVERY_CONTRIBUTION:${order.id}` }] : []),
+    ...(subsidy ? [{ ...base, party: 'PLATFORM', type: 'DELIVERY_SUBSIDY', amountMinor: -subsidy, status: 'RETAINED', description: `Delivery paid by DOORSTEP on ${order.orderNumber} (delivery deal)`, dedupeKey: `DELIVERY_SUBSIDY:${order.id}` }] : []),
   ].filter((entry) => entry.amountMinor !== 0)
 }
 

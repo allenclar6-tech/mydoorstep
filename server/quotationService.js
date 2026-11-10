@@ -3,6 +3,7 @@
 import { checkOffer, checkResponse, distanceRecord, isExpired, pickupMoved, QuoteError, totalsWithDeliveryFee } from './deliveryAssessment.js'
 import { getDeliveryPricing } from './deliveryPricingSettings.js'
 import { notifyAdmins, notifyUsers, restaurantTeamIds } from './notify.js'
+import { applyDeal, boundedContribution } from './merchantDeals.js'
 
 const naira = (minor) => `₦${(Math.round(minor) / 100).toLocaleString('en-NG')}`
 const orderLink = (order) => `/account/orders/${order.id}`
@@ -28,30 +29,42 @@ export async function openDeliveryQuotation(db, order, quote, { customerId }) {
 }
 
 /** Admin sends a price, or a revised price. A revision always needs fresh acceptance. */
+/** On acceptance: the business's deal contribution comes out of its share (bounded by what it earns on the order). */
+function fundingOnAccept(order, offer) {
+  if (!offer.funding || order.partnerShareMinor == null) return {}
+  const funding = boundedContribution(offer.funding, order.partnerShareMinor)
+  return { deliveryFunding: funding, partnerShareMinor: order.partnerShareMinor - funding.merchantMinor }
+}
+
 export async function sendOffer(db, quotationId, admin, input) {
   const pricing = await getDeliveryPricing(db)
   return db.$transaction(async (tx) => {
-    const quote = await tx.deliveryQuotation.findUnique({ where: { id: quotationId }, include: { order: { select: { id: true, orderNumber: true, customerId: true, status: true, restaurant: { select: { latitude: true, longitude: true } } } } } })
+    const quote = await tx.deliveryQuotation.findUnique({ where: { id: quotationId }, include: { order: { select: { id: true, orderNumber: true, customerId: true, status: true, subtotalMinor: true, fulfilment: true, restaurant: { select: { name: true, latitude: true, longitude: true, deliveryDeal: true } } } } } })
     if (!quote) throw new QuoteError('QUOTE_NOT_FOUND', 'Request not found.', 404)
     if (quote.order.status !== 'AWAITING_DELIVERY_QUOTE') throw new QuoteError('ORDER_NOT_AWAITING_PRICE', 'This order isn’t waiting for a delivery price any more.')
     const nextStatus = checkOffer(quote, { feeMinor: input.feeMinor, maxQuoteMinor: pricing.manualQuotes?.maxQuoteMinor })
     const version = quote.currentVersion + 1
+    // input.feeMinor is the whole delivery price DOORSTEP set. The business's delivery deal decides how much of it the
+    // customer is asked to accept; the rest is paid by the business or DOORSTEP (recorded on the version).
+    const split = applyDeal(input.feeMinor, { subtotalMinor: quote.order.subtotalMinor, deal: quote.order.restaurant?.deliveryDeal, fulfilment: quote.order.fulfilment || 'DOORSTEP_RIDER' })
+    const customerFeeMinor = split.customerMinor
+    const funding = split.merchantMinor + split.platformMinor > 0 ? split : null
     const hours = input.expiresInHours ?? pricing.manualQuotes?.expiryHours ?? 24
     const expiresAt = new Date(Date.now() + hours * 3_600_000)
     const previous = quote.currentVersion ? await tx.deliveryQuotationVersion.findUnique({ where: { quotationId_version: { quotationId: quote.id, version: quote.currentVersion } } }) : null
     if (previous && previous.status === 'OFFERED') await tx.deliveryQuotationVersion.update({ where: { id: previous.id }, data: { status: 'SUPERSEDED' } })
-    await tx.deliveryQuotationVersion.create({ data: { quotationId: quote.id, version, feeMinor: input.feeMinor, pricingMethod: input.pricingMethod || 'MANUAL_QUOTE', explanation: input.explanation || null, internalNote: input.internalNote || null, expiresAt, proposedById: admin.id, riderPayMinor: input.riderPayMinor ?? null, agreedRiderId: input.agreedRiderId || null } })
+    await tx.deliveryQuotationVersion.create({ data: { quotationId: quote.id, version, feeMinor: customerFeeMinor, funding, pricingMethod: input.pricingMethod || 'MANUAL_QUOTE', explanation: input.explanation || null, internalNote: input.internalNote || null, expiresAt, proposedById: admin.id, riderPayMinor: input.riderPayMinor ?? null, agreedRiderId: input.agreedRiderId || null } })
     const correction = input.correctedDistanceKm != null ? { correctedDistanceKm: input.correctedDistanceKm, correctionReason: input.correctionReason || null, correctedById: admin.id, correctedAt: new Date() } : {}
     // Guarded update: if the customer answered at the same moment, this offer doesn't silently overwrite it.
     const changed = await tx.deliveryQuotation.updateMany({ where: { id: quote.id, currentVersion: quote.currentVersion, status: quote.status }, data: { status: nextStatus, currentVersion: version, expiresAt, pickupSnapshot: quote.order.restaurant?.latitude != null ? { latitude: Number(quote.order.restaurant.latitude), longitude: Number(quote.order.restaurant.longitude) } : quote.pickupSnapshot, ...correction } })
     if (changed.count !== 1) throw new QuoteError('QUOTE_STATE_CHANGED', 'This request just changed. Refresh and try again.')
-    await tx.deliveryQuotationEvent.create({ data: { quotationId: quote.id, type: version === 1 ? 'QUOTE_SENT' : 'QUOTE_REVISED', actorId: admin.id, actorRole: 'ADMIN', fromFeeMinor: previous?.feeMinor ?? null, toFeeMinor: input.feeMinor, version, message: input.explanation || null } })
+    await tx.deliveryQuotationEvent.create({ data: { quotationId: quote.id, type: version === 1 ? 'QUOTE_SENT' : 'QUOTE_REVISED', actorId: admin.id, actorRole: 'ADMIN', fromFeeMinor: previous?.feeMinor ?? null, toFeeMinor: customerFeeMinor, version, message: input.explanation || null } })
     if (input.correctedDistanceKm != null) await tx.deliveryQuotationEvent.create({ data: { quotationId: quote.id, type: 'DISTANCE_CORRECTED', actorId: admin.id, actorRole: 'ADMIN', message: `${input.correctedDistanceKm} km${input.correctionReason ? ` — ${input.correctionReason}` : ''}` } })
     await tx.auditLog.create({ data: { actorId: admin.id, action: version === 1 ? 'DELIVERY_QUOTE_SENT' : 'DELIVERY_QUOTE_REVISED', entityType: 'Order', entityId: quote.order.id, metadata: { orderNumber: quote.order.orderNumber, version, fromFeeMinor: previous?.feeMinor ?? null, toFeeMinor: input.feeMinor, pricingMethod: input.pricingMethod || 'MANUAL_QUOTE', correctedDistanceKm: input.correctedDistanceKm ?? null, reason: input.correctionReason || null } } })
     await notifyUsers(tx, [quote.order.customerId], version === 1
-      ? { type: 'ORDER', title: 'Your delivery price is ready', body: `Delivery for ${quote.order.orderNumber}: ${naira(input.feeMinor)}. Accept it to pay, or ask us to review it.`, link: orderLink(quote.order) }
-      : { type: 'ORDER', title: 'Your revised delivery price is ready', body: `New delivery price for ${quote.order.orderNumber}: ${naira(input.feeMinor)}. Please check and accept it again before paying.`, link: orderLink(quote.order) })
-    return { version, status: nextStatus, expiresAt }
+      ? { type: 'ORDER', title: 'Your delivery price is ready', body: `Delivery for ${quote.order.orderNumber}: ${naira(customerFeeMinor)}. Accept it to pay, or decline it to cancel without paying.`, link: orderLink(quote.order) }
+      : { type: 'ORDER', title: 'Your revised delivery price is ready', body: `New delivery price for ${quote.order.orderNumber}: ${naira(customerFeeMinor)}. Please check and accept it again before paying.`, link: orderLink(quote.order) })
+    return { version, status: nextStatus, expiresAt, customerFeeMinor, funding }
   })
 }
 
@@ -60,6 +73,7 @@ export async function respondToQuote(db, orderId, customer, { action, version, m
   const pricing = await getDeliveryPricing(db)
   const result = await db.$transaction(async (tx) => {
     const order = await tx.order.findFirst({ where: { id: orderId, customerId: customer.id }, include: { payment: true, deliveryQuotation: true, restaurant: { select: { name: true, latitude: true, longitude: true } } } })
+    // Customers never negotiate: only ACCEPT or DECLINE reach here (REVIEW is refused by checkResponse).
     if (!order?.deliveryQuotation) throw new QuoteError('QUOTE_NOT_FOUND', 'There’s no delivery price for this order.', 404)
     const quote = order.deliveryQuotation
     // Expire first, so an old price can never be accepted.
@@ -87,7 +101,7 @@ export async function respondToQuote(db, orderId, customer, { action, version, m
     if (action === 'ACCEPT') {
       // The agreed fee becomes the order's delivery fee; the order is now payable (never paid or confirmed here).
       const totals = totalsWithDeliveryFee(order, offer.feeMinor)
-      const moved = await tx.order.updateMany({ where: { id: order.id, status: 'AWAITING_DELIVERY_QUOTE' }, data: { ...totals, status: 'PENDING_PAYMENT', deliveryPricingMethod: offer.pricingMethod, ...(offer.riderPayMinor != null ? { plannedRiderPayMinor: offer.riderPayMinor } : {}), ...(offer.agreedRiderId ? { agreedRiderId: offer.agreedRiderId } : {}) } })
+      const moved = await tx.order.updateMany({ where: { id: order.id, status: 'AWAITING_DELIVERY_QUOTE' }, data: { ...totals, status: 'PENDING_PAYMENT', deliveryPricingMethod: offer.pricingMethod, ...(offer.riderPayMinor != null ? { plannedRiderPayMinor: offer.riderPayMinor } : {}), ...fundingOnAccept(order, offer), ...(offer.agreedRiderId ? { agreedRiderId: offer.agreedRiderId } : {}) } })
       if (moved.count !== 1) throw new QuoteError('ORDER_STATE_CHANGED', 'This order just changed. Please refresh.')
       if (order.payment) {
         const settings = order.payment.method === 'BANK_TRANSFER' ? await tx.platformSetting.findUnique({ where: { key: 'payment_settings' } }).catch(() => null) : null

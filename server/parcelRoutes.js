@@ -13,6 +13,7 @@ import { notifyAdmins, notifyUsers } from './notify.js'
 import { dispatchDelivery } from './dispatch.js'
 import { recordParcelPaid } from './financeLedger.js'
 import { dailySeries } from './partnerToday.js'
+import { can } from './staff.js'
 
 const phone = z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/, 'Enter a valid phone number')
 const text = (max) => z.string().trim().min(1).max(max)
@@ -67,7 +68,7 @@ export function serializeParcel(booking, viewer) {
   const deliveryActive = delivery ? activeLocationStatuses.has(delivery.status) : false
   const isOwner = viewer.role === 'CUSTOMER' && viewer.id === booking.customerId
   const isAssignedRider = viewer.role === 'RIDER' && viewer.rider?.id && viewer.rider.id === booking.riderId
-  const isAdmin = viewer.role === 'ADMIN'
+  const isAdmin = viewer.role === 'ADMIN' && can(viewer, 'dispatch')
   const showContacts = isOwner || isAdmin || (isAssignedRider && deliveryActive)
   const rider = booking.rider
   return {
@@ -281,7 +282,7 @@ export function createParcelRouter({ prisma, requireUser, requireAdmin, getPayme
       if (!booking) return response.status(404).json({ error: 'PARCEL_NOT_FOUND' })
       const allowed = (request.user.role === 'CUSTOMER' && booking.customerId === request.user.id)
         || (request.user.role === 'RIDER' && request.user.rider && (booking.riderId === request.user.rider.id || (booking.delivery?.status === 'REQUESTED' && booking.delivery.requestedRiderId === request.user.rider.id)))
-        || request.user.role === 'ADMIN'
+        || (request.user.role === 'ADMIN' && can(request.user, 'dispatch'))
       if (!allowed) return response.status(404).json({ error: 'PARCEL_NOT_FOUND' })
       return response.json({ booking: serializeParcel(booking, request.user) })
     } catch (error) { return fail(response, error) }

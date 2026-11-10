@@ -51,6 +51,18 @@ function Overview() {
   return <section className="dq-overview" aria-label="Last 30 days">{tiles.map(([label, value]) => <div key={label}><small>{label}</small><b>{value}</b></div>)}</section>
 }
 
+/** Approved rider road reports about the drop-off area (suggestions only — dated, with how many riders agree). */
+function RiderRouteHints({ area }) {
+  const [data, setData] = useState(null)
+  useEffect(() => { if (area && area.trim().length > 1) call(`/api/admin/road-reports/suggestions?area=${encodeURIComponent(area.trim().slice(0, 120))}`).then(setData).catch(() => setData(null)) }, [area])
+  if (!data?.reports?.length) return null
+  return <section className="dq-card">
+    <h3>What riders say about this area</h3>
+    <p className="dq-muted">{data.confidence.riders} rider{data.confidence.riders === 1 ? '' : 's'} with approved, recent reports{data.suggestedKm != null ? ` · usual real distance about ${data.suggestedKm} km` : ''}. These are suggestions, not measurements.</p>
+    <ul className="dq-hints">{data.reports.map((report) => <li key={report.id} className={report.stale ? 'is-stale' : ''}><b>{report.kindText}</b> · {report.area}: {report.note}{report.distanceKm != null ? ` (${report.distanceKm} km)` : ''}{report.extraChargeMinor != null ? ` · suggests +${naira(report.extraChargeMinor)}` : ''}<small>{new Date(report.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}{report.stale ? ' · over 90 days old' : ''}</small></li>)}</ul>
+  </section>
+}
+
 function Detail({ id, onBack, onChanged }) {
   const [quote, setQuote] = useState(null)
   const [error, setError] = useState('')
@@ -76,8 +88,8 @@ function Detail({ id, onBack, onChanged }) {
     if (confirmText && !window.confirm(confirmText)) return
     setBusy(kind); setResult({ tone: '', text: '' })
     try {
-      await call(`/api/admin/delivery-quotes/${id}/${kind}`, { method: 'POST', body })
-      setResult({ tone: 'ok', text: kind === 'offer' ? 'Sent. The customer has been notified.' : kind === 'ask-riders' ? 'Riders asked. Their prices will appear here as they answer.' : kind === 'keep' ? 'The customer was told the price stays the same.' : 'Request cancelled and the customer told.' })
+      const answer = await call(`/api/admin/delivery-quotes/${id}/${kind}`, { method: 'POST', body })
+      setResult({ tone: 'ok', text: kind === 'offer' ? (answer?.funding ? `Sent. Under this business’s delivery deal the customer was asked ${naira(answer.customerFeeMinor)}; the rest is paid by ${answer.funding.merchantMinor ? 'the business' : 'DOORSTEP'}.` : 'Sent. The customer has been notified.') : kind === 'ask-riders' ? 'Riders asked. Their prices will appear here as they answer.' : kind === 'keep' ? 'The customer was told the price stays the same.' : 'Request cancelled and the customer told.' })
       await load(); loadRiderPrices(); onChanged()
     } catch (actError) { setResult({ tone: 'error', text: actError.message }) } finally { setBusy('') }
   }
@@ -121,6 +133,7 @@ function Detail({ id, onBack, onChanged }) {
 
     {latestReview && quote.status === 'CUSTOMER_REVIEW_REQUESTED' && <section className="dq-card is-alert"><h3>The customer asked for a better price</h3><p>“{latestReview.customerMessage || 'No message'}”</p><small>On the offer of {naira(latestReview.feeMinor)}, {when(latestReview.respondedAt)}</small></section>}
 
+    {open && <RiderRouteHints area={quote.landmark || order.landmarkSnapshot || String(order.addressSnapshot || '').split(',').slice(-2).join(',')} />}
     {open && order.status === 'AWAITING_DELIVERY_QUOTE' && <section className="dq-card">
       <h3><Bike size={16} /> Agree the price with riders</h3>
       <p className="dq-muted">Riders see the store, the drop-off area, landmark and distance — never the customer’s name, phone or exact address. Customers don’t take part; they only accept or decline the final price.</p>
@@ -145,7 +158,7 @@ function Detail({ id, onBack, onChanged }) {
       </div>
       <label className="dq-field">Rider’s pay for this trip (₦)<input inputMode="numeric" value={form.riderPay} onChange={(event) => setForm({ ...form, riderPay: event.target.value.replace(/[^\d]/g, '').slice(0, 6), riderId: '' })} placeholder="e.g. 1200" /></label>
       {form.riderId && <small className="dq-muted">The rider who agreed this price will be offered the job first.</small>}
-      {form.method !== 'FREE_DELIVERY' && <label className="dq-field">Delivery fee the customer pays (₦)<input inputMode="numeric" value={form.fee} onChange={(event) => setForm({ ...form, fee: event.target.value.replace(/[^\d]/g, '').slice(0, 7) })} placeholder="e.g. 1500" /></label>}
+      {form.method !== 'FREE_DELIVERY' && <label className="dq-field">Delivery price (₦) <small>If the business has a delivery deal, it decides how much of this the customer pays.</small><input inputMode="numeric" value={form.fee} onChange={(event) => setForm({ ...form, fee: event.target.value.replace(/[^\d]/g, '').slice(0, 7) })} placeholder="e.g. 1500" /></label>}
       {form.riderPay !== '' && (form.method === 'FREE_DELIVERY' || form.fee !== '') && <p className={`dq-margin ${(form.method === 'FREE_DELIVERY' ? 0 : Number(form.fee)) - Number(form.riderPay) < 0 ? 'is-loss' : ''}`}>DOORSTEP keeps {naira(((form.method === 'FREE_DELIVERY' ? 0 : Number(form.fee)) - Number(form.riderPay)) * 100)} of the delivery fee{(form.method === 'FREE_DELIVERY' ? 0 : Number(form.fee)) - Number(form.riderPay) < 0 ? ' — that’s a loss on this delivery' : ''}.</p>}
       <label className="dq-field">Message to the customer (optional)<textarea rows={2} maxLength={400} value={form.explanation} onChange={(event) => setForm({ ...form, explanation: event.target.value })} placeholder="e.g. Your area is off the main road, so the rider needs extra time." /></label>
       <label className="dq-field">Price valid for<select value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })}>{[['2', '2 hours'], ['6', '6 hours'], ['12', '12 hours'], ['24', '1 day'], ['48', '2 days']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

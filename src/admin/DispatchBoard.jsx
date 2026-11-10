@@ -68,3 +68,66 @@ export function ConfirmDeliveredButton({ deliveryId, onDone }) {
     {error && <small role="alert">{error}</small>}
   </form>
 }
+
+const BEFORE_PICKUP = ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT']
+const ON_THE_WAY = ['PICKED_UP', 'GOING_TO_CUSTOMER']
+const nairaText = (minor) => `₦${(Math.round(minor || 0) / 100).toLocaleString('en-NG')}`
+
+/**
+ * Admin controls on a live delivery: before pickup, take the rider off (and optionally give the job to someone
+ * else); after pickup, record a failed delivery with the refund and the rider's pay for the trip.
+ */
+export function DeliveryControls({ delivery, onDone }) {
+  const [mode, setMode] = useState(null)
+  const [riders, setRiders] = useState([])
+  const [reasons, setReasons] = useState([])
+  const [form, setForm] = useState({ reason: '', riderId: '', note: '', refund: '', riderPay: '' })
+  const [state, setState] = useState({ busy: false, error: '', ok: '' })
+  useEffect(() => {
+    if (mode === 'reassign') call('/api/admin/dispatch').then((data) => setRiders((data.riders || []).filter((rider) => rider.online && !rider.busy))).catch(() => setRiders([]))
+    if (mode === 'fail') {
+      call('/api/admin/delivery-failure-reasons').then((data) => setReasons(data.reasons)).catch(() => setReasons([]))
+      setForm((current) => ({ ...current, refund: String(Math.round((delivery.paidMinor || 0) / 100)), riderPay: delivery.plannedRiderPayMinor != null ? String(Math.round(delivery.plannedRiderPayMinor / 100)) : '' }))
+    }
+  }, [mode])
+  const submit = async (event) => {
+    event.preventDefault()
+    setState({ busy: true, error: '', ok: '' })
+    try {
+      if (mode === 'reassign') {
+        const result = await call(`/api/admin/deliveries/${delivery.id}/unassign`, { method: 'POST', body: { reason: form.reason, ...(form.riderId ? { riderId: form.riderId } : {}) } })
+        setState({ busy: false, error: '', ok: result.message || (result.offered ? 'Done. The new rider has been offered the job.' : 'Done. The job is waiting for a rider again; automatic dispatch will offer it.') })
+      } else {
+        const body = { reason: form.reason, note: form.note, refundMinor: Math.round(Number(form.refund || 0) * 100), riderPayMinor: form.riderPay === '' ? null : Math.round(Number(form.riderPay) * 100) }
+        if (!window.confirm(`Close ${delivery.orderNumber} as a failed delivery? Refund ${nairaText(body.refundMinor)} to the customer and pay the rider ${nairaText(body.riderPayMinor)}.`)) { setState({ busy: false, error: '', ok: '' }); return }
+        await call(`/api/admin/deliveries/${delivery.id}/fail`, { method: 'POST', body })
+        setState({ busy: false, error: '', ok: 'Recorded. The customer and rider were told; any refund is in Money › Refunds.' })
+      }
+      setMode(null); onDone?.()
+    } catch (error) { setState({ busy: false, error: error.message, ok: '' }) }
+  }
+  const before = BEFORE_PICKUP.includes(delivery.status)
+  const onTheWay = ON_THE_WAY.includes(delivery.status)
+  if (!before && !onTheWay) return null
+  if (!mode) return <span className="db-controls">
+    {before && <button type="button" className="db-small" onClick={() => setMode('reassign')}>Take off / reassign</button>}
+    {onTheWay && <button type="button" className="db-small is-danger" onClick={() => setMode('fail')}>Delivery failed</button>}
+    {state.ok && <small className="db-ok" role="status">{state.ok}</small>}
+  </span>
+  return <form className="db-panel" onSubmit={submit}>
+    {mode === 'reassign' ? <>
+      <b>Take the rider off {delivery.orderNumber}</b>
+      <label>Why<input required minLength={3} maxLength={300} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="e.g. Rider’s bike broke down" /></label>
+      <label>Give it to<select value={form.riderId} onChange={(event) => setForm({ ...form, riderId: event.target.value })}><option value="">Nobody yet: automatic dispatch</option>{riders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` · ${rider.phone}` : ''}</option>)}</select></label>
+    </> : <>
+      <b>{delivery.orderNumber}: delivery failed</b>
+      <label>Why<select required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })}><option value="">Choose…</option>{reasons.map((reason) => <option key={reason.code} value={reason.code}>{reason.text}</option>)}</select></label>
+      <label>What happened<input required minLength={5} maxLength={500} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="e.g. Called 3 times, no answer; rider waited 15 min" /></label>
+      <label>Refund to the customer (₦, paid {nairaText(delivery.paidMinor)})<input inputMode="numeric" value={form.refund} onChange={(event) => setForm({ ...form, refund: event.target.value.replace(/[^\d]/g, '') })} /></label>
+      <label>Pay the rider for the trip (₦)<input inputMode="numeric" value={form.riderPay} onChange={(event) => setForm({ ...form, riderPay: event.target.value.replace(/[^\d]/g, '') })} placeholder="0 for nothing" /></label>
+      <small>The business keeps its share (it prepared the order). Nothing is deleted; it’s all in the activity log.</small>
+    </>}
+    <span className="db-panel-actions"><button type="submit" disabled={state.busy}>{state.busy ? 'Saving…' : 'Confirm'}</button><button type="button" onClick={() => setMode(null)}>Cancel</button></span>
+    {state.error && <small role="alert" className="db-err">{state.error}</small>}
+  </form>
+}

@@ -2,6 +2,7 @@
 // the safe seed of the 36 candidate locations. Pure functions are exported for tests; database helpers take `db`.
 import { CANDIDATES, CHECKED_ON, SOURCES } from './locationCandidates.js'
 import { isCoveredPoint } from './coverage.js'
+import { can } from './staff.js'
 
 // 'incomplete' = a record still missing basics (usually its map pin). "Inactive" is shown for isActive = false.
 export const VERIFICATION_STATUSES = ['pending', 'incomplete', 'needs_review', 'needs_local_verification', 'verified', 'rejected']
@@ -255,7 +256,7 @@ export function toCsv(rows) {
 /* ----------------------------------- reviewers ---------------------------------- */
 /** Who may approve verification, coverage and delivery activation. LOCATION_REVIEWER_EMAILS narrows it. */
 export function isLocationReviewer(user, env = process.env) {
-  if (user?.role !== 'ADMIN') return false
+  if (user?.role !== 'ADMIN' || !(can(user, 'zones') || can(user, 'routes'))) return false
   const list = String(env.LOCATION_REVIEWER_EMAILS || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean)
   return !list.length || list.includes(String(user.email || '').toLowerCase())
 }

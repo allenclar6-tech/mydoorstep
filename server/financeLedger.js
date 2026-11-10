@@ -1,5 +1,6 @@
 import { fulfilmentAdjustment, naira, orderPaidEntries, orderShares, riderEarning, riderFeeEntries, splitSettledTo, withBusinessCommission } from './financeService.js'
 import { getFinanceSettings } from './financeSettings.js'
+import { getDeliveryPricing } from './deliveryPricingSettings.js'
 
 // Database side of the money rules. All writes are idempotent (LedgerEntry.dedupeKey is unique), so a webhook
 // and the callback page confirming the same payment can never double-count.
@@ -72,6 +73,12 @@ export async function recordDeliveryCompleted(db, deliveryId) {
     riderEntry = { parcelBookingId: booking.id, party: 'RIDER', riderId: delivery.rider.id, type: 'RIDER_EARNING', amountMinor: earning.amountMinor ?? 0, status: earning.amountMinor == null ? 'NEEDS_REVIEW' : 'DUE', description: earning.amountMinor == null ? `${booking.reference}: rider rates not published — DOORSTEP will set this amount` : `${booking.reference} · ${(booking.distanceMeters / 1000).toFixed(1)} km`, dedupeKey: `RIDER_EARNING:parcel:${booking.id}` }
   }
   if (riderEntry) entries.push(riderEntry)
+  // Waiting pay: the rider tapped “I've arrived” and waited longer than the free minutes (DOORSTEP pays it).
+  if (riderEntry && delivery.order && delivery.arrivedAtCustomerAt) {
+    const waiting = (await getDeliveryPricing(db)).waiting
+    const amountMinor = waitingPay(waiting, delivery.arrivedAtCustomerAt, delivery.deliveredAt || new Date())
+    if (amountMinor > 0) entries.push({ orderId: delivery.order.id, party: 'RIDER', riderId: delivery.rider.id, type: 'WAITING_PAY', amountMinor, status: 'DUE', description: `${delivery.order.orderNumber} · waiting time at the customer`, dedupeKey: `WAITING_PAY:order:${delivery.order.id}` })
+  }
   // Customer tip: all of it goes to whoever delivered (a business's own rider is paid through the business).
   if (delivery.order?.tipMinor > 0) {
     const order = delivery.order
@@ -83,6 +90,13 @@ export async function recordDeliveryCompleted(db, deliveryId) {
   if (riderEntry?.status === 'DUE') entries.push(...riderFeeEntries(riderFeeSource(riderEntry), riderEntry.amountMinor, settings))
   await writeEntries(db, entries)
   return riderEntry
+}
+
+/** Minutes waited beyond the free minutes × the per-minute rate, capped. 0 when switched off. */
+export function waitingPay(settings, arrivedAt, deliveredAt) {
+  if (!settings?.enabled || !arrivedAt || !deliveredAt) return 0
+  const minutes = Math.floor((new Date(deliveredAt) - new Date(arrivedAt)) / 60_000) - settings.freeMinutes
+  return minutes > 0 ? Math.min(settings.maxMinor, minutes * settings.perMinuteMinor) : 0
 }
 
 /** Identifies the delivery behind a rider earning, for its fee rows. */

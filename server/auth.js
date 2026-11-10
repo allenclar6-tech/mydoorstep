@@ -42,6 +42,8 @@ export async function authenticateBearerToken(token) {
 }
 
 export async function requireUser(request, response, next) {
+  // Already signed in earlier in this request (e.g. by the /api/admin staff guard): don't look the session up twice.
+  if (request.user && request.sessionId) return next()
   const header = request.get('authorization') || ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : null
   if (!token) return response.status(401).json({ error: 'AUTHENTICATION_REQUIRED' })

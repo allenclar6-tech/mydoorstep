@@ -15,6 +15,7 @@ const PAYOUT_STATUS_TEXT = { PENDING: 'being sent', PROCESSING: 'being sent', PA
 const TYPE_TEXT = {
   RIDER_EARNING: 'Delivery earning', RIDER_SERVICE_FEE: 'DOORSTEP rider fee', TIP: 'Customer tip', PARTNER_SHARE: 'Sales share',
   ADJUSTMENT: 'Adjustment', WITHDRAWAL_FEE: 'Cash-out fee', BALANCE_CARRIED: 'Balance carried', DELIVERY: 'Delivery',
+  WAITING_PAY: 'Waiting time pay',   DELIVERY_CONTRIBUTION: 'Delivery contribution (deal)', DELIVERY_SUBSIDY: 'Delivery paid by DOORSTEP (deal)',
   ORDER_COMMISSION: 'Commission', SERVICE_FEE: 'Service fees', DELIVERY_FEE: 'Delivery fees', PARCEL_REVENUE: 'Parcel deliveries', PROMO_DISCOUNT: 'Promotions paid by DOORSTEP',
 }
 export const typeText = (type) => TYPE_TEXT[type] || String(type || '').toLowerCase().replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase())

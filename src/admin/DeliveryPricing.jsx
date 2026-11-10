@@ -4,6 +4,7 @@ import { apiBase } from '../config/apiBase'
 import { MapPointPicker } from '../map/MapPointPicker'
 import { defaultDeliveryPricing, distanceTable, isPoint, priceDelivery, slug, starterZones, STARTER_RIDER_BANDS, STARTER_RIDER_PER_KM_AFTER_MINOR } from '../../server/deliveryPricing.js'
 import { SAPELE_DIRECTORY } from '../../server/sapeleDirectory.js'
+import { useAdminAccess } from './AdminHub'
 
 const DIRECTORY_BY_ID = new Map(SAPELE_DIRECTORY.map((area) => [area.id, area]))
 
@@ -64,6 +65,9 @@ function Breakdown({ quote, warningText }) {
     ['Busy-time boost', c.boostMinor || null],
     ['Remote-area surcharge', c.remoteMinor || null],
     ['Weekend surcharge', c.weekendMinor || null],
+    ['Difficult access', c.difficultAccessMinor || null],
+    ['Night delivery', c.nightMinor || null],
+    [`High demand (${c.demandPercent || 0}%)`, c.demandMinor || null],
     ['Margin protection top-up', c.marginTopUpMinor || null],
     ['Rounding', c.roundingMinor || null],
     ['Free delivery', c.freeDeliveryMinor ? -c.freeDeliveryMinor : null],
@@ -144,7 +148,7 @@ function EasySetup({ pricing, setP, riderPay, setRiderPay, table, saving, onSave
       <h2>Set your delivery prices in 3 steps</h2>
       <ol className="dp-steps"><li><b>Fill in the boxes</b> below (or press “Use suggested prices”).</li><li><b>Check the table</b> — it shows what a customer pays at each distance.</li><li><b>Press “Save and turn on”.</b> Checkout starts using these prices straight away.</li></ol>
       <button type="button" className="dp-secondary" onClick={useSuggested}>Use suggested prices</button>
-      {unpinnedCount > 0 && <p className="dp-note"><AlertTriangle size={15} aria-hidden="true" /> {unpinnedCount} business{unpinnedCount === 1 ? ' has' : 'es have'} not pinned their shop on the map yet. Ask them to open <b>Business profile → Set location</b>, so their delivery fee is measured from the right place.</p>}
+      {unpinnedCount > 0 && <p className="dp-note"><AlertTriangle size={15} aria-hidden="true" /><span>{unpinnedCount} business{unpinnedCount === 1 ? ' has' : 'es have'} not pinned their shop on the map yet. Ask them to open <b>Business profile → Set location</b>, so their delivery fee is measured from the right place.</span></p>}
     </div>
 
     <div className="dp-card">
@@ -192,6 +196,8 @@ function EasySetup({ pricing, setP, riderPay, setRiderPay, table, saving, onSave
 
 export function DeliveryPricingAdmin() {
   const [loaded, setLoaded] = useState(null)
+  const access = useAdminAccess()
+  const [scheduleAt, setScheduleAt] = useState('')
   const [pricing, setPricing] = useState(null)
   const [riderPay, setRiderPay] = useState(null)
   const [tab, setTab] = useState('easy')
@@ -227,7 +233,7 @@ export function DeliveryPricingAdmin() {
   if (error && !loaded) return <section className="dp"><div className="dp-card dp-alert"><AlertTriangle size={18} />{error}</div></section>
   if (!loaded || !pricing || !riderPay) return <section className="dp"><div className="dp-card">Loading delivery pricing…</div></section>
 
-  const setP = (path, value) => setPricing((current) => { const next = structuredClone(current); let target = next; for (const part of path.slice(0, -1)) target = target[part]; target[path.at(-1)] = value; return next })
+  const setP = (path, value) => setPricing((current) => { const next = structuredClone(current); let target = next; for (const part of path.slice(0, -1)) target = target[part] ??= {}; target[path.at(-1)] = value; return next })
   const placedCount = pricing.zones.filter(isPoint).length
   const unpinned = loaded.businesses.filter((entry) => !entry.pinned)
   const negativeRows = table.filter((row) => row.deliveryMarginMinor != null && row.deliveryMarginMinor < 0).length
@@ -244,6 +250,15 @@ export function DeliveryPricingAdmin() {
   const save = async (publish = pricing.published) => {
     setSaving(true); setMessage(''); setError('')
     try {
+      // Scheduled: kept aside and switched on automatically at the chosen time.
+      if (scheduleAt) {
+        const when = new Date(scheduleAt)
+        const data = await call('/api/admin/delivery-pricing', { method: 'PUT', body: { pricing: { ...withoutFlags(pricing), published: publish }, riderPay: finance.riderPay, activatesAt: when.toISOString() } })
+        setLoaded((current) => ({ ...current, scheduled: data.scheduled }))
+        setMessage(`Scheduled. These prices switch on ${when.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}. Until then the current prices stay.`)
+        setScheduleAt('')
+        return
+      }
       const data = await call('/api/admin/delivery-pricing', { method: 'PUT', body: { pricing: { ...withoutFlags(pricing), published: publish }, riderPay: finance.riderPay } })
       setLoaded((current) => ({ ...current, pricing: data.pricing, finance: data.finance }))
       setPricing(structuredClone(data.pricing)); setRiderPay(structuredClone(data.finance.riderPay))
@@ -271,7 +286,9 @@ export function DeliveryPricingAdmin() {
       <span className={pricing.published ? 'dp-live is-on' : 'dp-live'}>{pricing.published ? <><Check size={14} />ON</> : 'OFF'}</span>
     </header>
 
-    {!loaded.routingConfigured && <div className="dp-card dp-alert"><AlertTriangle size={18} /><span>Road routing isn’t configured on the server yet (add the Mapbox server token on Render). Until it is, distances are estimated from the straight line × {pricing.distance.detourFactor}.</span></div>}
+    {!loaded.routingConfigured && <div className="dp-card dp-alert"><AlertTriangle size={18} /><span>Road routing isn’t set up on the server yet. Add the routing settings to the API in Coolify (see docs/ROUTING.md). Until then, distances between exact pins are estimated from the straight line × {pricing.distance.detourFactor}.</span></div>}
+    {loaded.routing?.configured?.length > 0 && <div className="dp-card dp-routing"><Route size={18} aria-hidden="true" /><span>Road distances from: {loaded.routing.configured.map((name) => { const health = loaded.routing.health?.[name]; return `${name === 'osrm' ? 'your OSRM server' : 'Mapbox'}${health ? (health.ok ? ' (working)' : ` (last try failed: ${health.code})`) : ''}` }).join(', then ')}.</span></div>}
+    {loaded.scheduled && <div className="dp-card dp-scheduled"><span>New prices are scheduled to switch on <b>{new Date(loaded.scheduled.activatesAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b>{loaded.scheduled.by ? ` (set by ${loaded.scheduled.by})` : ''}.</span><button type="button" className="dp-ghost" onClick={async () => { if (!window.confirm('Cancel the scheduled price change?')) return; try { await call('/api/admin/delivery-pricing/scheduled', { method: 'DELETE' }); setLoaded((current) => ({ ...current, scheduled: null })); setMessage('Scheduled change cancelled.') } catch (cancelError) { setError(cancelError.message) } }}>Cancel it</button></div>}
     {negativeRows > 0 && <div className="dp-card dp-alert"><AlertTriangle size={18} /><span>{negativeRows} distance{negativeRows > 1 ? 's' : ''} in the table lose money on delivery. Turn on margin protection or adjust the rates.</span></div>}
 
     <nav className="dp-tabs" aria-label="Delivery pricing sections">{TABS.map(([key, label, Icon]) => <button type="button" key={key} className={tab === key ? 'is-on' : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}><Icon size={15} aria-hidden="true" />{label}</button>)}</nav>
@@ -373,6 +390,7 @@ export function DeliveryPricingAdmin() {
         <Toggle checked={pricing.manualQuotes.autoPriceExactPins !== false} onChange={(v) => setP(['manualQuotes', 'autoPriceExactPins'], v)} label="Charge by the km automatically when the store and the customer both dropped exact map pins (even if road routing is down)" />
         <p className="dp-muted">Addresses with no map pin are never given a guessed price — they always wait for you to confirm.</p>
         <Toggle checked={pricing.manualQuotes.quoteBeyondMaxDistance} onChange={(v) => setP(['manualQuotes', 'quoteBeyondMaxDistance'], v)} label="Trips beyond the maximum distance get a manual price (instead of being refused)" />
+        <Toggle checked={Boolean(pricing.coverage?.requireApprovedZone)} onChange={(v) => setP(['coverage', 'requireApprovedZone'], v)} label="Only deliver inside approved delivery areas (addresses outside every area are refused at checkout)" />
       </div>
 
       <div className="dp-card"><h2><Scale size={18} aria-hidden="true" />Extras and free delivery</h2>
@@ -383,11 +401,41 @@ export function DeliveryPricingAdmin() {
         </div>
         <Toggle checked={pricing.surcharges.weekend.active} onChange={(v) => setP(['surcharges', 'weekend', 'active'], v)} label="Charge the weekend surcharge on Saturdays and Sundays" />
         <Toggle checked={pricing.freeDelivery.active} onChange={(v) => setP(['freeDelivery', 'active'], v)} label="Free delivery above the amount (DOORSTEP still pays the rider)" />
+        <h3 className="dp-sub">Night deliveries</h3>
+        <div className="dp-grid">
+          <NumberField label="From (hour, 0–23)" value={pricing.surcharges.night.fromHour} step="1" onChange={(v) => setP(['surcharges', 'night', 'fromHour'], Math.min(23, Math.max(0, Math.round(v))))} />
+          <NumberField label="Until (hour, 0–23)" value={pricing.surcharges.night.toHour} step="1" onChange={(v) => setP(['surcharges', 'night', 'toHour'], Math.min(23, Math.max(0, Math.round(v))))} />
+          <NairaField label="Night charge (customer)" minor={pricing.surcharges.night.minor} onChange={(v) => setP(['surcharges', 'night', 'minor'], v ?? 0)} />
+          <NairaField label="Night extra for the rider" minor={pricing.surcharges.night.riderMinor} onChange={(v) => setP(['surcharges', 'night', 'riderMinor'], v ?? 0)} />
+        </div>
+        <Toggle checked={pricing.surcharges.night.active} onChange={(v) => setP(['surcharges', 'night', 'active'], v)} label="Charge the night delivery charge in these hours (Lagos time)" />
+        <h3 className="dp-sub">Rider waiting pay</h3>
+        <div className="dp-grid">
+          <NumberField label="Free waiting minutes" value={pricing.waiting.freeMinutes} step="1" onChange={(v) => setP(['waiting', 'freeMinutes'], Math.max(0, Math.round(v)))} />
+          <NairaField label="Per extra minute" minor={pricing.waiting.perMinuteMinor} onChange={(v) => setP(['waiting', 'perMinuteMinor'], v ?? 0)} />
+          <NairaField label="Most per delivery" minor={pricing.waiting.maxMinor} onChange={(v) => setP(['waiting', 'maxMinor'], v ?? 0)} />
+        </div>
+        <Toggle checked={pricing.waiting.enabled} onChange={(v) => setP(['waiting', 'enabled'], v)} label="Pay riders for waiting at the customer after they tap “I’ve arrived” (paid by DOORSTEP, not charged to the customer)" />
         <label className="dp-field"><span>Fixed area prices and agreed route prices</span><select value={pricing.precedence} onChange={(event) => setP(['precedence'], event.target.value)}>
           <option value="DISTANCE_FIRST">Agreed route prices, otherwise the real km; an area’s fixed price only when the km can’t be measured</option>
           <option value="AREA_FIRST">Always use the area’s fixed price</option>
           <option value="ROUTE_FIRST">Always use the agreed route price</option>
         </select></label>
+      </div>
+
+      <div className="dp-card"><h2><CloudRain size={18} aria-hidden="true" />Demand-based pricing <small>{pricing.demand.enabled ? 'ON' : 'OFF'}</small></h2>
+        <p className="dp-muted">Off at launch. When on, the delivery fee goes up a little when many orders are waiting per free rider, within the limits below, and customers see it as its own “High demand” line before paying. {access?.owner ? 'Only you (Super admin) can change this.' : 'Only a Super admin (the platform owner) can change this.'}</p>
+        <fieldset className="dp-fieldset" disabled={!access?.owner}>
+          <div className="dp-grid">
+            <NumberField label="Starts at (waiting orders per free rider)" value={pricing.demand.triggerRatio} step="1" onChange={(v) => setP(['demand', 'triggerRatio'], Math.max(1, v))} />
+            <NumberField label="Rise per step" value={pricing.demand.stepPercent} suffix="%" step="1" onChange={(v) => setP(['demand', 'stepPercent'], Math.max(1, v))} />
+            <NumberField label="Highest rise" value={pricing.demand.maxPercent} suffix="%" step="1" onChange={(v) => setP(['demand', 'maxPercent'], Math.min(100, Math.max(0, v)))} />
+            <NairaField label="Never more than" minor={pricing.demand.maxExtraMinor} onChange={(v) => setP(['demand', 'maxExtraMinor'], v ?? 0)} />
+            <NumberField label="Rider gets of the extra" value={pricing.demand.riderSharePercent} suffix="%" step="5" onChange={(v) => setP(['demand', 'riderSharePercent'], Math.min(100, Math.max(0, v)))} />
+          </div>
+          <label className="dp-field"><span>Only in these areas (none ticked = everywhere)</span><span className="dp-checks">{pricing.zones.filter((zone) => zone.active).map((zone) => <label key={zone.id}><input type="checkbox" checked={pricing.demand.zoneIds.includes(zone.id)} onChange={(event) => setP(['demand', 'zoneIds'], event.target.checked ? [...pricing.demand.zoneIds, zone.id] : pricing.demand.zoneIds.filter((value) => value !== zone.id))} />{zone.name}</label>)}</span></label>
+          <Toggle checked={pricing.demand.enabled} onChange={(v) => { if (v && !window.confirm('Switch on demand-based pricing? Delivery fees will rise automatically when riders are scarce, within your limits.')) return; setP(['demand', 'enabled'], v) }} label="Switch on demand-based pricing" />
+        </fieldset>
       </div>
     </>}
 
@@ -402,6 +450,7 @@ export function DeliveryPricingAdmin() {
             <NairaField label="Customer surcharge" minor={zone.customerSurchargeMinor} onChange={(v) => setP(['zones', index, 'customerSurchargeMinor'], v ?? 0)} />
             <NairaField label="Rider bonus" minor={zone.riderBonusMinor} onChange={(v) => setP(['zones', index, 'riderBonusMinor'], v ?? 0)} />
             <NairaField label="Fixed delivery price" minor={zone.fixedFeeMinor ?? null} allowEmpty onChange={(v) => setP(['zones', index, 'fixedFeeMinor'], v)} hint="Leave empty to price by distance. Works without a map pin." />
+            <NairaField label="Difficult-access charge" minor={zone.difficultAccessMinor || 0} onChange={(v) => setP(['zones', index, 'difficultAccessMinor'], v ?? 0)} hint="Bad road, river crossing, steep track. Check rider road reports." />
           </div>
           <Toggle checked={Boolean(zone.remote)} onChange={(v) => setP(['zones', index, 'remote'], v)} label="Remote / hard-to-reach area (adds the remote surcharge)" />
           <div className="dp-row-actions"><Toggle checked={zone.active} onChange={(v) => setP(['zones', index], { ...zone, active: v })} label="Active" />
@@ -443,7 +492,8 @@ export function DeliveryPricingAdmin() {
       <div>{error ? <span className="dp-error">{error}</span> : message ? <span className="dp-ok">{message}</span> : <span>{dirty ? 'Unsaved changes' : 'All changes saved'}</span>}</div>
       <div className="dp-savebar-actions">
         {dirty && <button type="button" className="dp-ghost" disabled={saving} onClick={() => { setPricing(structuredClone(loaded.pricing)); setRiderPay(structuredClone(loaded.finance.riderPay)); setError(''); setMessage('') }}><X size={15} />Discard</button>}
-        <button type="button" className="dp-ghost" disabled={saving || !dirty} onClick={() => save()}><Save size={15} />Save</button>
+        {dirty && <label className="dp-schedule"><span>Switch on at</span><input type="datetime-local" value={scheduleAt} min={new Date(Date.now() + 120_000 + 3_600_000).toISOString().slice(0, 16)} onChange={(event) => setScheduleAt(event.target.value)} aria-label="Switch these prices on at (optional)" /></label>}
+        <button type="button" className="dp-ghost" disabled={saving || !dirty} onClick={() => save()}><Save size={15} />{scheduleAt ? 'Schedule' : 'Save'}</button>
         <button type="button" className={pricing.published ? 'dp-ghost' : 'dp-primary'} disabled={saving} onClick={() => save(!pricing.published)}>{pricing.published ? 'Unpublish' : 'Publish'}</button>
       </div>
     </div>

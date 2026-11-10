@@ -17,6 +17,8 @@ const zone = z.object({
   fixedFeeMinor: minor.nullable().default(null),
   // Remote / hard-to-reach area: adds the remote-area surcharge.
   remote: z.boolean().default(false),
+  // Extra charge for difficult access to this area (bad road, river crossing, steep track).
+  difficultAccessMinor: minor.default(0),
   active: z.boolean(),
 }).strict().refine((value) => (value.latitude == null) === (value.longitude == null), { message: 'An area needs both latitude and longitude, or neither.' })
 
@@ -58,7 +60,21 @@ export const deliveryPricingSchema = z.object({
   surcharges: z.object({
     remoteMinor: minor,
     weekend: z.object({ active: z.boolean(), minor }).strict(),
-  }).strict().default({ remoteMinor: 0, weekend: { active: false, minor: 0 } }),
+    // Night deliveries (Lagos time; wraps midnight). riderMinor is added to the rider's pay.
+    night: z.object({ active: z.boolean(), fromHour: z.number().int().min(0).max(23), toHour: z.number().int().min(0).max(23), minor, riderMinor: minor }).strict().default({ active: false, fromHour: 21, toHour: 6, minor: 0, riderMinor: 0 }),
+  }).strict().default({ remoteMinor: 0, weekend: { active: false, minor: 0 }, night: { active: false, fromHour: 21, toHour: 6, minor: 0, riderMinor: 0 } }),
+  // Rider waiting pay: minutes between “I've arrived” and delivery, after the free minutes. Paid by DOORSTEP.
+  waiting: z.object({ enabled: z.boolean(), freeMinutes: z.number().int().min(0).max(120), perMinuteMinor: minor, maxMinor: minor }).strict().default({ enabled: false, freeMinutes: 10, perMinuteMinor: 2_000, maxMinor: 30_000 }),
+  // Demand-based pricing (surge). OFF by default; only a Super admin (the platform owner) may change it.
+  demand: z.object({
+    enabled: z.boolean(),
+    triggerRatio: z.number().min(1).max(20),
+    stepPercent: z.number().min(1).max(50),
+    maxPercent: z.number().min(0).max(100),
+    maxExtraMinor: minor,
+    riderSharePercent: z.number().min(0).max(100),
+    zoneIds: z.array(id).max(80),
+  }).strict().default({ enabled: false, triggerRatio: 3, stepPercent: 10, maxPercent: 30, maxExtraMinor: 50_000, riderSharePercent: 100, zoneIds: [] }),
   freeDelivery: z.object({ active: z.boolean(), thresholdMinor: minor }).strict().default({ active: false, thresholdMinor: 0 }),
   // DISTANCE_FIRST: agreed route prices, else the measured kilometres whenever they're reliable, and a fixed area
   // price only when they aren't. AREA_FIRST / ROUTE_FIRST: fixed prices always win (which one first when both exist).

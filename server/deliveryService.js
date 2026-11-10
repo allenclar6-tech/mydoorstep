@@ -3,6 +3,7 @@ import { parcelStatusByDeliveryStatus, RIDER_REQUEST_TTL_MS } from './parcelServ
 import { notifyUsers, restaurantTeamIds } from './notify.js'
 import { naira, recordDeliveryCompleted } from './financeLedger.js'
 import { codeMatches, deliveryCodeFor, deliveryCodeSecret, MAX_CODE_ATTEMPTS } from './dispatch.js'
+import { can } from './staff.js'
 
 export const deliveryTransitions = {
   AVAILABLE: ['REQUESTED', 'CANCELLED'],
@@ -257,7 +258,7 @@ export async function getDeliveryTrackingSnapshot(deliveryId, user, { activeOnly
   const ownerId = delivery.order?.customerId || delivery.parcelBooking?.customerId
   const assignedRider = user.role === 'RIDER' && user.rider?.id === delivery.riderId
   const customer = user.role === 'CUSTOMER' && user.id === ownerId
-  const administrator = user.role === 'ADMIN' && active
+  const administrator = user.role === 'ADMIN' && active && can(user, 'dispatch')
   if (!customer && !assignedRider && !administrator) throw serviceError('DELIVERY_ACCESS_FORBIDDEN', 'You cannot track this delivery.', 403)
   if (activeOnly && !active) throw serviceError('LOCATION_NOT_ACTIVE', 'Live tracking is only available for active deliveries.', 409)
   // Precise rider position is only disclosed while the delivery is active.

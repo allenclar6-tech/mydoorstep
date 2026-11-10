@@ -17,13 +17,17 @@ import { PushPrompt } from './notifications/PushPrompt'
 import { InstallApp } from './app/InstallApp'
 import { AdminAppDownload } from './admin/AdminAppDownload'
 import { AdminAppPage } from './admin/AdminAppPage'
-import { ConfirmDeliveredButton, DispatchBoard } from './admin/DispatchBoard'
+import { ConfirmDeliveredButton, DeliveryControls, DispatchBoard } from './admin/DispatchBoard'
 import { SessionSignOutButton, SignOutNotice } from './authControls'
 import { apiBase } from './config/apiBase'
 import { AdminSettings } from './admin/AdminSettings'
 import { DeliveryQuotes } from './admin/DeliveryQuotes'
 import { OrderChats } from './admin/OrderChats'
 import { Books } from './admin/Books'
+import { Staff } from './admin/Staff'
+import { MerchantDeals } from './admin/MerchantDeals'
+import { DeliveryOverview } from './admin/DeliveryOverview'
+import { RoadReportsAdmin } from './admin/RoadReports'
 import { DocumentArchive } from './admin/DocumentArchive'
 
 const navigate = (path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
@@ -85,7 +89,7 @@ function ActiveDeliveries() {
     const timer = window.setInterval(load, 15000)
     return () => { active = false; window.clearInterval(timer) }
   }, [apiBase, token])
-  return <><AdminIntro eyebrow="DELIVERY OPERATIONS" title="Live delivery command view." /><DispatchBoard /><p className="admin-delivery-privacy">This protected view exposes only operational status, rider identity, and the latest authorized location time. Customer details and location history stay private.</p>{message && <div className="admin-login-error">{message}</div>}<section className="admin-table">{deliveries.length === 0 ? <div className="empty-state">No active deliveries are currently available.</div> : deliveries.map((delivery) => <div className="admin-table-row" key={delivery.id}><div><strong>{delivery.orderNumber}</strong><small>{delivery.restaurant} · {delivery.rider}</small></div><div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span><small>{delivery.location?.recordedAt ? `Last verified rider location: ${new Date(delivery.location.recordedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for the rider’s first verified location.'}</small>{delivery.kind === 'order' && delivery.status === 'GOING_TO_CUSTOMER' && <ConfirmDeliveredButton deliveryId={delivery.id} />}</div></div>)}</section></>
+  return <><AdminIntro eyebrow="DELIVERY OPERATIONS" title="Live delivery command view." /><DispatchBoard /><p className="admin-delivery-privacy">This protected view exposes only operational status, rider identity, and the latest authorized location time. Customer details and location history stay private.</p>{message && <div className="admin-login-error">{message}</div>}<section className="admin-table">{deliveries.length === 0 ? <div className="empty-state">No active deliveries are currently available.</div> : deliveries.map((delivery) => <div className="admin-table-row" key={delivery.id}><div><strong>{delivery.orderNumber}</strong><small>{delivery.restaurant} · {delivery.rider}</small></div><div><span className="portal-status accepted">{delivery.status.replaceAll('_', ' ')}</span><small>{delivery.location?.recordedAt ? `Last verified rider location: ${new Date(delivery.location.recordedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for the rider’s first verified location.'}</small>{delivery.arrivedAtCustomerAt && <small>Rider arrived at the customer {new Date(delivery.arrivedAtCustomerAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}</small>}{delivery.kind === 'order' && delivery.status === 'GOING_TO_CUSTOMER' && <ConfirmDeliveredButton deliveryId={delivery.id} />}{delivery.kind === 'order' && <DeliveryControls delivery={delivery} />}</div></div>)}</section></>
 }
 
 export function AdminPortal({ path, onLogout }) {
@@ -105,6 +109,10 @@ export function AdminPortal({ path, onLogout }) {
   if (path === '/admin/delivery-quotes') content = <DeliveryQuotes />
   if (path === '/admin/chats') content = <OrderChats />
   if (path === '/admin/books') content = <Books />
+  if (path === '/admin/staff') content = <Staff />
+  if (path === '/admin/merchant-deals') content = <MerchantDeals />
+  if (path === '/admin/delivery-overview') content = <DeliveryOverview />
+  if (path === '/admin/road-reports') content = <RoadReportsAdmin />
   if (path === '/admin/locations') content = <LocationsAdmin />
   if (path === '/admin/promos') content = <PromosAdmin />
   if (path === '/admin/analytics') content = <Finance />

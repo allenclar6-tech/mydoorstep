@@ -172,3 +172,18 @@ html body .dp-hero p { color: var(--t-on-dark-soft, #cfe0d6); }
 .admin-todo button > svg:first-child { color: #007c63; }
 .admin-todo button b { align-items: center; color: #007c63; display: inline-flex; font-size: .88rem; gap: 2px; white-space: nowrap; }
 .admin-todo-done { align-items: center; color: #007c63; display: flex; font-weight: 700; gap: 8px; margin: 0; }
+
+/* Night, waiting, demand, routing status, scheduling */
+.dp-sub { color: var(--t-ink); font-size: .92rem; margin: 18px 0 8px; }
+.dp-routing, .dp-scheduled { align-items: center; display: flex; flex-direction: row; flex-wrap: wrap; gap: 10px; }
+.dp-routing { background: var(--t-mint-50); color: var(--t-ink-soft); font-size: .88rem; }
+.dp-routing svg { color: var(--t-forest-700); flex: none; }
+.dp-scheduled { background: var(--t-gold-100); color: var(--t-gold-800); justify-content: space-between; }
+.dp-routing span, .dp-scheduled span { flex: 1 1 220px; }
+.dp-fieldset { border: 0; display: grid; gap: 10px; margin: 0; min-width: 0; padding: 0; }
+.dp-fieldset:disabled { opacity: .6; }
+.dp-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.dp-checks label { align-items: center; color: var(--t-ink); display: inline-flex; font-size: .86rem; font-weight: 500; gap: 6px; }
+.dp-checks input { accent-color: var(--t-forest-800); }
+.dp-schedule { align-items: center; color: var(--t-ink-soft); display: inline-flex; font-size: .82rem; font-weight: 600; gap: 6px; }
+.dp-schedule input { background: var(--t-surface); border: 1px solid var(--t-line-strong); border-radius: 10px; color: var(--t-ink); font: inherit; font-size: .85rem; min-height: 38px; padding: 0 8px; }

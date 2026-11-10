@@ -118,6 +118,17 @@ html body .ro-card h2 { color: #fff; font-size: 1.35rem; letter-spacing: -.01em;
 .db-confirm input { border: 1px solid var(--t-line-strong, #cfd9d2); border-radius: 10px; flex: 1 1 200px; font: inherit; min-height: 36px; padding: 0 10px; }
 .db-confirm button { border-radius: 10px; cursor: pointer; font: inherit; font-weight: 700; min-height: 36px; padding: 0 12px; }
 .db-confirm small { color: #b3261e; flex-basis: 100%; }
+.db-controls { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.db-small.is-danger { background: #8a2a1d; }
+.db-panel { background: var(--t-surface, #fff); border: 1px solid var(--t-line, #e3e8e2); border-radius: 12px; display: grid; gap: 8px; margin-top: 8px; max-width: 420px; padding: 12px; text-align: left; }
+.db-panel b { color: var(--t-ink, #14231d); font-size: .9rem; }
+.db-panel label { color: var(--t-ink-soft, #3d4f47); display: grid; font-size: .8rem; font-weight: 600; gap: 4px; }
+.db-panel input, .db-panel select { background: var(--t-surface, #fff); border: 1px solid var(--t-line-strong, #cfd9d2); border-radius: 10px; color: var(--t-ink, #14231d); font: inherit; font-size: .9rem; min-height: 38px; padding: 0 10px; }
+.db-panel small { color: var(--t-muted, #5b6b63); font-size: .78rem; }
+.db-panel .db-err { color: #8a2a1d; }
+.db-panel-actions { display: flex; gap: 6px; }
+.db-panel-actions button { background: var(--t-surface, #fff); border: 1px solid var(--t-line-strong, #cfd9d2); border-radius: 10px; cursor: pointer; font: inherit; font-size: .85rem; font-weight: 700; min-height: 36px; padding: 0 12px; }
+.db-panel-actions button[type='submit'] { background: var(--t-forest-800, #123d2d); border-color: var(--t-forest-800, #123d2d); color: #fff; }
 @media (prefers-reduced-motion: reduce) { .ro-card, .lo-search svg { animation: none; } }
 .rider-landmark { color: var(--t-ink-soft, #3d4f47); display: block; font-size: .8rem; font-style: normal; margin-top: 3px; }
 .rider-nav-link { color: var(--t-green-700, #00664f); display: inline-block; font-size: .84rem; font-weight: 800; margin-top: 6px; }

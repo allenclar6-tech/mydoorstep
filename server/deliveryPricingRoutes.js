@@ -5,7 +5,31 @@ import { cachedRoutes, pricingZones, resolveCalculatorPoint } from './deliveryQu
 import { deliveryBlockers, deliveryZones } from './locations.js'
 import { deliveryPricingSchema, getDeliveryPricing, saveDeliveryPricing } from './deliveryPricingSettings.js'
 import { FINANCE_SETTINGS_KEY, financeSettingsSchema, getFinanceSettings } from './financeSettings.js'
-import { routingConfigured } from './parcelService.js'
+import { routingConfigured, routingStatus } from './parcelService.js'
+import { isOwner } from './staff.js'
+
+// Pricing changes can be scheduled: saved now, switched on automatically at activatesAt (checked every minute).
+export const SCHEDULED_PRICING_KEY = 'delivery_pricing_scheduled'
+
+/** Switches on a scheduled pricing change once its time has come. Safe to run from several places at once. */
+export async function activateScheduledPricing(db, now = new Date()) {
+  const scheduled = await db.platformSetting.findUnique({ where: { key: SCHEDULED_PRICING_KEY } })
+  if (!scheduled || new Date(scheduled.value?.activatesAt) > now) return null
+  return db.$transaction(async (tx) => {
+    // Whoever deletes the scheduled row applies it; a second runner finds nothing to delete and stops.
+    const claimed = await tx.platformSetting.deleteMany({ where: { key: SCHEDULED_PRICING_KEY } })
+    if (claimed.count !== 1) return null
+    const value = await saveDeliveryPricing(tx, scheduled.value.pricing)
+    if (scheduled.value.riderPay) {
+      const finance = await getFinanceSettings(tx)
+      const { invalidStoredSettings, ...rest } = finance
+      const next = financeSettingsSchema.parse({ ...rest, riderPay: scheduled.value.riderPay })
+      await tx.platformSetting.upsert({ where: { key: FINANCE_SETTINGS_KEY }, update: { value: next }, create: { key: FINANCE_SETTINGS_KEY, value: next } })
+    }
+    await tx.auditLog.create({ data: { actorId: scheduled.value.by || null, action: 'DELIVERY_PRICING_ACTIVATED', entityType: 'PlatformSetting', entityId: 'delivery_pricing', metadata: { scheduledFor: scheduled.value.activatesAt, activatedAt: now.toISOString() } } })
+    return value
+  })
+}
 
 const point = z.object({ restaurantId: z.string().min(1).max(60).optional(), zoneId: z.string().min(1).max(40).optional(), latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional(), label: z.string().max(120).optional() })
 const calculateSchema = z.object({
@@ -70,6 +94,8 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
         finance: { commission: finance.commission, riderPay: finance.riderPay },
         businesses: restaurants.map((restaurant) => ({ id: restaurant.id, name: restaurant.name, pinned: isPoint(restaurant), ownRiders: restaurant.application?.deliveryPreference === 'OWN_RIDERS' })),
         routingConfigured: routingConfigured(),
+        routing: routingStatus(),
+        scheduled: await prisma.platformSetting.findUnique({ where: { key: SCHEDULED_PRICING_KEY } }).then((row) => row ? { activatesAt: row.value.activatesAt, by: row.value.byName || null, savedAt: row.value.savedAt } : null),
         starterRiderPay: { bands: STARTER_RIDER_BANDS, perKmAfterMinor: STARTER_RIDER_PER_KM_AFTER_MINOR },
         warningText: WARNING_TEXT,
         locations: locations.map((row) => ({ id: row.slug, locationId: row.id, name: row.name, status: row.verificationStatus, placed: isPoint(row), zone: deliveryBlockers(row).length === 0, closed: Boolean(row.closedUntil && new Date(row.closedUntil) > new Date()), surchargeMinor: row.customerSurchargeMinor, bonusMinor: row.riderBonusMinor })),
@@ -90,8 +116,24 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
     if (parsed.data.published && !(riderPay || (await getFinanceSettings(prisma)).riderPay).enabled) {
       return response.status(409).json({ error: 'RIDER_RATES_REQUIRED', message: 'Switch on rider rates before publishing delivery pricing, so every delivery has a rider amount and a margin check.' })
     }
+    // Demand-based pricing is the platform owner's decision only (it's off at launch).
+    const current = await getDeliveryPricing(prisma)
+    if (JSON.stringify(current.demand) !== JSON.stringify(parsed.data.demand) && !isOwner(request.user)) return response.status(403).json({ error: 'OWNER_ONLY', message: 'Only a Super admin (the platform owner) can change demand-based pricing.' })
+    // Scheduled change: kept aside and switched on automatically at activatesAt.
+    const activatesAt = request.body?.activatesAt ? new Date(request.body.activatesAt) : null
+    if (activatesAt) {
+      if (Number.isNaN(activatesAt.getTime()) || activatesAt < new Date(Date.now() + 60_000) || activatesAt > new Date(Date.now() + 90 * 86_400_000)) return response.status(400).json({ error: 'INVALID_ACTIVATION_TIME', message: 'Pick a time at least a minute from now and within 90 days.' })
+      try {
+        const value = { pricing: parsed.data, riderPay, activatesAt: activatesAt.toISOString(), by: request.user.id, byName: `${request.user.firstName || ''} ${request.user.lastName || ''}`.trim(), savedAt: new Date().toISOString() }
+        await prisma.$transaction([
+          prisma.platformSetting.upsert({ where: { key: SCHEDULED_PRICING_KEY }, update: { value }, create: { key: SCHEDULED_PRICING_KEY, value } }),
+          prisma.auditLog.create({ data: { actorId: request.user.id, action: 'DELIVERY_PRICING_SCHEDULED', entityType: 'PlatformSetting', entityId: 'delivery_pricing', metadata: { activatesAt: value.activatesAt, published: parsed.data.published } } }),
+        ])
+        return response.json({ scheduled: { activatesAt: value.activatesAt, by: value.byName, savedAt: value.savedAt } })
+      } catch (error) { return fail(response, error) }
+    }
     try {
-      const previous = await getDeliveryPricing(prisma)
+      const previous = current
       const saved = await prisma.$transaction(async (transaction) => {
         const value = await saveDeliveryPricing(transaction, parsed.data)
         if (riderPay) {
@@ -105,6 +147,14 @@ export function createDeliveryPricingRouter({ prisma, requireUser, requireAdmin,
       })
       const finance = await getFinanceSettings(prisma)
       return response.json({ pricing: saved, finance: { commission: finance.commission, riderPay: finance.riderPay } })
+    } catch (error) { return fail(response, error) }
+  })
+
+  router.delete('/admin/delivery-pricing/scheduled', requireUser, requireAdmin, async (request, response) => {
+    try {
+      const removed = await prisma.platformSetting.deleteMany({ where: { key: SCHEDULED_PRICING_KEY } })
+      if (removed.count) await prisma.auditLog.create({ data: { actorId: request.user.id, action: 'DELIVERY_PRICING_SCHEDULE_CANCELLED', entityType: 'PlatformSetting', entityId: 'delivery_pricing', metadata: {} } })
+      return response.json({ cancelled: removed.count > 0 })
     } catch (error) { return fail(response, error) }
   })
 

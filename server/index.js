@@ -30,7 +30,7 @@ import { fetchRoadRoutes } from './parcelService.js'
 import { applyTransferResult, createFinanceRouter } from './financeRoutes.js'
 import { runPayoutSweep } from './payoutEngine.js'
 import { createVerificationRouter } from './verificationRoutes.js'
-import { createDeliveryPricingRouter } from './deliveryPricingRoutes.js'
+import { activateScheduledPricing, createDeliveryPricingRouter } from './deliveryPricingRoutes.js'
 import { createLocationRouter } from './locationRoutes.js'
 import { createWithdrawalRouter } from './withdrawalRoutes.js'
 import { resolveAccount } from './paystackPayouts.js'
@@ -53,6 +53,11 @@ import { createQuotationRouter } from './quotationRoutes.js'
 import { createOrderChatRouter } from './orderChatRoutes.js'
 import { createBookRouter } from './bookRoutes.js'
 import { businessOrderView } from './orderViews.js'
+import { can, createStaffRouter, staffGuard } from './staff.js'
+import { applyDeal, boundedContribution, customerDealNote } from './merchantDeals.js'
+import { createMerchantDealRouter } from './merchantDealRoutes.js'
+import { createDispatchRouter } from './dispatchRoutes.js'
+import { createRoadReportRouter } from './roadReports.js'
 import { createDocumentArchiveRouter } from './documentArchive.js'
 import { initialBusinessVerification } from './businessVerification.js'
 import { availableRiderUserIds, notifyAdmins, notifyUsers, restaurantTeamIds, sendWelcome } from './notify.js'
@@ -105,6 +110,12 @@ app.get('/api/map/config', (_request, response) => {
   response.json({ provider: 'mapbox', publicToken: token.startsWith('pk.') ? token : null })
 })
 app.use('/api/navigation', createNavigationRouter())
+// Staff roles: every /api/admin request is checked against the signed-in admin's staff role before any admin route runs.
+app.use('/api/admin', requireUser, staffGuard)
+app.use('/api', createStaffRouter({ prisma, requireUser }))
+app.use('/api', createMerchantDealRouter({ prisma, requireUser }))
+app.use('/api', createDispatchRouter({ prisma, requireUser, notifyUsers, broadcastStatus: (deliveryId, status) => deliveryRealtime.broadcastStatus(deliveryId, status) }))
+app.use('/api', createRoadReportRouter({ prisma, requireUser }))
 app.use('/api', createAuthRouter({ prisma, requireUser, createSession, publicUser: (user) => publicUser(user), sendWelcome }))
 app.use('/api', createVerificationRouter({ prisma, requireUser, requireAdmin, upload, storeApplicationDocuments, verifyPassword }))
 app.use('/api', createFinanceRouter({ prisma, requireUser, requireAdmin, verifyPassword }))
@@ -2045,7 +2056,7 @@ app.get('/api/orders/:orderId/tracking', requireUser, async (request, response) 
     if (request.user.role === 'CUSTOMER' && order.customerId !== request.user.id) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
     if (request.user.role === 'RIDER' && order.delivery?.riderId !== request.user.rider?.id) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
     const activeDelivery = order.delivery && ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'].includes(order.delivery.status)
-    if (!['CUSTOMER', 'RIDER', 'ADMIN'].includes(request.user.role) || (request.user.role === 'ADMIN' && !activeDelivery)) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
+    if (!['CUSTOMER', 'RIDER', 'ADMIN'].includes(request.user.role) || (request.user.role === 'ADMIN' && (!activeDelivery || !can(request.user, 'dispatch')))) return response.status(403).json({ error: 'ORDER_ACCESS_FORBIDDEN' })
     const snapshot = order.delivery ? await getDeliveryTrackingSnapshot(order.delivery.id, request.user) : null
     const orderDetails = {
       id: order.id,
@@ -2091,7 +2102,7 @@ app.get('/api/admin/deliveries/active', requireUser, async (request, response) =
   try {
     const deliveries = await prisma.delivery.findMany({
       where: { status: { in: ['ACCEPTED', 'GOING_TO_RESTAURANT', 'ARRIVED_AT_RESTAURANT', 'PICKED_UP', 'GOING_TO_CUSTOMER'] } },
-      include: { order: { select: { orderNumber: true, restaurant: { select: { name: true } } } }, parcelBooking: { select: { reference: true, pickupAddress: true } }, rider: { select: { user: { select: { firstName: true, lastName: true } } } } },
+      include: { order: { select: { orderNumber: true, plannedRiderPayMinor: true, payment: { select: { amountMinor: true, status: true } }, restaurant: { select: { name: true } } } }, parcelBooking: { select: { reference: true, pickupAddress: true } }, rider: { select: { user: { select: { firstName: true, lastName: true } } } } },
       orderBy: { acceptedAt: 'desc' },
     })
     const activeDeliveries = await Promise.all(deliveries.map(async (delivery) => {
@@ -2104,6 +2115,10 @@ app.get('/api/admin/deliveries/active', requireUser, async (request, response) =
         restaurant: delivery.order?.restaurant.name || `Package pickup: ${delivery.parcelBooking?.pickupAddress || 'customer location'}`,
         rider: delivery.rider ? `${delivery.rider.user.firstName} ${delivery.rider.user.lastName}`.trim() : 'Awaiting rider',
         location: snapshot.delivery.location,
+        // For the dispatch controls (take off / reassign, delivery failed).
+        arrivedAtCustomerAt: delivery.arrivedAtCustomerAt || null,
+        paidMinor: delivery.order?.payment?.status === 'SUCCESSFUL' ? delivery.order.payment.amountMinor : 0,
+        plannedRiderPayMinor: delivery.order?.plannedRiderPayMinor ?? null,
       }
     }))
     return response.json({ deliveries: activeDeliveries })
@@ -2201,7 +2216,8 @@ function customerOrderView(order) {
 
 /** Checkout preview: totals plus the distance explanation the customer needs, nothing about DOORSTEP's margins. */
 function customerQuote(quote) {
-  const { delivery, storeAddress, manualQuote, ...rest } = quote
+  // deliveryFunding (who pays how much behind the scenes) stays internal; the customer only sees dealNote.
+  const { delivery, storeAddress, manualQuote, deliveryFunding, ...rest } = quote
   if (quote.orderType === 'PICKUP') return { ...rest, pickupAddress: storeAddress, delivery: { pricing: 'PICKUP' } }
   if (manualQuote) return { ...rest, deliveryQuoteRequired: true, delivery: { pricing: 'TO_BE_CONFIRMED', reasons: manualQuote.reasons.map((code) => REASON_TEXT[code]).filter(Boolean), message: 'Your delivery location requires manual pricing confirmation. Please submit your order details. DOORSTEP will review your location and confirm the delivery fee before payment.' } }
   if (!delivery) return { ...rest, delivery: { pricing: 'FLAT' } }
@@ -2216,6 +2232,11 @@ function customerQuote(quote) {
       area: delivery.dropoffZone?.name || null,
       fromArea: delivery.pickupZone?.name || null,
       boost: delivery.customer.boostMinor > 0 ? { label: 'Busy-time fee', amountMinor: delivery.customer.boostMinor } : null,
+      // Extra charges included in the delivery fee, shown to the customer before paying.
+      charges: [
+        ['Remote area', delivery.customer.remoteMinor], ['Difficult access', delivery.customer.difficultAccessMinor], ['Weekend', delivery.customer.weekendMinor],
+        ['Night delivery', delivery.customer.nightMinor], ['High demand', delivery.customer.demandMinor],
+      ].filter(([, amount]) => amount > 0).map(([label, amountMinor]) => ({ label, amountMinor })),
       agreedRoute: Boolean(delivery.rule),
     },
   }
@@ -2232,10 +2253,14 @@ async function planOrderFinance(quote, destination) {
     prisma.restaurant.findUnique({ where: { id: quote.restaurantId }, select: { latitude: true, longitude: true, commissionDoorstepRiderPercent: true, commissionOwnRiderPercent: true, application: { select: { deliveryPreference: true } } } }),
   ])
   const fulfilment = quote.orderType === 'PICKUP' ? 'PICKUP' : plannedFulfilment(restaurant?.application?.deliveryPreference)
-  const shares = orderShares(quote, fulfilment, withBusinessCommission(settings, restaurant))
+  const computed = orderShares(quote, fulfilment, withBusinessCommission(settings, restaurant))
+  // A business delivery deal: the business's contribution comes out of its share (never more than it earns on the order).
+  const funding = quote.deliveryFunding && fulfilment === 'DOORSTEP_RIDER' ? boundedContribution(quote.deliveryFunding, computed.partnerShareMinor) : null
+  const shares = funding ? { ...computed, partnerShareMinor: computed.partnerShareMinor - funding.merchantMinor } : computed
+  const extra = funding ? { deliveryFunding: funding } : {}
   if (fulfilment === 'PICKUP') return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, deliveryDistanceMeters: null }
   // Published delivery pricing already measured the route and fixed the rider's pay for this order.
-  if (quote.delivery) return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, ...orderPricingSnapshot(quote.delivery) }
+  if (quote.delivery) return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, ...extra, ...orderPricingSnapshot(quote.delivery) }
   let deliveryDistanceMeters = null
   if (restaurant?.latitude != null && destination?.latitude != null && destination?.longitude != null) {
     try {
@@ -2243,7 +2268,7 @@ async function planOrderFinance(quote, destination) {
       deliveryDistanceMeters = Math.min(...routes.map((route) => route.distanceMeters))
     } catch (error) { console.warn('[finance] delivery_distance_unavailable', JSON.stringify({ code: error?.code })) }
   }
-  return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, deliveryDistanceMeters }
+  return { fulfilment, commissionPercent: shares.commissionPercent, partnerShareMinor: shares.partnerShareMinor, ...extra, deliveryDistanceMeters }
 }
 
 async function quoteOrder(input) {
@@ -2298,8 +2323,11 @@ async function quoteOrder(input) {
     const manualQuote = { reasons, estimateFeeMinor: assumed ? null : delivery.customer.deliveryFeeMinor, landmark: input.landmark || address?.landmark || null, directions: input.deliveryInstructions || null }
     return { ...base, deliveryFeeMinor: 0, serviceFeeMinor, totalMinor: subtotalMinor + serviceFeeMinor, delivery, manualQuote }
   }
-  const deliveryFeeMinor = delivery.customer.deliveryFeeMinor
-  return { ...base, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor, delivery }
+  // The business's delivery deal (set by DOORSTEP) decides who pays the fee; the fee itself and the rider's pay don't change.
+  const split = applyDeal(delivery.customer.deliveryFeeMinor, { subtotalMinor, deal: restaurant.deliveryDeal, fulfilment: plannedFulfilment(restaurant.application?.deliveryPreference) })
+  const deliveryFeeMinor = split.customerMinor
+  const funded = split.merchantMinor + split.platformMinor > 0
+  return { ...base, deliveryFeeMinor, serviceFeeMinor, totalMinor: subtotalMinor + deliveryFeeMinor + serviceFeeMinor, delivery, deliveryFunding: funded ? split : null, dealNote: funded ? customerDealNote(split, restaurant.name) : null }
 }
 
 /**
@@ -2374,6 +2402,8 @@ if (process.env.NODE_ENV !== 'test') {
   if (process.env.PAYOUT_SWEEP !== 'off') setInterval(runPayoutLoop, 60_000).unref()
   // Delivery prices nobody answered in time expire (so they can never be paid) and admins are told.
   setInterval(() => expireQuotes(prisma).catch((error) => console.error('[quotes] expiry sweep failed', error?.message)), 2 * 60_000).unref()
+  // Scheduled delivery pricing switches on at its time (checked every minute).
+  setInterval(() => activateScheduledPricing(prisma).catch((error) => console.error('[pricing] scheduled activation failed', error?.message)), 60_000).unref()
   // Phone notifications: push every new alert, and remind customers once about orders left unpaid.
   if (process.env.PUSH_SWEEP !== 'off') {
     let pushing = false

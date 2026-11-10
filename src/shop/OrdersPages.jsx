@@ -223,7 +223,7 @@ function useDeliveryQuote(orderId, enabled, stamp) {
   return { ...state, reload: () => setAttempt((value) => value + 1) }
 }
 
-/** Shows the delivery price DOORSTEP set, and lets the customer accept it or decline it (no negotiation). */
+/** Shows the delivery price DOORSTEP set, and lets the customer accept it or decline it (those are the only two choices). */
 function DeliveryQuoteCard({ order, onChanged }) {
   const { loading, quote, error, reload } = useDeliveryQuote(order.id, true, order.status)
   const [state, setState] = useState({ busy: false, error: '' })
@@ -262,7 +262,7 @@ function DeliveryQuoteCard({ order, onChanged }) {
       <p className="or-quote-why">Declining cancels the order. You haven’t been charged.</p>
     </>}
     {state.error && <p className="or-note is-warn" role="alert">{state.error}</p>}
-    {quote.history.length > 1 && <details className="or-quote-history"><summary>Price history</summary><ul>{quote.history.map((entry) => <li key={entry.version}><b>{naira(entry.feeMinor)}</b><span>{new Date(entry.sentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {entry.customerResponse === 'REVIEW' ? 'you asked for a review' : entry.status === 'SUPERSEDED' ? 'replaced' : entry.status.toLowerCase().replaceAll('_', ' ')}</span></li>)}</ul></details>}
+    {quote.history.length > 1 && <details className="or-quote-history"><summary>Price history</summary><ul>{quote.history.map((entry) => <li key={entry.version}><b>{naira(entry.feeMinor)}</b><span>{new Date(entry.sentAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {entry.status === 'SUPERSEDED' ? 'replaced' : entry.status.toLowerCase().replaceAll('_', ' ')}</span></li>)}</ul></details>}
   </section>
 }
 

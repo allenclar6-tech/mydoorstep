@@ -98,19 +98,34 @@ export function assertWithinServiceArea(pricing, point, label) {
 
 // --------------------------- routing --------------------------------------
 
-const routingToken = () => process.env.MAPBOX_SERVER_TOKEN || process.env.MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN || ''
-
-export function routingConfigured() { return Boolean(routingToken()) }
+const routingToken = (env = process.env) => env.MAPBOX_SERVER_TOKEN || env.MAPBOX_TOKEN || env.MAPBOX_PUBLIC_TOKEN || ''
+const osrmUrl = (env = process.env) => String(env.OSRM_URL || '').trim().replace(/\/+$/, '')
 
 /**
- * Road routes from Mapbox Directions. Never falls back to straight-line distance.
- * `fetchImpl` is injectable for tests.
+ * Road-routing providers, tried in order. Set by ROUTING_PROVIDERS (comma-separated, default "mapbox,osrm"):
+ *   mapbox — Mapbox Directions (MAPBOX_SERVER_TOKEN). Paid above Mapbox's free monthly allowance.
+ *   osrm   — an OSRM server you run yourself on OpenStreetMap data (OSRM_URL, e.g. http://osrm:5000 on ZimaOS). Free.
+ * Unconfigured providers are skipped. Changing providers is configuration only — no code changes.
  */
-export async function fetchRoadRoutes(origin, destination, { alternatives = true, fetchImpl = globalThis.fetch } = {}) {
-  const token = routingToken()
-  if (!token) throw new ParcelError('ROUTING_NOT_CONFIGURED', 'Road routing is not configured on the server.', 503)
+export function routingProviders(env = process.env) {
+  const wanted = String(env.ROUTING_PROVIDERS || 'mapbox,osrm').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean)
+  const configured = { mapbox: Boolean(routingToken(env)), osrm: Boolean(String(env.OSRM_URL || '').trim()) }
+  return [...new Set(wanted)].filter((name) => configured[name])
+}
+export function routingConfigured() { return routingProviders().length > 0 }
+
+// Last outcome per provider, for the admin's routing status card (no secrets).
+const providerHealth = {}
+export const routingStatus = () => ({ order: String(process.env.ROUTING_PROVIDERS || 'mapbox,osrm').split(',').map((value) => value.trim()).filter(Boolean), configured: routingProviders(), health: { ...providerHealth } })
+
+function providerRequest(name, origin, destination, alternatives, env) {
   const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`
-  const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?alternatives=${alternatives}&geometries=geojson&overview=full&steps=false&access_token=${encodeURIComponent(token)}`
+  if (name === 'mapbox') return { url: `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?alternatives=${alternatives}&geometries=geojson&overview=full&steps=false&access_token=${encodeURIComponent(routingToken(env))}`, label: 'mapbox-directions-driving' }
+  return { url: `${osrmUrl(env)}/route/v1/driving/${coordinates}?alternatives=${alternatives}&geometries=geojson&overview=full&steps=false`, label: 'osrm-driving' }
+}
+
+async function routesFrom(name, origin, destination, alternatives, fetchImpl, env) {
+  const { url, label } = providerRequest(name, origin, destination, alternatives, env)
   let response
   try {
     response = await fetchImpl(url, { signal: AbortSignal.timeout(12_000) })
@@ -118,20 +133,42 @@ export async function fetchRoadRoutes(origin, destination, { alternatives = true
     throw new ParcelError('ROUTING_PROVIDER_UNAVAILABLE', 'The routing service could not be reached. Try again shortly.', 502)
   }
   if (response.status === 401 || response.status === 403) {
-    console.error('[parcel] routing_token_rejected', JSON.stringify({ status: response.status }))
+    console.error('[routing] provider_rejected_credentials', JSON.stringify({ provider: name, status: response.status }))
     throw new ParcelError('ROUTING_TOKEN_REJECTED', 'Road routing is misconfigured on the server.', 503)
   }
   if (response.status === 429) throw new ParcelError('ROUTING_RATE_LIMITED', 'Too many route requests. Wait a moment and try again.', 503)
   let body = null
   try { body = await response.json() } catch { body = null }
-  if (response.status === 422 || body?.code === 'NoRoute' || body?.code === 'NoSegment') throw new ParcelError('NO_ROAD_ROUTE', 'No drivable road route connects these two points. Move a pin onto a road or nearby entrance.', 422)
+  if (response.status === 422 || ['NoRoute', 'NoSegment'].includes(body?.code)) throw new ParcelError('NO_ROAD_ROUTE', 'No drivable road route connects these two points. Move a pin onto a road or nearby entrance.', 422)
   if (!response.ok || body?.code !== 'Ok' || !Array.isArray(body.routes) || !body.routes.length) throw new ParcelError('ROUTING_PROVIDER_UNAVAILABLE', 'The routing service returned no usable route.', 502)
   return body.routes.slice(0, 3).map((route, index) => {
     if (!Number.isFinite(route.distance) || route.distance <= 0 || !Number.isFinite(route.duration) || route.geometry?.type !== 'LineString') {
       throw new ParcelError('ROUTING_PROVIDER_UNAVAILABLE', 'The routing service returned an invalid route.', 502)
     }
-    return { id: String(index), distanceMeters: Math.round(route.distance), durationSeconds: Math.round(route.duration), geometry: route.geometry, provider: 'mapbox-directions-driving' }
+    return { id: String(index), distanceMeters: Math.round(route.distance), durationSeconds: Math.round(route.duration), geometry: route.geometry, provider: label }
   })
+}
+
+/**
+ * Road routes from the first provider that answers. Never falls back to straight-line distance (callers decide what
+ * an unavailable route means). A provider that is down, rate-limited or finds no road is followed by the next one.
+ * `fetchImpl` and `env` are injectable for tests.
+ */
+export async function fetchRoadRoutes(origin, destination, { alternatives = true, fetchImpl = globalThis.fetch, env = process.env } = {}) {
+  const providers = routingProviders(env)
+  if (!providers.length) throw new ParcelError('ROUTING_NOT_CONFIGURED', 'Road routing is not configured on the server.', 503)
+  let lastError = null
+  for (const name of providers) {
+    try {
+      const routes = await routesFrom(name, origin, destination, alternatives, fetchImpl, env)
+      providerHealth[name] = { ok: true, at: new Date().toISOString() }
+      return routes
+    } catch (error) {
+      providerHealth[name] = { ok: false, at: new Date().toISOString(), code: error.code }
+      lastError = error
+    }
+  }
+  throw lastError
 }
 
 // --------------------------- pricing --------------------------------------

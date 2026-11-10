@@ -37,9 +37,13 @@ export const defaultDeliveryPricing = Object.freeze({
   zones: starterZones(),
   coverage: { requireApprovedZone: false },
   routeRules: [],
-  surcharges: { remoteMinor: 0, weekend: { active: false, minor: 0 } },
+  surcharges: { remoteMinor: 0, weekend: { active: false, minor: 0 }, night: { active: false, fromHour: 21, toHour: 6, minor: 0, riderMinor: 0 } },
   freeDelivery: { active: false, thresholdMinor: 0 },
   precedence: 'DISTANCE_FIRST',
+  // Demand-based pricing: OFF at launch. Only the platform owner (Super admin) can switch it on.
+  // Waiting pay for riders kept waiting at the customer (paid by DOORSTEP; customers have already paid).
+  waiting: { enabled: false, freeMinutes: 10, perMinuteMinor: 2_000, maxMinor: 30_000 },
+  demand: { enabled: false, triggerRatio: 3, stepPercent: 10, maxPercent: 30, maxExtraMinor: 50_000, riderSharePercent: 100, zoneIds: [] },
   manualQuotes: { enabled: true, minConfidence: 'MEDIUM', autoPriceExactPins: true, quoteBeyondMaxDistance: true, maxAutoFeeMinor: null, expiryHours: 24, maxRounds: 3, maxQuoteMinor: 2_000_000 },
 })
 
@@ -112,7 +116,10 @@ export async function measureDelivery(pickup, dropoff, distanceSettings, fetchRo
   let roadMeters = []
   let routingError = null
   if (fetchRoutes) {
-    try { roadMeters = (await fetchRoutes(pickup, dropoff)).map((route) => route.distanceMeters) } catch (error) { routingError = error?.code || 'ROUTING_FAILED' }
+    let provider = null
+    try { const routes = await fetchRoutes(pickup, dropoff); roadMeters = routes.map((route) => route.distanceMeters); provider = routes[0]?.provider || null } catch (error) { routingError = error?.code || 'ROUTING_FAILED' }
+    // Which routing provider measured it (Mapbox, your own OSRM…), kept in the order's distance record.
+    if (provider) return { ...chooseDistance({ straightMeters, roadMeters, routingError }, distanceSettings), provider }
   } else routingError = 'ROUTING_NOT_CONFIGURED'
   return chooseDistance({ straightMeters, roadMeters, routingError }, distanceSettings)
 }
@@ -142,6 +149,24 @@ export function serviceFeeFor(subtotalMinor, serviceFee) {
  * Prices one delivery. `distance` comes from chooseDistance (or { meters, source: 'ASSUMED' }).
  * Returns the customer fee, the rider's pay, and what DOORSTEP earns, with every adjustment itemised.
  */
+const lagosHour = (when) => Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', hour: 'numeric', hourCycle: 'h23' }).format(when))
+/** Night window in Lagos time; wraps midnight when fromHour > toHour (e.g. 21 → 6). */
+export const isNight = (when, fromHour, toHour) => { const hour = lagosHour(when); return fromHour === toHour ? false : fromHour < toHour ? hour >= fromHour && hour < toHour : hour >= fromHour || hour < toHour }
+
+/**
+ * Demand-based extra (surge). Returns 0 unless the owner switched it on. When on: once waiting orders per free rider
+ * reach triggerRatio, the fee rises by stepPercent per ratio step, never above maxPercent or maxExtraMinor, and only
+ * in the chosen areas (none chosen = all). The customer sees it as its own line before paying.
+ */
+export function demandExtra(demand, { waiting = 0, freeRiders = 0, zoneId = null } = {}, feeMinor = 0) {
+  if (!demand?.enabled) return { percent: 0, minor: 0 }
+  if (demand.zoneIds?.length && !demand.zoneIds.includes(zoneId)) return { percent: 0, minor: 0 }
+  const ratio = waiting / Math.max(1, freeRiders)
+  if (ratio < demand.triggerRatio) return { percent: 0, minor: 0 }
+  const percent = Math.min(demand.maxPercent, demand.stepPercent * Math.floor(ratio / demand.triggerRatio))
+  return { percent, minor: Math.min(demand.maxExtraMinor, Math.round(feeMinor * percent / 100)) }
+}
+
 const isWeekend = (when) => { const day = new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'short' }).format(when); return day === 'Sat' || day === 'Sun' }
 
 /**
@@ -168,7 +193,7 @@ export function reliableDistance(distance, { exactPins = false } = {}) {
   return distance.source === 'ESTIMATE' && exactPins
 }
 
-export function priceDelivery({ distance, pickupZone = null, dropoffZone = null, subtotalMinor = 0, fulfilment = 'DOORSTEP_RIDER', pricing, finance, now = new Date(), exactPins = false }) {
+export function priceDelivery({ distance, pickupZone = null, dropoffZone = null, subtotalMinor = 0, fulfilment = 'DOORSTEP_RIDER', pricing, finance, now = new Date(), exactPins = false, demandSnapshot = null }) {
   const warnings = [...(distance.warnings || [])]
   const km = Math.round(distance.meters / 100) / 10
   const rule = findRouteRule(pricing.routeRules, pickupZone?.id, dropoffZone?.id)
@@ -184,18 +209,27 @@ export function priceDelivery({ distance, pickupZone = null, dropoffZone = null,
   const boostMinor = boost ? boost.customerExtraMinor : 0
   const remoteMinor = dropoffZone?.remote ? (pricing.surcharges?.remoteMinor || 0) : 0
   const weekendMinor = pricing.surcharges?.weekend?.active && isWeekend(now) ? pricing.surcharges.weekend.minor : 0
-  let fee = baseFee + zoneSurchargeMinor + boostMinor + remoteMinor + weekendMinor
+  // Hard-to-reach drop-off area (bad road, river crossing…): its own configurable charge.
+  const difficultAccessMinor = dropoffZone?.difficultAccessMinor || 0
+  const night = pricing.surcharges?.night
+  const isNightNow = Boolean(night?.active && isNight(now, night.fromHour, night.toHour))
+  const nightMinor = isNightNow ? night.minor : 0
+  const demand = demandExtra(pricing.demand, { ...(demandSnapshot || {}), zoneId: dropoffZone?.id || null }, baseFee + zoneSurchargeMinor)
+  const demandMinor = demand.minor
+  let fee = baseFee + zoneSurchargeMinor + boostMinor + remoteMinor + weekendMinor + difficultAccessMinor + nightMinor + demandMinor
 
   // Rider pay (business-owned riders are paid by their business, not DOORSTEP)
   let rider = { payMinor: null, bandMinor: null, zoneBonusMinor: 0, boostMinor: 0, fromRule: false, paidBy: businessRider ? 'BUSINESS' : 'DOORSTEP' }
   if (!businessRider) {
     const zoneBonusMinor = rule?.riderPayMinor != null ? 0 : (pickupZone?.riderBonusMinor || 0) + (dropoffZone?.riderBonusMinor || 0)
     const riderBoost = boost ? boost.riderExtraMinor : 0
-    if (rule?.riderPayMinor != null) rider = { ...rider, payMinor: rule.riderPayMinor + riderBoost, fromRule: true, boostMinor: riderBoost }
+    // Night and demand extras for the rider (configured by DOORSTEP).
+    const riderExtras = (isNightNow ? night.riderMinor || 0 : 0) + Math.round(demandMinor * (pricing.demand?.riderSharePercent ?? 100) / 100)
+    if (rule?.riderPayMinor != null) rider = { ...rider, payMinor: rule.riderPayMinor + riderBoost + riderExtras, fromRule: true, boostMinor: riderBoost, extrasMinor: riderExtras }
     else {
       const band = riderEarning(distance.meters, finance)
       if (band.amountMinor == null) warnings.push(band.reason === 'RATES_NOT_PUBLISHED' ? 'RIDER_RATES_NOT_PUBLISHED' : 'RIDER_PAY_UNKNOWN')
-      else rider = { ...rider, payMinor: band.amountMinor + zoneBonusMinor + riderBoost, bandMinor: band.amountMinor, zoneBonusMinor, boostMinor: riderBoost }
+      else rider = { ...rider, payMinor: band.amountMinor + zoneBonusMinor + riderBoost + riderExtras, bandMinor: band.amountMinor, zoneBonusMinor, boostMinor: riderBoost, extrasMinor: riderExtras }
     }
   }
 
@@ -226,13 +260,13 @@ export function priceDelivery({ distance, pickupZone = null, dropoffZone = null,
 
   return {
     km,
-    distance: { meters: distance.meters, source: distance.source, straightMeters: distance.straightMeters ?? null, roadMeters: distance.roadMeters ?? null },
+    distance: { meters: distance.meters, source: distance.source, straightMeters: distance.straightMeters ?? null, roadMeters: distance.roadMeters ?? null, provider: distance.provider ?? null },
     pickupZone: pickupZone ? { id: pickupZone.id, name: pickupZone.name } : null,
     dropoffZone: dropoffZone ? { id: dropoffZone.id, name: dropoffZone.name } : null,
     rule: method === 'ROUTE_RULE' ? { id: rule.id, agreedWith: rule.agreedWith || '', note: rule.note || '' } : null,
     method: freeByThreshold ? 'FREE_THRESHOLD' : method,
     fulfilment,
-    customer: { ...fromDistance, fromRule: ruleFee, ruleFeeMinor: ruleFee ? baseFee : null, zoneSurchargeMinor, boostMinor, remoteMinor, weekendMinor, marginTopUpMinor, roundingMinor, freeDeliveryMinor, deliveryFeeMinor },
+    customer: { ...fromDistance, fromRule: ruleFee, ruleFeeMinor: ruleFee ? baseFee : null, zoneSurchargeMinor, boostMinor, remoteMinor, weekendMinor, difficultAccessMinor, nightMinor, demandMinor, demandPercent: demand.percent, marginTopUpMinor, roundingMinor, freeDeliveryMinor, deliveryFeeMinor },
     rider,
     serviceFeeMinor,
     commission: { percent: commissionPercent, minor: commissionMinor },
