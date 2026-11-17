@@ -72,7 +72,7 @@ export const privacyPolicy = {
         '**The store you order from:** your first name, the order, your phone number and, for delivery orders handled by its own rider, the delivery address — so it can prepare and hand over your order.',
         '**The rider delivering your order:** your first name, delivery address and directions, phone number and the order’s delivery code.',
         '**Customers:** a rider’s first name, vehicle and live position during the delivery, and a store’s public details.',
-        '**Service providers** who process data for us under contract: **Paystack** (card and bank payments, saved cards, payouts and bank account checks); **Render** (our servers, database and private document storage); **Cloudflare** (delivering the website securely); **Mapbox** and **Google** (maps, address search, road distances and directions; Google sign-in if you choose it); **Resend** (emails); **Termii**, **Twilio** and **WhatsApp (Meta)** (sign-in codes by SMS or WhatsApp); a business-registry verification provider (CAC checks); and your browser’s notification service (Google, Apple, Microsoft or Mozilla) to deliver notifications.',
+        '**Service providers** who process data for us under contract: **Paystack** (card and bank payments, saved cards, payouts and bank account checks); **Cloudflare** (the secure connection between your device and our servers — all website and app traffic passes through it); **Mapbox** and **Google** (maps, address search, road distances and directions; Google sign-in if you choose it); **Resend** (emails); **Termii**, **Twilio** and **WhatsApp (Meta)** (sign-in codes by SMS or WhatsApp); a business-registry verification provider (CAC checks); and your browser’s notification service (Google, Apple, Microsoft or Mozilla) to deliver notifications.',
         '**Authorities and advisers:** police, courts, regulators or tax authorities when the law requires it, or to protect someone’s safety; and our lawyers, accountants and auditors.',
         '**A new owner:** if DOORSTEP is sold or merged, your data may pass to the new owner, who must respect this policy.',
       ],
@@ -80,7 +80,7 @@ export const privacyPolicy = {
     {
       id: 'transfers', heading: 'Data stored or processed outside Nigeria',
       paragraphs: [
-        'Some of our service providers (for example our hosting, email, maps and messaging providers) store or process data outside Nigeria, including in the United States and the European Union. When this happens we rely on the safeguards the NDPA allows — such as the provider’s contractual commitments to protect the data to a standard at least equal to Nigerian law — and we only transfer what the service needs.',
+        'Some of our service providers (for example our email, maps, messaging and website-security providers) store or process data outside Nigeria, including in the United States and the European Union. When this happens we rely on the safeguards the NDPA allows — such as the provider’s contractual commitments to protect the data to a standard at least equal to Nigerian law — and we only transfer what the service needs.',
       ],
     },
     {
@@ -96,7 +96,7 @@ export const privacyPolicy = {
     {
       id: 'security', heading: 'How we protect it',
       paragraphs: [
-        'We use encryption in transit (HTTPS) everywhere; passwords are stored only as secure hashes; saved-card tokens are encrypted; identity documents, receipts and certificates are kept in private storage that only authorised staff can open; staff access is limited by role; and sensitive actions (such as viewing a payout account or changing payout details) are logged. Changing a payout bank account requires your password and notifies you.',
+        'DOORSTEP runs its own servers: our database, the app’s back end and private documents (such as identity documents and receipts) are stored on servers DOORSTEP operates, not with a third-party hosting company. We use encryption in transit (HTTPS) everywhere; passwords are stored only as secure hashes; saved-card tokens are encrypted; identity documents, receipts and certificates are kept in private storage that only authorised staff can open; staff access is limited by role; and sensitive actions (such as viewing a payout account or changing payout details) are logged. Changing a payout bank account requires your password and notifies you.',
         'No system is perfectly secure. If a breach is likely to put your rights at risk, we will notify the Nigeria Data Protection Commission within 72 hours and tell you without undue delay where the law requires it.',
       ],
     },
