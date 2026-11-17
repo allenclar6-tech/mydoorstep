@@ -36,6 +36,7 @@ export const publicRoutes = [
   '/parcels',
   '/privacy',
   '/terms',
+  '/delete-account',
   '/refund-policy',
   '/cancellation-policy',
   '/restaurant-partner-terms',

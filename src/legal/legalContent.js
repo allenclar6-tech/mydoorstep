@@ -10,10 +10,10 @@ export const LEGAL_ENTITY = {
   registeredName: null,
   rcNumber: null,
   address: 'Sapele, Delta State, Nigeria',
-  email: 'support@mydoorstep.com.co',
+  email: 'doorstep.com.co@gmail.com',
   website: 'https://mydoorstep.com.co',
 }
-export const LAST_UPDATED = '3 November 2026'
+export const LAST_UPDATED = '17 November 2026'
 
 const who = LEGAL_ENTITY.registeredName ? `${LEGAL_ENTITY.registeredName}${LEGAL_ENTITY.rcNumber ? ` (RC ${LEGAL_ENTITY.rcNumber})` : ''}, trading as DOORSTEP` : 'DOORSTEP'
 
@@ -52,7 +52,7 @@ export const privacyPolicy = {
         '**Support:** messages you send through Help, chat, email or phone, and the details of any complaint, refund or account-deletion request.',
         '**Device and technical data:** your browser and device type, and the information our servers need to keep the Platform secure and working (such as IP address, error logs and sign-in records). If you turn on notifications, we store the notification address your browser gives us for that device.',
       ],
-      after: ['We do not collect more than we need. We do not use advertising trackers, sell data, or build advertising profiles.'],
+      after: ['We do not collect more than we need. We do not use advertising trackers, sell data, or build advertising profiles. The DOORSTEP apps and website do not use analytics, crash-reporting or performance-monitoring tools, so we do not collect crash logs, device diagnostics or app performance data.'],
     },
     {
       id: 'how-we-use', heading: 'How we use your data, and why we are allowed to',
@@ -298,6 +298,67 @@ export const termsAndConditions = {
     {
       id: 'contact', heading: 'Contact us',
       paragraphs: [`DOORSTEP — ${LEGAL_ENTITY.address}. Email: **${LEGAL_ENTITY.email}**. You can also reach us through Help in the app.`],
+    },
+  ],
+}
+
+// Public "how to delete your account" page (/delete-account). Google Play requires a web page anyone can reach,
+// without the app, that explains how to ask for account and data deletion and what is deleted or kept.
+export const accountDeletion = {
+  title: 'Delete your DOORSTEP account',
+  intro: 'How to ask DOORSTEP to delete your account and personal data, and what happens to it.',
+  summary: [
+    'Customers can ask in the app or on the website: Profile → Delete my account and data.',
+    `Anyone, including partners and riders, can email ${LEGAL_ENTITY.email}. You don’t need the app installed.`,
+    'We confirm the request with you, then delete your account within 30 days.',
+    'Records the law makes us keep, such as payments, are kept for up to six years and then deleted.',
+  ],
+  sections: [
+    {
+      id: 'in-the-app', heading: 'Ask in the app or on the website',
+      paragraphs: ['This works on the DOORSTEP Android app and on the website, so you can do it on any phone or computer even if you have removed the app.'],
+      list: [
+        `Open the DOORSTEP app, or go to **${LEGAL_ENTITY.website}** and sign in with the account you want to delete.`,
+        'Tap **Profile**.',
+        'Tap **Delete my account and data**.',
+        'Optionally tell us why, then tap **Request deletion**. You will see a ticket number.',
+      ],
+      after: ['DOORSTEP support will then contact you by email or phone to confirm before anything is deleted.'],
+    },
+    {
+      id: 'by-email', heading: 'Ask by email',
+      paragraphs: [
+        `If you can’t sign in, don’t have the app, or have a **partner (business)** or **rider** account, email **${LEGAL_ENTITY.email}** with the subject **“Delete my account”**.`,
+        'Send it from the email address on your account if you can, and include the phone number on the account. If you write from a different address, we will ask you to prove the account is yours (for example with a code sent to the phone number on it), so that nobody can delete someone else’s account.',
+      ],
+    },
+    {
+      id: 'what-we-delete', heading: 'What we delete',
+      list: [
+        'Your profile: name, email address, phone number, password and profile photo.',
+        'How you sign in, including any linked Google sign-in, and every device you are signed in on.',
+        'Saved delivery addresses, saved cards (the card tokens Paystack gave us), favourites and notification settings.',
+        'For riders and partners: payout bank details held with DOORSTEP and identity or business documents, once nothing is still owed or disputed (see below).',
+      ],
+      after: ['Your name is also removed from reviews you wrote. The rating may stay, without your name, so a store’s average stays accurate.'],
+    },
+    {
+      id: 'what-we-keep', heading: 'What we keep, and for how long',
+      paragraphs: ['Some records must be kept by law even after the account is deleted. We keep only what is listed here, separate from any active account, and delete it at the end of the period:'],
+      list: [
+        '**Orders, payments, refunds and payouts:** the transaction records (amounts, dates, references, items) for up to **six years** after the transaction, for tax, accounting and anti-fraud law.',
+        '**Identity and verification documents (partners and riders):** only as long as needed to settle any open dispute, refund or payment owed, or to meet a legal duty.',
+        '**Support conversations about the request:** until the request is complete and any follow-up is handled.',
+      ],
+    },
+    {
+      id: 'before-you-ask', heading: 'Before you ask',
+      list: [
+        'Any open orders or deliveries must finish first.',
+        'Partners and riders: money still owed to you will be paid to your bank account before we close the account.',
+        'Deletion **can’t be undone**. To use DOORSTEP again later you would create a new account.',
+        `If you only want some of your data deleted, or a copy of it first, email **${LEGAL_ENTITY.email}** and tell us what you want. See our Privacy Policy for all your rights.`,
+      ],
     },
   ],
 }

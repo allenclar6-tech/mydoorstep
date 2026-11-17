@@ -6,7 +6,7 @@
 import { generateVapidKeys, sendPush } from './webPushCore.js'
 
 const KEY = 'web_push_vapid'
-const CONTACT = process.env.WEB_PUSH_CONTACT || 'mailto:support@mydoorstep.com.co'
+const CONTACT = process.env.WEB_PUSH_CONTACT || 'mailto:doorstep.com.co@gmail.com'
 let keysCache = null
 
 export async function vapidKeys(db) {

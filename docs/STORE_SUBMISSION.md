@@ -111,7 +111,7 @@ Source: [Understanding Android developer verification](https://support.google.co
 
 - **Category:** Food & Drink · **Price:** Free · **Content rating:** Everyone · **Country:** Nigeria
 - **Website:** https://mydoorstep.com.co · **Privacy:** https://mydoorstep.com.co/privacy · **Terms:** https://mydoorstep.com.co/terms
-- **Support email:** support@mydoorstep.com.co. Make sure this mailbox exists and is read before listing.
+- **Support email:** doorstep.com.co@gmail.com. This is the official DOORSTEP inbox; make sure it is read before listing.
 - **Developer:** DOORSTEP, Sapele, Delta State, Nigeria. Add the registered company name and RC number in
   `src/legal/legalContent.js` once confirmed.
 - **Icon:** `public/icons/icon-512.png` (512 × 512)

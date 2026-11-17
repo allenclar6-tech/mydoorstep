@@ -127,7 +127,7 @@ export function ProfileHub() {
         <MenuRow icon={Trash2} label="Delete my account and data" tone="danger" onClick={() => setSheet('delete')} />
         <MenuRow icon={LogOut} label="Log out" onClick={() => signOut({ apiBase })} />
       </ul>}
-      <p className="sp-legal"><a href="/terms" onClick={link('/terms')}>Terms</a> · <a href="/privacy" onClick={link('/privacy')}>Privacy</a> · <a href="/refund-policy" onClick={link('/refund-policy')}>Refunds</a></p>
+      <p className="sp-legal"><a href="/terms" onClick={link('/terms')}>Terms</a> · <a href="/privacy" onClick={link('/privacy')}>Privacy</a> · <a href="/refund-policy" onClick={link('/refund-policy')}>Refunds</a> · <a href="/delete-account" onClick={link('/delete-account')}>Delete account</a></p>
     </main>
     <TabBar active="profile" />
     {sheet === 'appearance' && <AppearanceSheet onClose={() => setSheet(null)} />}
